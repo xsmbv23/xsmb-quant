@@ -7,23 +7,27 @@ from datetime import datetime, timedelta, timezone
 import gradio as gr
 
 # ==============================================================================
-# 🧬 HẠ TẦNG LÕI QUANT V2.3 (CHUẨN MÚI GIỜ UTC+7 VIỆT NAM & CHỐNG KẸT TRẦN)
+# 🧬 HẠ TẦNG LÕI QUANT V2.3 (KHÓA CHẶT REAL-TIME UTC+7 - CHỐNG NHẢY NGÀY RÁC)
 # ==============================================================================
-VERSION = "V2.3 Real-time UTC+7"
+VERSION = "V2.3 Real-time Fixed"
 
-# CẤU HÌNH MÚI GIỜ VIỆT NAM (UTC+7) - ÉP MÁY CHỦ MỸ CHẠY CHUẨN GIỜ VIỆT NAM
-VN_TZ = timezone(timedelta(hours=7))
-NOW_VN = datetime.now(VN_TZ)
+def lay_thoi_gian_thuc_vn():
+    """Hàm neo thời gian chuẩn mực theo múi giờ Việt Nam (UTC+7) & Khung giờ 18h30"""
+    VN_TZ = timezone(timedelta(hours=7))
+    now_vn = datetime.now(VN_TZ)
+    
+    # Nếu đã qua 18h30 chiều hôm nay -> Đã có kết quả ngày hôm nay
+    if now_vn.hour > 18 or (now_vn.hour == 18 and now_vn.minute >= 30):
+        curr_date = datetime(now_vn.year, now_vn.month, now_vn.day)
+    else:
+        curr_date = datetime(now_vn.year, now_vn.month, now_vn.day) - timedelta(days=1)
+        
+    next_date = curr_date + timedelta(days=1)
+    min_date = curr_date - timedelta(days=364)
+    return curr_date, next_date, min_date
 
-# TỰ ĐỘNG NHẬN DIỆN MỐC 18H30 QUAY THƯỞNG XSMB
-if NOW_VN.hour > 18 or (NOW_VN.hour == 18 and NOW_VN.minute >= 30):
-    CURRENT_DATE = datetime(NOW_VN.year, NOW_VN.month, NOW_VN.day)
-    NEXT_DATE = CURRENT_DATE + timedelta(days=1)
-else:
-    CURRENT_DATE = datetime(NOW_VN.year, NOW_VN.month, NOW_VN.day) - timedelta(days=1)
-    NEXT_DATE = datetime(NOW_VN.year, NOW_VN.month, NOW_VN.day)
-
-MIN_DATE = CURRENT_DATE - timedelta(days=364) # Đủ 365 slots active
+# KHỞI TẠO TRẠNG THÁI CHUẨN LẦN ĐẦU
+CURRENT_DATE, NEXT_DATE, MIN_DATE = lay_thoi_gian_thuc_vn()
 SAFE_THRESHOLD = 52.50
 
 def get_current_date_str():
@@ -101,16 +105,11 @@ def tinh_win_rate_so_tu_nap(ma_so, date_obj=None):
 # ==============================================================================
 
 def web_phan_he_1_sync():
-    """Phân hệ 1: Đồng bộ đệm FIFO 365 slots active & Cuốn chiếu Dynamic State"""
+    """Phân hệ 1: Đồng bộ đệm FIFO 365 slots chuẩn theo thời gian thực tuyệt đối"""
     global CURRENT_DATE, NEXT_DATE, MIN_DATE
     
-    d_truoc = get_current_date_str()
-    n_truoc = get_next_date_str()
-    
-    # Cuốn chiếu động liên tục theo thao tác người dùng
-    CURRENT_DATE = CURRENT_DATE + timedelta(days=1)
-    NEXT_DATE = CURRENT_DATE + timedelta(days=1)
-    MIN_DATE = CURRENT_DATE - timedelta(days=364)
+    # LUÔN KHÓA CHẶT THEO THỜI GIAN THỰC (TỪ BỎ CƠ CHẾ CỘNG NGÀY ẢO)
+    CURRENT_DATE, NEXT_DATE, MIN_DATE = lay_thoi_gian_thuc_vn()
     
     hasher = hashlib.md5()
     valid_slots = 0
@@ -127,11 +126,10 @@ def web_phan_he_1_sync():
     
     res = f"✅ ĐÃ ĐỒNG BỘ THÀNH CÔNG BỘ NHỚ ĐỆM VÒNG TRÒN (FIFO CIRCULAR BUFFER)\n"
     res += f"---------------------------------------------------------------------------------\n"
-    res += f"• Dữ liệu thô cũ   : [{d_truoc}]  =>  Dự đoán cũ: [{n_truoc}]\n"
-    res += f"• Dữ liệu thô mới  : [{get_current_date_str()}] (Đã cập nhật)\n"
-    res += f"• Kỳ dự đoán mới   : 🚀 [{get_next_date_str()}] (Forward-looking)\n"
-    res += f"• Sàn đệm FIFO     : [{get_min_date_str()}] (Chính xác {valid_slots}/365 Slots Active)\n"
-    res += f"• Thời gian quét   : {elapsed:.2f} ms\n"
+    res += f"• Dữ liệu thô mới nhất: [{get_current_date_str()}] (Thực tế đã chốt)\n"
+    res += f"• Kỳ quay dự đoán mới : 🚀 [{get_next_date_str()}] (Forward-looking chuẩn xác)\n"
+    res += f"• Sàn đệm FIFO active : [{get_min_date_str()}] -> [{get_current_date_str()}] ({valid_slots}/365 Slots)\n"
+    res += f"• Thời gian xử lý     : {elapsed:.2f} ms\n"
     res += f"🔐 Mã băm MD5 Checksum toàn vẹn : [0x{checksum_hash}]\n"
     
     return res, f"#### Kỳ quay ngày: {get_next_date_str()}"
@@ -238,7 +236,7 @@ def web_phan_he_4_single_day_backtest(ngay_raw):
     if not res: return "🛑 [ERROR] Định dạng ngày nhập vào không hợp lệ. Dùng DD/MM/YYYY."
     d_obj, ngay_str = res
     if d_obj < MIN_DATE: return f"🛑 [CRITICAL] Dữ liệu ngày này đã bị ghi đè vòng tròn FIFO!"
-    if d_obj > CURRENT_DATE: return f"🛑 [CRITICAL] Ngày tra cứu thuộc về tương lai!"
+    if d_obj > CURRENT_DATE: return f"🛑 [CRITICAL] Ngày tra cứu thuộc về tương lai hoặc chưa nổ giải!"
         
     noise, current_mode = quet_chi_so_nhieu_he_thong(d_obj)
     d_danh = [20, 10, 5] if "V2.1" in current_mode else [50, 40, 30]
