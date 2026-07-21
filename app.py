@@ -7,12 +7,12 @@ from datetime import datetime, timedelta, timezone
 import gradio as gr
 
 # ==============================================================================
-# 🧬 HẠ TẦNG LÕI QUANT V2.3 (KHÓA CHẶT REAL-TIME UTC+7 - CHỐNG NHẢY NGÀY RÁC)
+# 🧬 HẠ TẦNG LÕI QUANT V2.3 (ABSOLUTE REAL-TIME ANCHOR - CHỐNG TUA NGÀY ẢO)
 # ==============================================================================
-VERSION = "V2.3 Real-time Fixed"
+VERSION = "V2.3 Absolute Anchor"
 
 def lay_thoi_gian_thuc_vn():
-    """Hàm neo thời gian chuẩn mực theo múi giờ Việt Nam (UTC+7) & Khung giờ 18h30"""
+    """Hàm neo thời gian tuyệt đối theo múi giờ Việt Nam (UTC+7) & Khung giờ 18h30"""
     VN_TZ = timezone(timedelta(hours=7))
     now_vn = datetime.now(VN_TZ)
     
@@ -26,18 +26,7 @@ def lay_thoi_gian_thuc_vn():
     min_date = curr_date - timedelta(days=364)
     return curr_date, next_date, min_date
 
-# KHỞI TẠO TRẠNG THÁI CHUẨN LẦN ĐẦU
-CURRENT_DATE, NEXT_DATE, MIN_DATE = lay_thoi_gian_thuc_vn()
 SAFE_THRESHOLD = 52.50
-
-def get_current_date_str():
-    return CURRENT_DATE.strftime("%d/%m/%Y")
-
-def get_next_date_str():
-    return NEXT_DATE.strftime("%d/%m/%Y")
-
-def get_min_date_str():
-    return MIN_DATE.strftime("%d/%m/%Y")
 
 def chuan_hoa_ngay(ngay_raw):
     """Bộ tiền xử lý thời gian linh hoạt hỗ trợ DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY"""
@@ -93,7 +82,8 @@ def tinh_win_rate_so_tu_nap(ma_so, date_obj=None):
         return 0.0
     
     if date_obj is None:
-        date_obj = NEXT_DATE
+        _, next_date, _ = lay_thoi_gian_thuc_vn()
+        date_obj = next_date
         
     seed_val = date_obj.year * 10000 + date_obj.month * 100 + date_obj.day + val * 100
     r_audit = random.Random(seed_val)
@@ -105,18 +95,15 @@ def tinh_win_rate_so_tu_nap(ma_so, date_obj=None):
 # ==============================================================================
 
 def web_phan_he_1_sync():
-    """Phân hệ 1: Đồng bộ đệm FIFO 365 slots chuẩn theo thời gian thực tuyệt đối"""
-    global CURRENT_DATE, NEXT_DATE, MIN_DATE
-    
-    # LUÔN KHÓA CHẶT THEO THỜI GIAN THỰC (TỪ BỎ CƠ CHẾ CỘNG NGÀY ẢO)
-    CURRENT_DATE, NEXT_DATE, MIN_DATE = lay_thoi_gian_thuc_vn()
+    """Phân hệ 1: Đồng bộ đệm FIFO 365 slots chuẩn tĩnh theo thời gian thực tuyệt đối"""
+    curr_date, next_date, min_date = lay_thoi_gian_thuc_vn()
     
     hasher = hashlib.md5()
     valid_slots = 0
     start_time = time.time()
     
     for i in range(365):
-        slot_date = MIN_DATE + timedelta(days=i)
+        slot_date = min_date + timedelta(days=i)
         codes, _, _ = quet_toan_bo_ngay_lich_su(slot_date)
         hasher.update(f"{slot_date.strftime('%Y%m%d')}:{','.join(codes)}".encode('utf-8'))
         valid_slots += 1
@@ -126,24 +113,25 @@ def web_phan_he_1_sync():
     
     res = f"✅ ĐÃ ĐỒNG BỘ THÀNH CÔNG BỘ NHỚ ĐỆM VÒNG TRÒN (FIFO CIRCULAR BUFFER)\n"
     res += f"---------------------------------------------------------------------------------\n"
-    res += f"• Dữ liệu thô mới nhất: [{get_current_date_str()}] (Thực tế đã chốt)\n"
-    res += f"• Kỳ quay dự đoán mới : 🚀 [{get_next_date_str()}] (Forward-looking chuẩn xác)\n"
-    res += f"• Sàn đệm FIFO active : [{get_min_date_str()}] -> [{get_current_date_str()}] ({valid_slots}/365 Slots)\n"
-    res += f"• Thời gian xử lý     : {elapsed:.2f} ms\n"
+    res += f"• Dữ liệu thô mới nhất : [{curr_date.strftime('%d/%m/%Y')}] (Thực tế đã chốt)\n"
+    res += f"• Kỳ quay dự đoán mới  : 🚀 [{next_date.strftime('%d/%m/%Y')}] (Forward-looking chuẩn xác)\n"
+    res += f"• Sàn đệm FIFO active  : [{min_date.strftime('%d/%m/%Y')}] -> [{curr_date.strftime('%d/%m/%Y')}] ({valid_slots}/365 Slots)\n"
+    res += f"• Thời gian xử lý      : {elapsed:.2f} ms\n"
     res += f"🔐 Mã băm MD5 Checksum toàn vẹn : [0x{checksum_hash}]\n"
     
-    return res, f"#### Kỳ quay ngày: {get_next_date_str()}"
+    return res, f"#### Kỳ quay ngày: {next_date.strftime('%d/%m/%Y')}"
 
 def web_phan_he_2_predict():
-    noise, mode = quet_chi_so_nhieu_he_thong(NEXT_DATE)
-    codes, _, _ = quet_toan_bo_ngay_lich_su(NEXT_DATE)
+    _, next_date, _ = lay_thoi_gian_thuc_vn()
+    noise, mode = quet_chi_so_nhieu_he_thong(next_date)
+    codes, _, _ = quet_toan_bo_ngay_lich_su(next_date)
     weights = ['Mũi nhọn', 'Hòa vốn', 'Túi khí']
     prob = [0.5384, 0.5383, 0.5322]
     diem_khuyen_nghi = [20, 10, 5] if 'V2.1' in mode else [50, 40, 30]
     gia_von, gia_thuong = 23000, 80000
     tong_von = sum(diem_khuyen_nghi) * gia_von
     
-    res = f"🎯 BÁO CÁO DỰ ĐOÁN ĐỊNH LƯỢNG CHO KỲ QUAY NGÀY: {get_next_date_str()}\n"
+    res = f"🎯 BÁO CÁO DỰ ĐOÁN ĐỊNH LƯỢNG CHO KỲ QUAY NGÀY: {next_date.strftime('%d/%m/%Y')}\n"
     res += f"🎚️ Lõi thực thi hiện tại: {mode} | Chỉ số nhiễu chu kỳ: {noise}%\n"
     res += f"---------------------------------------------------------------------------------\n"
     res += f"{'VỊ TRÍ DANH MỤC':<18} | {'MÃ SỐ':<6} | {'XÁC SUẤT':<8} | {'KHUYẾN NGHỊ':<12} | {'CHI PHÍ VỐN':<12}\n"
@@ -163,10 +151,11 @@ def web_phan_he_2_predict():
     return res
 
 def web_phan_he_3_risk_audit(target_date_str, capital_vnd, code_mn, code_hv, code_tk):
+    _, next_date, _ = lay_thoi_gian_thuc_vn()
     res_date = chuan_hoa_ngay(target_date_str)
     if res_date is None:
-        target_date_obj = NEXT_DATE
-        t_str = get_next_date_str()
+        target_date_obj = next_date
+        t_str = next_date.strftime("%d/%m/%Y")
     else:
         target_date_obj, t_str = res_date
 
@@ -232,11 +221,12 @@ def web_phan_he_3_risk_audit(target_date_str, capital_vnd, code_mn, code_hv, cod
     return report
 
 def web_phan_he_4_single_day_backtest(ngay_raw):
+    curr_date, _, min_date = lay_thoi_gian_thuc_vn()
     res = chuan_hoa_ngay(ngay_raw)
     if not res: return "🛑 [ERROR] Định dạng ngày nhập vào không hợp lệ. Dùng DD/MM/YYYY."
     d_obj, ngay_str = res
-    if d_obj < MIN_DATE: return f"🛑 [CRITICAL] Dữ liệu ngày này đã bị ghi đè vòng tròn FIFO!"
-    if d_obj > CURRENT_DATE: return f"🛑 [CRITICAL] Ngày tra cứu thuộc về tương lai hoặc chưa nổ giải!"
+    if d_obj < min_date: return f"🛑 [CRITICAL] Dữ liệu ngày này đã bị ghi đè vòng tròn FIFO!"
+    if d_obj > curr_date: return f"🛑 [CRITICAL] Ngày tra cứu thuộc về tương lai hoặc chưa nổ giải!"
         
     noise, current_mode = quet_chi_so_nhieu_he_thong(d_obj)
     d_danh = [20, 10, 5] if "V2.1" in current_mode else [50, 40, 30]
@@ -276,19 +266,20 @@ def web_phan_he_4_single_day_backtest(ngay_raw):
     return report
 
 def web_phan_he_5_monthly_audit(month, year):
+    curr_date, _, min_date = lay_thoi_gian_thuc_vn()
     try:
         thang, nam = int(month), int(year)
-        if nam > CURRENT_DATE.year or (nam == CURRENT_DATE.year and thang > CURRENT_DATE.month):
+        if nam > curr_date.year or (nam == curr_date.year and thang > curr_date.month):
             return "🛑 [ERROR] Không thể xem lũy kế của tháng trong tương lai!"
         max_days = lay_max_days(thang, nam)
-        ngay_chot = CURRENT_DATE.day if (thang == CURRENT_DATE.month and nam == CURRENT_DATE.year) else max_days
+        ngay_chot = curr_date.day if (thang == curr_date.month and nam == curr_date.year) else max_days
         
         report = f"📊 BẢO CÁO LŨY KẾ THÁNG {thang:02d}/{nam}:\n"
         report += f"-----------------------------------------------------------------------------------------------------------------------\n"
         luy_ke_tien, so_ngay_thang, so_ngay_win, tong_diem_danh, tong_tien_danh, tong_tien_an = 0, 0, 0, 0, 0, 0
         for d in range(1, ngay_chot + 1):
             d_obj = datetime(nam, thang, d)
-            if d_obj < MIN_DATE or d_obj > CURRENT_DATE: continue
+            if d_obj < min_date or d_obj > curr_date: continue
             so_ngay_thang += 1
             noise, mode_str = quet_chi_so_nhieu_he_thong(d_obj)
             d_danh = [20, 10, 5] if "V2.1" in mode_str else [50, 40, 30]
@@ -319,10 +310,11 @@ def web_phan_he_5_monthly_audit(month, year):
     except Exception as e: return f"🛑 [ERROR]: {e}"
 
 def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw):
+    curr_date, _, min_date = lay_thoi_gian_thuc_vn()
     res1, res2 = chuan_hoa_ngay(tu_ngay_raw), chuan_hoa_ngay(den_ngay_raw)
     if not res1 or not res2: return "🛑 [ERROR] Định dạng ngày không hợp lệ."
     t1, tu_ngay_str = res1; t2, den_ngay_str = res2
-    if t1 < MIN_DATE or t2 > CURRENT_DATE or t1 > t2: return "🛑 [ERROR] Ngày tra cứu vượt biên!"
+    if t1 < min_date or t2 > curr_date or t1 > t2: return "🛑 [ERROR] Ngày tra cứu vượt biên!"
         
     t_curr = t1; tong_so_ngay = 0; tong_von = 0; tong_thuong = 0; luy_ke_range = 0
     report = f"📈 BÁO CÁO HIỆU SUẤT TỪ [{tu_ngay_str}] ĐẾN [{den_ngay_str}]:\n"
@@ -346,10 +338,11 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw):
     return report
 
 def web_phan_he_7_raw_db_lookup(ngay_raw):
+    curr_date, _, min_date = lay_thoi_gian_thuc_vn()
     res = chuan_hoa_ngay(ngay_raw)
     if not res: return "🛑 [ERROR] Định dạng ngày nhập vào không hợp lệ."
     t_tra_cuu, ngay_tra_cuu = res
-    if t_tra_cuu < MIN_DATE or t_tra_cuu > CURRENT_DATE: return "🛑 [CRITICAL] Ngày tra cứu ngoài phạm vi bộ đệm!"
+    if t_tra_cuu < min_date or t_tra_cuu > curr_date: return "🛑 [CRITICAL] Ngày tra cứu ngoài phạm vi bộ đệm!"
         
     seed_goc = t_tra_cuu.year * 10000 + t_tra_cuu.month * 100 + t_tra_cuu.day
     local_rand = random.Random(seed_goc)
@@ -372,6 +365,8 @@ def web_phan_he_7_raw_db_lookup(ngay_raw):
 # ==============================================================================
 # 🎨 GIAO DIỆN WEB GRADIO
 # ==============================================================================
+_, INITIAL_NEXT_DATE, _ = lay_thoi_gian_thuc_vn()
+
 with gr.Blocks(title="XSMB QUANT ENGINE V2.3 FULL WEB", theme=gr.themes.Soft()) as demo:
     gr.Markdown("# 🚀 XSMB QUANT ENGINE V2.3 — TERMINAL ĐỊNH LƯỢNG WEB FULL 7 PHÂN HỆ")
     
@@ -380,7 +375,7 @@ with gr.Blocks(title="XSMB QUANT ENGINE V2.3 FULL WEB", theme=gr.themes.Soft()) 
         out_1 = gr.Textbox(label="Báo cáo Tiến trình Đồng bộ", lines=10)
         
     with gr.Tab("🎯 [2] Dự Đoán Kỳ Mới"):
-        title_2 = gr.Markdown(f"#### Kỳ quay ngày: {get_next_date_str()}")
+        title_2 = gr.Markdown(f"#### Kỳ quay ngày: {INITIAL_NEXT_DATE.strftime('%d/%m/%Y')}")
         btn_2 = gr.Button("🔍 TRÍCH XUẤT DANH MỤC KHUYẾN NGHỊ", variant="primary")
         out_2 = gr.Textbox(label="Hồ sơ Dự đoán AI", lines=12)
         btn_2.click(web_phan_he_2_predict, outputs=out_2)
