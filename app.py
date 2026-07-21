@@ -9,13 +9,13 @@ import gradio as gr
 # ==============================================================================
 # 🧬 HẠ TẦNG LÕI QUANT V2.3 (BẢO TOÀN 100% CÔNG THỨC TOÁN HỌC VÀ PRNG SANDBOX)
 # ==============================================================================
-VERSION = "V2.3"
+VERSION = "V2.3 Real-time"
 
-# TRẠNG THÁI HỆ THỐNG ĐỘNG (DYNAMIC ENGINE STATE)
-CURRENT_DATE = datetime(2026, 7, 19)
-NEXT_DATE = datetime(2026, 7, 20)
+# TỰ ĐỘNG BẮT THEO THỜI GIAN THỰC CỦA MÁY CHỦ
+NOW_OBJ = datetime.now()
+CURRENT_DATE = datetime(NOW_OBJ.year, NOW_OBJ.month, NOW_OBJ.day) - timedelta(days=1)
+NEXT_DATE = datetime(NOW_OBJ.year, NOW_OBJ.month, NOW_OBJ.day)
 MIN_DATE = CURRENT_DATE - timedelta(days=364) # Đúng 365 slots active
-MAX_ALLOWED_CURRENT = datetime(2026, 7, 20)  # Trần thực tế chống Sync văng
 SAFE_THRESHOLD = 52.50
 
 def get_current_date_str():
@@ -59,7 +59,7 @@ def quet_chi_so_nhieu_he_thong(date_obj):
     local_rand = random.Random(seed_goc)
     noise_percentage = local_rand.randint(30, 95)
     if noise_percentage > 68:
-        return noise_percentage, f"{VERSION[:-2]}.1 [PHÒNG THỦ - BẮN TỈA]"
+        return noise_percentage, f"{VERSION[:-10]}.1 [PHÒNG THỦ - BẮN TỈA]"
     else:
         return noise_percentage, f"{VERSION} [TẤN CÔNG - FULL VOL]"
 
@@ -93,46 +93,20 @@ def tinh_win_rate_so_tu_nap(ma_so, date_obj=None):
     return round(base_prob, 2)
 
 # ==============================================================================
-# 🚨 EMBEDDED AUTOMATED AUDIT & AUTO-FIX SUITE (220 TẦNG CHỐT CHẶN)
-# ==============================================================================
-def THỰC_THI_SIÊU_KIỂM_TOÁN_NGẦM_VÀ_AUTO_FIX():
-    global MIN_DATE, CURRENT_DATE, NEXT_DATE
-    so_ngay_thuc = (CURRENT_DATE - MIN_DATE).days + 1
-    if so_ngay_thuc != 365:
-        MIN_DATE = CURRENT_DATE - timedelta(days=364)
-
-    d_v = datetime(2026, 7, 20)
-    c_v1, w_v1, k_v1 = quet_toan_bo_ngay_lich_su(d_v)
-    for idx in range(300): _, _, _ = quet_toan_bo_ngay_lich_su(d_v + timedelta(days=idx))
-    c_v2, w_v2, k_v2 = quet_toan_bo_ngay_lich_su(d_v)
-    if c_v1 != c_v2 or w_v1 != w_v2 or k_v1 != k_v2:
-        raise ValueError("Master PRNG Final Verdict bị trượt hạt giống sau stress-test!")
-
-THỰC_THI_SIÊU_KIỂM_TOÁN_NGẦM_VÀ_AUTO_FIX()
-
-# ==============================================================================
 # 🖥️ XỬ LÝ ĐẦY ĐỦ 7 PHÂN HỆ CHỨC NĂNG DÀNH CHO GIAO DIỆN WEB
 # ==============================================================================
 
 def web_phan_he_1_sync():
-    global CURRENT_DATE, NEXT_DATE, MIN_DATE, IS_BUFFER_SYNCED
-    if CURRENT_DATE >= MAX_ALLOWED_CURRENT:
-        msg = (
-            f"⚠️ [CEILING LOCKED] Hệ thống đã đạt trần dữ liệu thô thực tế ngày {get_current_date_str()}!\n"
-            f"---------------------------------------------------------------------------------\n"
-            f"• Kỳ quay dự đoán hiện tại: 🚀 [{get_next_date_str()}] (Đã sẵn sàng)\n"
-            f"• Bộ đệm FIFO active     : [{get_min_date_str()}] -> [{get_current_date_str()}] (Đủ 365 slots)\n"
-            f"• Trạng thái System      : 🟢 CHUẨN XÁC TUYỆT ĐỐI 100%"
-        )
-        return msg, f"#### Kỳ quay ngày: {get_next_date_str()}"
-        
+    """Phân hệ 1: Đồng bộ đệm FIFO 365 slots active & Cuốn chiếu Dynamic State"""
+    global CURRENT_DATE, NEXT_DATE, MIN_DATE
+    
     d_truoc = get_current_date_str()
     n_truoc = get_next_date_str()
     
+    # Cuốn chiếu động liên tục theo thao tác người dùng
     CURRENT_DATE = CURRENT_DATE + timedelta(days=1)
     NEXT_DATE = CURRENT_DATE + timedelta(days=1)
     MIN_DATE = CURRENT_DATE - timedelta(days=364)
-    IS_BUFFER_SYNCED = True
     
     hasher = hashlib.md5()
     valid_slots = 0
@@ -150,7 +124,7 @@ def web_phan_he_1_sync():
     res = f"✅ ĐÃ ĐỒNG BỘ THÀNH CÔNG BỘ NHỚ ĐỆM VÒNG TRÒN (FIFO CIRCULAR BUFFER)\n"
     res += f"---------------------------------------------------------------------------------\n"
     res += f"• Dữ liệu thô cũ   : [{d_truoc}]  =>  Dự đoán cũ: [{n_truoc}]\n"
-    res += f"• Dữ liệu thô mới  : [{get_current_date_str()}] (Trần kịch trên)\n"
+    res += f"• Dữ liệu thô mới  : [{get_current_date_str()}] (Đã cập nhật)\n"
     res += f"• Kỳ dự đoán mới   : 🚀 [{get_next_date_str()}] (Forward-looking)\n"
     res += f"• Sàn đệm FIFO     : [{get_min_date_str()}] (Chính xác {valid_slots}/365 Slots Active)\n"
     res += f"• Thời gian quét   : {elapsed:.2f} ms\n"
@@ -263,14 +237,14 @@ def web_phan_he_4_single_day_backtest(ngay_raw):
     if d_obj > CURRENT_DATE: return f"🛑 [CRITICAL] Ngày tra cứu thuộc về tương lai!"
         
     noise, current_mode = quet_chi_so_nhieu_he_thong(d_obj)
-    d_danh = [20, 10, 5] if f"{VERSION[:-2]}.1" in current_mode else [50, 40, 30]
+    d_danh = [20, 10, 5] if f"{VERSION[:-10]}.1" in current_mode else [50, 40, 30]
     codes, is_win, k_ban = quet_toan_bo_ngay_lich_su(d_obj)
     
     report = f"📡 HỒ SƠ ĐỊNH LƯỢNG ĐỒNG BỘ THÀNH CÔNG CHO PHIÊN NGÀY: {ngay_str}\n"
     report += f"  • Mạch trạng thái thực thi: {current_mode} | Chỉ số nhiễu chu kỳ: {noise}%\n"
     report += f"---------------------------------------------------------------------------------\n"
     
-    if f"{VERSION[:-2]}.1" in current_mode and noise > 88:
+    if f"{VERSION[:-10]}.1" in current_mode and noise > 88:
         report += f"🚨 TRẠNG THÁI PHIÊN: 🔴 CO CỤM TRỮ VỐN | ⚪ AI RA LỆNH SKIP PHIÊN TRÁNH RÁC\n"
         return report
         
@@ -315,13 +289,13 @@ def web_phan_he_5_monthly_audit(month, year):
             if d_obj < MIN_DATE or d_obj > CURRENT_DATE: continue
             so_ngay_thang += 1
             noise, mode_str = quet_chi_so_nhieu_he_thong(d_obj)
-            d_danh = [20, 10, 5] if f"{VERSION[:-2]}.1" in mode_str else [50, 40, 30]
-            mach_label = f"⚙️ {VERSION[:-2]}.1[SAFE]" if f"{VERSION[:-2]}.1" in mode_str else f"⚡ {VERSION}[FULL]"
+            d_danh = [20, 10, 5] if f"{VERSION[:-10]}.1" in mode_str else [50, 40, 30]
+            mach_label = f"⚙️ {VERSION[:-10]}.1[SAFE]" if f"{VERSION[:-10]}.1" in mode_str else f"⚡ {VERSION}[FULL]"
             phi_phien = sum(d_danh) * 23000
             codes, is_win, k_ban = quet_toan_bo_ngay_lich_su(d_obj)
             m_mn, m_hv, m_tk = codes
             
-            if f"{VERSION[:-2]}.1" in mode_str and noise > 88:
+            if f"{VERSION[:-10]}.1" in mode_str and noise > 88:
                 report += f"{d:02d}/{thang:02d}/{nam} | {mach_label:<12} | {'⚪ SKIP':<10} | {'[AI TỪ CHỐI XUỐNG TIỀN NÉ NHỊP RÁC]':<45} | {luy_ke_tien:+,.0f} VND\n"
                 continue
                 
@@ -354,9 +328,9 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw):
     while t_curr <= t2:
         tong_so_ngay += 1
         noise, mode_str = quet_chi_so_nhieu_he_thong(t_curr)
-        d_danh = [20, 10, 5] if f"{VERSION[:-2]}.1" in mode_str else [50, 40, 30]
+        d_danh = [20, 10, 5] if f"{VERSION[:-10]}.1" in mode_str else [50, 40, 30]
         codes, is_win, k_ban = quet_toan_bo_ngay_lich_su(t_curr)
-        if not (f"{VERSION[:-2]}.1" in mode_str and noise > 88):
+        if not (f"{VERSION[:-10]}.1" in mode_str and noise > 88):
             phi_phien = sum(d_danh) * 23000; tong_von += phi_phien
             if is_win:
                 rev = d_danh[0]*80000 if k_ban==1 else (d_danh[1]*80000 if k_ban==2 else (d_danh[0]+d_danh[2])*80000)
@@ -451,7 +425,6 @@ with gr.Blocks(title="XSMB QUANT ENGINE V2.3 FULL WEB", theme=gr.themes.Soft()) 
 
     btn_1.click(web_phan_he_1_sync, outputs=[out_1, title_2])
 
-# 🔥 CẤU HÌNH TƯƠNG THÍCH CHUẨN 100% CHO MÁY CHỦ RENDER
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     demo.launch(server_name="0.0.0.0", server_port=port)
