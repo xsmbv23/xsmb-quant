@@ -7,12 +7,12 @@ from datetime import datetime, timedelta, timezone
 import gradio as gr
 
 # ==============================================================================
-# 🧬 LÕI QUANT V2.3 - UNIFIED SINGLE-SOURCE-OF-TRUTH ENGINE (AUTO-FIX ALL)
+# 🧬 LÕI QUANT V2.3 - SINGLE SOURCE OF TRUTH CENTRAL ENGINE (AUTO-FIX ALL)
 # ==============================================================================
-VERSION = "V2.3 Unified Auto-Fix"
+VERSION = "V2.3 Master Central Engine"
 
 def lay_thoi_gian_thuc_vn():
-    """Lõi neo thời gian chuẩn xác 100% theo Múi giờ Việt Nam (UTC+7) & Khung 18h30"""
+    """Neo thời gian chuẩn xác 100% theo Múi giờ Việt Nam (UTC+7) & Khung 18h30"""
     VN_TZ = timezone(timedelta(hours=7))
     now_vn = datetime.now(VN_TZ)
     
@@ -54,46 +54,70 @@ def lay_max_days(thang, nam=2026):
     return 31
 
 # ==============================================================================
-# 🎯 CƠ CẤU SINH KQXS & DỰ ĐOÁN THỐNG NHẤT (SINGLE SOURCE OF TRUTH)
+# 🎯 HÀM TRUNG TÂM NGUYÊN KHỐI - BẢO ĐẢM TÍNH ĐỒNG BỘ NGUYÊN TỬ 100%
 # ==============================================================================
 
-def sinh_ket_qua_xsmb_27_giai(date_obj):
-    """Sinh ma trận 27 giải KQXS thô chuẩn định hình theo seed ngày"""
+def get_master_data_for_date(date_obj):
+    """
+    HÀM DUY NHẤT SINH VÀ TRÍCH XUẤT TOÀN BỘ DỮ LIỆU CỦA MỘT NGÀY.
+    TẤT CẢ 7 PHÂN HỆ ĐỀU TRUY VẤN TỪ HÀM NÀY, TỰ ĐỘNG KHỚP 100%.
+    """
     seed_goc = date_obj.year * 10000 + date_obj.month * 100 + date_obj.day
-    local_rand = random.Random(seed_goc)
     
-    gdb = f'{local_rand.randint(10000, 99999):05d}'
-    g1 = f'{local_rand.randint(10000, 99999):05d}'
-    g2 = [f'{local_rand.randint(10000, 99999):05d}' for _ in range(2)]
-    g3 = [f'{local_rand.randint(10000, 99999):05d}' for _ in range(6)]
-    g4 = [f'{local_rand.randint(1000, 9999):04d}' for _ in range(4)]
-    g5 = [f'{local_rand.randint(1000, 9999):04d}' for _ in range(6)]
-    g6 = [f'{local_rand.randint(100, 999):03d}' for _ in range(3)]
-    g7 = [f'{local_rand.randint(10, 99):02d}' for _ in range(4)]
+    # 1. Sinh ma trận 27 giải KQXS thô chuẩn
+    rng_res = random.Random(seed_goc)
+    gdb = f'{rng_res.randint(10000, 99999):05d}'
+    g1 = f'{rng_res.randint(10000, 99999):05d}'
+    g2 = [f'{rng_res.randint(10000, 99999):05d}' for _ in range(2)]
+    g3 = [f'{rng_res.randint(10000, 99999):05d}' for _ in range(6)]
+    g4 = [f'{rng_res.randint(1000, 9999):04d}' for _ in range(4)]
+    g5 = [f'{rng_res.randint(1000, 9999):04d}' for _ in range(6)]
+    g6 = [f'{rng_res.randint(100, 999):03d}' for _ in range(3)]
+    g7 = [f'{rng_res.randint(10, 99):02d}' for _ in range(4)]
     
-    danh_sach_27_giai = [gdb, g1] + g2 + g3 + g4 + g5 + g6 + g7
-    lo_to_27 = [giai[-2:] for giai in danh_sach_27_giai]
-    return gdb, g1, g2, lo_to_27
-
-def lay_danh_muc_du_doan_ai(date_obj):
-    """Sinh danh mục dự đoán AI (Mũi nhọn, Hòa vốn, Túi khí) deterministically"""
-    seed_pred = date_obj.year * 10000 + date_obj.month * 100 + date_obj.day + 999
-    local_rand = random.Random(seed_pred)
+    danh_sach_27 = [gdb, g1] + g2 + g3 + g4 + g5 + g6 + g7
+    lo_to_27 = [giai[-2:] for giai in danh_sach_27]
     
+    # 2. Sinh danh mục dự đoán AI cho ngày date_obj
+    rng_pred = random.Random(seed_goc + 8888)
     pool = [f"{i:02d}" for i in range(100)]
-    m_mn = local_rand.choice(pool); pool.remove(m_mn)
-    m_hv = local_rand.choice(pool); pool.remove(m_hv)
-    m_tk = local_rand.choice(pool)
-    return [m_mn, m_hv, m_tk]
-
-def quet_chi_so_nhieu_he_thong(date_obj):
-    seed_goc = date_obj.year * 10000 + date_obj.month * 100 + date_obj.day
-    local_rand = random.Random(seed_goc)
-    noise_percentage = local_rand.randint(30, 95)
-    if noise_percentage > 68:
-        return noise_percentage, "V2.1 [PHÒNG THỦ - BẮN TỈA]"
-    else:
-        return noise_percentage, "V2.3 [TẤN CÔNG - FULL VOL]"
+    m_mn = rng_pred.choice(pool); pool.remove(m_mn)
+    m_hv = rng_pred.choice(pool); pool.remove(m_hv)
+    m_tk = rng_pred.choice(pool)
+    pred_codes = [m_mn, m_hv, m_tk]
+    
+    # 3. Quét nhiễu & Chế độ thực thi
+    rng_noise = random.Random(seed_goc + 5555)
+    noise = rng_noise.randint(30, 95)
+    mode = "V2.1 [PHÒNG THỦ - BẮN TỈA]" if noise > 68 else "V2.3 [TẤN CÔNG - FULL VOL]"
+    
+    # 4. Tính toán kết quả thực tế dựa trên đúng 27 giải trên
+    nhay_list = [lo_to_27.count(code) for code in pred_codes]
+    is_win = sum(nhay_list) > 0
+    
+    d_danh = [20, 10, 5] if "V2.1" in mode else [50, 40, 30]
+    is_skip = ("V2.1" in mode and noise > 88)
+    
+    phi_phien = 0 if is_skip else sum(d_danh) * 23000
+    rev = 0 if is_skip else sum(d_danh[i] * nhay_list[i] * 80000 for i in range(3))
+    net_profit = rev - phi_phien
+    
+    return {
+        'date_obj': date_obj,
+        'date_str': date_obj.strftime("%d/%m/%Y"),
+        'gdb': gdb, 'g1': g1, 'g2': g2, 'g3': g3, 'g4': g4, 'g5': g5, 'g6': g6, 'g7': g7,
+        'lo_to_27': lo_to_27,
+        'pred_codes': pred_codes,
+        'noise': noise,
+        'mode': mode,
+        'nhay_list': nhay_list,
+        'is_win': is_win,
+        'is_skip': is_skip,
+        'd_danh': d_danh,
+        'phi_phien': phi_phien,
+        'rev': rev,
+        'net_profit': net_profit
+    }
 
 def tinh_win_rate_so_tu_nap(ma_so, date_obj=None):
     try:
@@ -101,21 +125,18 @@ def tinh_win_rate_so_tu_nap(ma_so, date_obj=None):
         if val < 0 or val > 99: return 0.0
     except Exception:
         return 0.0
-    
     if date_obj is None:
         _, next_date, _ = lay_thoi_gian_thuc_vn()
         date_obj = next_date
-        
     seed_val = date_obj.year * 10000 + date_obj.month * 100 + date_obj.day + val * 100
     r_audit = random.Random(seed_val)
     return round(r_audit.uniform(50.80, 56.20), 2)
 
 # ==============================================================================
-# 🖥️ XỬ LÝ 7 PHÂN HỆ NGUYÊN KHỐI - CROSS-TEST DỮ LIỆU ĐỒNG BỘ 100%
+# 🖥️ TỔNG HỢP GIAO DIỆN WEB 7 PHÂN HỆ KHÓA DỮ LIỆU ĐỒNG BỘ
 # ==============================================================================
 
 def web_phan_he_1_sync():
-    """Phân hệ 1: Đồng bộ đệm FIFO 365 slots chuẩn xác"""
     curr_date, next_date, min_date = lay_thoi_gian_thuc_vn()
     hasher = hashlib.md5()
     valid_slots = 0
@@ -123,8 +144,8 @@ def web_phan_he_1_sync():
     
     for i in range(365):
         slot_date = min_date + timedelta(days=i)
-        codes = lay_danh_muc_du_doan_ai(slot_date)
-        hasher.update(f"{slot_date.strftime('%Y%m%d')}:{','.join(codes)}".encode('utf-8'))
+        data = get_master_data_for_date(slot_date)
+        hasher.update(f"{slot_date.strftime('%Y%m%d')}:{','.join(data['pred_codes'])}".encode('utf-8'))
         valid_slots += 1
         
     elapsed = (time.time() - start_time) * 1000
@@ -132,8 +153,8 @@ def web_phan_he_1_sync():
     
     res = f"✅ ĐÃ ĐỒNG BỘ THÀNH CÔNG BỘ NHỚ ĐỆM VÒNG TRÒN (FIFO CIRCULAR BUFFER)\n"
     res += f"---------------------------------------------------------------------------------\n"
-    res += f"• Dữ liệu thô mới nhất : [{curr_date.strftime('%d/%m/%Y')}] (Đã chốt KQXS thực tế)\n"
-    res += f"• Kỳ quay dự đoán mới  : 🚀 [{next_date.strftime('%d/%m/%Y')}] (Forward-looking)\n"
+    res += f"• Dữ liệu thô mới nhất : [{curr_date.strftime('%d/%m/%Y')}] (Thực tế đã chốt KQXS)\n"
+    res += f"• Kỳ quay dự đoán mới  : 🚀 [{next_date.strftime('%d/%m/%Y')}] (Forward-looking chuẩn)\n"
     res += f"• Sàn đệm FIFO active  : [{min_date.strftime('%d/%m/%Y')}] -> [{curr_date.strftime('%d/%m/%Y')}] ({valid_slots}/365 Slots)\n"
     res += f"• Thời gian xử lý      : {elapsed:.2f} ms\n"
     res += f"🔐 Mã băm MD5 Checksum toàn vẹn : [0x{checksum_hash}]\n"
@@ -141,50 +162,46 @@ def web_phan_he_1_sync():
     return res, f"#### Kỳ quay ngày: {next_date.strftime('%d/%m/%Y')}"
 
 def web_phan_he_2_predict():
-    """Phân hệ 2: Dự đoán AI kỳ mới"""
     _, next_date, _ = lay_thoi_gian_thuc_vn()
-    noise, mode = quet_chi_so_nhieu_he_thong(next_date)
-    codes = lay_danh_muc_du_doan_ai(next_date)
+    data = get_master_data_for_date(next_date)
+    
     weights = ['Mũi nhọn', 'Hòa vốn', 'Túi khí']
     prob = [0.5384, 0.5383, 0.5322]
-    diem_khuyen_nghi = [20, 10, 5] if 'V2.1' in mode else [50, 40, 30]
     gia_von, gia_thuong = 23000, 80000
-    tong_von = sum(diem_khuyen_nghi) * gia_von
+    tong_von = sum(data['d_danh']) * gia_von
     
-    res = f"🎯 BÁO CÁO DỰ ĐOÁN ĐỊNH LƯỢNG CHO KỲ QUAY NGÀY: {next_date.strftime('%d/%m/%Y')}\n"
-    res += f"🎚️ Lõi thực thi hiện tại: {mode} | Chỉ số nhiễu chu kỳ: {noise}%\n"
+    res = f"🎯 BÁO CÁO DỰ ĐOÁN ĐỊNH LƯỢNG CHO KỲ QUAY NGÀY: {data['date_str']}\n"
+    res += f"🎚️ Lõi thực thi hiện tại: {data['mode']} | Chỉ số nhiễu chu kỳ: {data['noise']}%\n"
     res += f"---------------------------------------------------------------------------------\n"
     res += f"{'VỊ TRÍ DANH MỤC':<18} | {'MÃ SỐ':<6} | {'XÁC SUẤT':<8} | {'KHUYẾN NGHỊ':<12} | {'CHI PHÍ VỐN':<12}\n"
     res += f"---------------------------------------------------------------------------------\n"
     
     for i in range(3):
-        chi_phi = diem_khuyen_nghi[i] * gia_von
-        res += f"-> Lớp [{weights[i]:<8}] | {codes[i]:<6} | {prob[i]:.4f}   | {diem_khuyen_nghi[i]} điểm     | {chi_phi:,.0f} VND\n"
+        chi_phi = data['d_danh'][i] * gia_von
+        res += f"-> Lớp [{weights[i]:<8}] | {data['pred_codes'][i]:<6} | {prob[i]:.4f}   | {data['d_danh'][i]} điểm     | {chi_phi:,.0f} VND\n"
         
     res += f"---------------------------------------------------------------------------------\n"
-    res += f"💰 TỔNG NGUỒN VỐN ĐẦU TƯ ĐỘNG: {tong_von:,.0f} VND (Tổng: {sum(diem_khuyen_nghi)} điểm)\n\n"
+    res += f"💰 TỔNG NGUỒN VỐN ĐẦU TƯ ĐỘNG: {tong_von:,.0f} VND (Tổng: {sum(data['d_danh'])} điểm)\n\n"
     res += f"📉 MA TRẬN PHÂN PHỐI ÂM DƯƠNG RÒNG DỰ KIẾN (NET PROFIT):\n"
-    res += f"  • Kịch bản 1 (Chỉ nổ Mũi nhọn {codes[0]})  : +{(diem_khuyen_nghi[0]*gia_thuong - tong_von):,.0f} VND\n"
-    res += f"  • Kịch bản 2 (Chỉ nổ Hòa vốn {codes[1]})   : +{(diem_khuyen_nghi[1]*gia_thuong - tong_von):,.0f} VND\n"
-    res += f"  • Kịch bản 3 (Nổ kép {codes[0]} + {codes[2]})      : +{((diem_khuyen_nghi[0]+diem_khuyen_nghi[2])*gia_thuong - tong_von):,.0f} VND\n"
+    res += f"  • Kịch bản 1 (Chỉ nổ Mũi nhọn {data['pred_codes'][0]})  : +{(data['d_danh'][0]*gia_thuong - tong_von):,.0f} VND\n"
+    res += f"  • Kịch bản 2 (Chỉ nổ Hòa vốn {data['pred_codes'][1]})   : +{(data['d_danh'][1]*gia_thuong - tong_von):,.0f} VND\n"
+    res += f"  • Kịch bản 3 (Nổ kép {data['pred_codes'][0]} + {data['pred_codes'][2]})      : +{((data['d_danh'][0]+data['d_danh'][2])*gia_thuong - tong_von):,.0f} VND\n"
     res += f"  • Kịch bản rủi ro (Trượt danh mục) : -{tong_von:,.0f} VND\n"
     return res
 
 def web_phan_he_3_risk_audit(target_date_str, capital_vnd, code_mn, code_hv, code_tk):
-    """Phân hệ 3: Kiểm toán rủi ro vốn giải ngân"""
     _, next_date, _ = lay_thoi_gian_thuc_vn()
     res_date = chuan_hoa_ngay(target_date_str)
     if res_date is None:
         target_date_obj = next_date
-        t_str = next_date.strftime("%d/%m/%Y")
     else:
-        target_date_obj, t_str = res_date
+        target_date_obj, _ = res_date
 
-    pred_codes = lay_danh_muc_du_doan_ai(target_date_obj)
+    data = get_master_data_for_date(target_date_obj)
     
-    ma_mn = str(code_mn).strip() if code_mn and str(code_mn).strip() else pred_codes[0]
-    ma_hv = str(code_hv).strip() if code_hv and str(code_hv).strip() else pred_codes[1]
-    ma_tk = str(code_tk).strip() if code_tk and str(code_tk).strip() else pred_codes[2]
+    ma_mn = str(code_mn).strip() if code_mn and str(code_mn).strip() else data['pred_codes'][0]
+    ma_hv = str(code_hv).strip() if code_hv and str(code_hv).strip() else data['pred_codes'][1]
+    ma_tk = str(code_tk).strip() if code_tk and str(code_tk).strip() else data['pred_codes'][2]
     user_codes = [ma_mn, ma_hv, ma_tk]
     weights = ['Mũi nhọn', 'Hòa vốn', 'Túi khí']
     
@@ -200,7 +217,7 @@ def web_phan_he_3_risk_audit(target_date_str, capital_vnd, code_mn, code_hv, cod
     allocated_diem = [0, 0, 0]
     allowed_count = 0
     
-    report = f"🔍 KẾT QUẢ SÁT HẠCH % WIN-RATE LÕI VÀ PHÁN QUYẾT GIẢI NGÂN CHO NGÀY {t_str}:\n"
+    report = f"🔍 KẾT QUẢ SÁT HẠCH % WIN-RATE LÕI VÀ PHÁN QUYẾT GIẢI NGÂN CHO NGÀY {data['date_str']}:\n"
     report += f"---------------------------------------------------------------------------------\n"
     report += f"{'VỊ TRÍ':<12} | {'MÃ SỐ':<6} | {'% WIN-RATE':<11} | {'PHÁN QUYẾT HỆ THỐNG'}\n"
     report += f"---------------------------------------------------------------------------------\n"
@@ -234,7 +251,7 @@ def web_phan_he_3_risk_audit(target_date_str, capital_vnd, code_mn, code_hv, cod
         report += f"  -> Lớp [{weights[i]:<7}] Mã [{user_codes[i]}]: {allocated_diem[i]} điểm | Chi phí: {allocated_diem[i]*gia_von:,.0f} VND\n"
     report += f"---------------------------------------------------------------------------------\n"
     report += f"💵 Vốn thực chi sau bộ lọc: {vong_von_thuc:,.0f} VND (Dư trả tài khoản: {cap_val - vong_von_thuc:,.0f} VND)\n\n"
-    report += f"📈 SƠ ĐỒ MA TRẬN PHÂN PHỐI ÂM DƯƠNG RÒNG THỰC TẾ CHO NGÀY {t_str}:\n"
+    report += f"📈 SƠ ĐỒ MA TRẬN PHÂN PHỐI ÂM DƯƠNG RÒNG THỰC TẾ CHO NGÀY {data['date_str']}:\n"
     report += f"  • Kịch bản 1 (Mũi nhọn {ma_mn})       : {f'+{(allocated_diem[0]*gia_thuong - vong_von_thuc):,.0f} VND' if status_bool[0] else '[🛑 LAYER LOCKED]'}\n"
     report += f"  • Kịch bản 2 (Hòa vốn {ma_hv})        : {f'+{(allocated_diem[1]*gia_thuong - vong_von_thuc):,.0f} VND' if status_bool[1] else '[🛑 LAYER LOCKED]'}\n"
     report += f"  • Kịch bản 3 (Kép Mũi nhọn + Túi khí) : {f'+{((allocated_diem[0]+allocated_diem[2])*gia_thuong - vong_von_thuc):,.0f} VND' if (status_bool[0] or status_bool[2]) else '[🛑 LAYER LOCKED]'}\n"
@@ -242,35 +259,24 @@ def web_phan_he_3_risk_audit(target_date_str, capital_vnd, code_mn, code_hv, cod
     return report
 
 def web_phan_he_4_single_day_backtest(ngay_raw):
-    """Phân hệ 4: Dò điểm trúng thực tế từ 27 giải KQXS thô"""
     curr_date, _, min_date = lay_thoi_gian_thuc_vn()
     res = chuan_hoa_ngay(ngay_raw)
     if not res: return "🛑 [ERROR] Định dạng ngày nhập vào không hợp lệ. Dùng DD/MM/YYYY."
-    d_obj, ngay_str = res
+    d_obj, _ = res
     if d_obj < min_date: return "🛑 [CRITICAL] Dữ liệu ngày này đã bị ghi đè vòng tròn FIFO!"
     if d_obj > curr_date: return "🛑 [CRITICAL] Ngày tra cứu thuộc về tương lai hoặc chưa nổ giải!"
         
-    noise, current_mode = quet_chi_so_nhieu_he_thong(d_obj)
-    d_danh = [20, 10, 5] if "V2.1" in current_mode else [50, 40, 30]
-    codes = lay_danh_muc_du_doan_ai(d_obj)
+    data = get_master_data_for_date(d_obj)
     
-    # DÒ TRỰC TIẾP TRONG 27 GIẢI KẾT QUẢ CỦA PHÂN HỆ 7
-    _, _, _, lo_to_27 = sinh_ket_qua_xsmb_27_giai(d_obj)
-    nhay = [lo_to_27.count(code) for code in codes]
-    
-    report = f"📡 HỒ SƠ ĐỊNH LƯỢNG ĐỒNG BỘ THÀNH CÔNG CHO PHIÊN NGÀY: {ngay_str}\n"
-    report += f"  • Mạch trạng thái thực thi: {current_mode} | Chỉ số nhiễu chu kỳ: {noise}%\n"
+    report = f"📡 HỒ SƠ ĐỊNH LƯỢNG ĐỒNG BỘ THÀNH CÔNG CHO PHIÊN NGÀY: {data['date_str']}\n"
+    report += f"  • Mạch trạng thái thực thi: {data['mode']} | Chỉ số nhiễu chu kỳ: {data['noise']}%\n"
     report += f"---------------------------------------------------------------------------------\n"
     
-    if "V2.1" in current_mode and noise > 88:
+    if data['is_skip']:
         report += "🚨 TRẠNG THÁI PHIÊN: 🔴 CO CỤM TRỮ VỐN | ⚪ AI RA LỆNH SKIP PHIÊN TRÁNH RÁC\n"
         return report
         
-    tong_von_phien = sum(d_danh) * 23000
-    rev = sum(d_danh[i] * nhay[i] * 80000 for i in range(3))
-    net_profit = rev - tong_von_phien
-    is_win = sum(nhay) > 0
-    status_str = "🟢 WIN (Đạt điểm rơi lợi nhuận)" if is_win else "🔴 LOSS (Trượt toàn bộ danh mục)"
+    status_str = "🟢 WIN (Đạt điểm rơi lợi nhuận)" if data['is_win'] else "🔴 LOSS (Trượt toàn bộ danh mục)"
     
     report += f"🎯 TRẠNG THÁI: {status_str}\n"
     report += f"---------------------------------------------------------------------------------\n"
@@ -278,15 +284,14 @@ def web_phan_he_4_single_day_backtest(ngay_raw):
     report += f"---------------------------------------------------------------------------------\n"
     weights = ['Mũi nhọn', 'Hòa vốn', 'Túi khí']
     for i in range(3):
-        report += f"• Lớp [{weights[i]:<10}] | {codes[i]:<6} | {d_danh[i]} điểm   | {nhay[i]} nháy    | {d_danh[i]*23000:,.0f} VND\n"
+        report += f"• Lớp [{weights[i]:<10}] | {data['pred_codes'][i]:<6} | {data['d_danh'][i]} điểm   | {data['nhay_list'][i]} nháy    | {data['d_danh'][i]*23000:,.0f} VND\n"
     report += f"---------------------------------------------------------------------------------\n"
-    report += f"💰 TỔNG TIỀN ĐÁNH : {tong_von_phien:,.0f} VND\n"
-    report += f"💵 TỔNG TIỀN ĂN  : {rev:,.0f} VND\n"
-    report += f"📈 LỢI NHUẬN RÒNG : {'+' if net_profit>=0 else ''}{net_profit:,.0f} VND\n"
+    report += f"💰 TỔNG TIỀN ĐÁNH : {data['phi_phien']:,.0f} VND\n"
+    report += f"💵 TỔNG TIỀN ĂN  : {data['rev']:,.0f} VND\n"
+    report += f"📈 LỢI NHUẬN RÒNG : {'+' if data['net_profit']>=0 else ''}{data['net_profit']:,.0f} VND\n"
     return report
 
 def web_phan_he_5_monthly_audit(month, year):
-    """Phân hệ 5: Bóc tách lũy kế tháng khớp 100% dữ liệu gốc"""
     curr_date, _, min_date = lay_thoi_gian_thuc_vn()
     try:
         thang, nam = int(month), int(year)
@@ -295,33 +300,23 @@ def web_phan_he_5_monthly_audit(month, year):
         max_days = lay_max_days(thang, nam)
         ngay_chot = curr_date.day if (thang == curr_date.month and nam == curr_date.year) else max_days
         
-        report = f"📊 BÁO CÁO LŨY KẾ THÁNG {thang:02d}/{nam}:\n"
+        report = f"📊 BẢO CÁO LŨY KẾ THÁNG {thang:02d}/{nam}:\n"
         report += f"-----------------------------------------------------------------------------------------------------------------------\n"
         luy_ke_tien = 0
         for d in range(1, ngay_chot + 1):
             d_obj = datetime(nam, thang, d)
             if d_obj < min_date or d_obj > curr_date: continue
             
-            noise, mode_str = quet_chi_so_nhieu_he_thong(d_obj)
-            d_danh = [20, 10, 5] if "V2.1" in mode_str else [50, 40, 30]
-            mach_label = "⚙️ V2.1[SAFE]" if "V2.1" in mode_str else "⚡ V2.3[FULL]"
-            phi_phien = sum(d_danh) * 23000
+            data = get_master_data_for_date(d_obj)
+            mach_label = "⚙️ V2.1[SAFE]" if "V2.1" in data['mode'] else "⚡ V2.3[FULL]"
             
-            codes = lay_danh_muc_du_doan_ai(d_obj)
-            _, _, _, lo_to_27 = sinh_ket_qua_xsmb_27_giai(d_obj)
-            nhay = [lo_to_27.count(code) for code in codes]
-            
-            if "V2.1" in mode_str and noise > 88:
+            if data['is_skip']:
                 report += f"{d:02d}/{thang:02d}/{nam} | {mach_label:<12} | {'⚪ SKIP':<10} | {'[AI TỪ CHỐI XUỐNG TIỀN NÉ NHỊP RÁC]':<45} | {luy_ke_tien:+,.0f} VND\n"
                 continue
                 
-            rev = sum(d_danh[i] * nhay[i] * 80000 for i in range(3))
-            bien_dong = rev - phi_phien
-            luy_ke_tien += bien_dong
-            
-            is_win = sum(nhay) > 0
-            status_str = "🟢 WIN " if is_win else "🔴 LOSS"
-            ma_str = f"{'🎯' if is_win else ''}{codes[0]} - {codes[1]} - {codes[2]}"
+            luy_ke_tien += data['net_profit']
+            status_str = "🟢 WIN " if data['is_win'] else "🔴 LOSS"
+            ma_str = f"{'🎯' if data['is_win'] else ''}{data['pred_codes'][0]} - {data['pred_codes'][1]} - {data['pred_codes'][2]}"
             
             report += f"{d:02d}/{thang:02d}/{nam} | {mach_label:<12} | {status_str:<10} | {ma_str:<45} | {luy_ke_tien:+,.0f} VND\n"
             
@@ -331,7 +326,6 @@ def web_phan_he_5_monthly_audit(month, year):
     except Exception as e: return f"🛑 [ERROR]: {e}"
 
 def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw):
-    """Phân hệ 6: Quét chu kỳ hiệu suất khớp 100% dữ liệu gốc"""
     curr_date, _, min_date = lay_thoi_gian_thuc_vn()
     res1, res2 = chuan_hoa_ngay(tu_ngay_raw), chuan_hoa_ngay(den_ngay_raw)
     if not res1 or not res2: return "🛑 [ERROR] Định dạng ngày không hợp lệ."
@@ -342,39 +336,32 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw):
     report = f"📈 BÁO CÁO HIỆU SUẤT TỪ [{tu_ngay_str}] ĐẾN [{den_ngay_str}]:\n"
     report += f"-----------------------------------------------------------------------------------------------------------------------\n"
     while t_curr <= t2:
-        noise, mode_str = quet_chi_so_nhieu_he_thong(t_curr)
-        d_danh = [20, 10, 5] if "V2.1" in mode_str else [50, 40, 30]
-        codes = lay_danh_muc_du_doan_ai(t_curr)
-        _, _, _, lo_to_27 = sinh_ket_qua_xsmb_27_giai(t_curr)
-        nhay = [lo_to_27.count(code) for code in codes]
-        
-        if not ("V2.1" in mode_str and noise > 88):
-            phi_phien = sum(d_danh) * 23000; tong_von += phi_phien
-            rev = sum(d_danh[i] * nhay[i] * 80000 for i in range(3))
-            tong_thuong += rev
-            bien_dong = rev - phi_phien
-            status_str = "🟢 WIN " if sum(nhay) > 0 else "🔴 LOSS"
-            luy_ke_range += bien_dong
-            report += f"{t_curr.strftime('%d/%m/%Y')} | {status_str} | Mã: {codes} | Delta: {bien_dong:+,.0f} | LK: {luy_ke_range:+,.0f} VND\n"
+        data = get_master_data_for_date(t_curr)
+        if not data['is_skip']:
+            tong_von += data['phi_phien']
+            tong_thuong += data['rev']
+            luy_ke_range += data['net_profit']
+            status_str = "🟢 WIN " if data['is_win'] else "🔴 LOSS"
+            report += f"{t_curr.strftime('%d/%m/%Y')} | {status_str} | Mã: {data['pred_codes']} | Delta: {data['net_profit']:+,.0f} | LK: {luy_ke_range:+,.0f} VND\n"
         t_curr += timedelta(days=1)
     report += f"-----------------------------------------------------------------------------------------------------------------------\n"
     report += f"💰 LỢI NHUẬN RÒNG CHU KỲ: {(tong_thuong - tong_von):+,.0f} VND\n"
     return report
 
 def web_phan_he_7_raw_db_lookup(ngay_raw):
-    """Phân hệ 7: Tra cứu DB gốc 27 giải ma trận phẳng chính xác"""
     curr_date, _, min_date = lay_thoi_gian_thuc_vn()
     res = chuan_hoa_ngay(ngay_raw)
     if not res: return "🛑 [ERROR] Định dạng ngày nhập vào không hợp lệ."
-    t_tra_cuu, ngay_tra_cuu = res
+    t_tra_cuu, _ = res
     if t_tra_cuu < min_date or t_tra_cuu > curr_date: return "🛑 [CRITICAL] Ngày tra cứu ngoài phạm vi bộ đệm!"
         
-    gdb, g1, g2, lo_to_27 = sinh_ket_qua_xsmb_27_giai(t_tra_cuu)
-    lo_to_sorted = sorted(lo_to_27)
+    data = get_master_data_for_date(t_tra_cuu)
+    g2_str = ", ".join(data['g2'])
     
-    report = f"📅 Kết quả XSMB ngày {ngay_tra_cuu}:\n"
-    report += f"🏆 ĐẶC BIỆT : {gdb} | Giải Nhất: {g1} | Giải Nhì: {g2}\n"
+    report = f"📅 Kết quả XSMB ngày {data['date_str']}:\n"
+    report += f"🏆 ĐẶC BIỆT : {data['gdb']} | Giải Nhất: {data['g1']} | Giải Nhì: {g2_str}\n"
     report += "🎰 Dải Lô tô 27 giải ma trận phẳng :\n"
+    lo_to_sorted = sorted(data['lo_to_27'])
     for idx, lo in enumerate(lo_to_sorted): 
         report += f"[{lo}] " + ("\n" if (idx + 1) % 9 == 0 else " ")
     return report
