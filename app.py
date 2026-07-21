@@ -2,15 +2,14 @@ import os
 import sys
 import time
 import random
-import hashlib
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 import gradio as gr
 
 # ==============================================================================
-# 🧬 HẠ TẦNG QUANT V4.1 - EXCEL REAL DATA ENGINE
+# 🧬 HẠ TẦNG QUANT V5.0 - INFINITE EXCEL REAL DATA ENGINE (VÔ HẠN THỜI GIAN)
 # ==============================================================================
-VERSION = "V4.1 Excel Real Engine"
+VERSION = "V5.0 Infinite Excel Engine"
 DATA_FILE = "Ket_Qua_Loto27.xlsx"
 
 def lay_thoi_gian_thuc_vn():
@@ -21,25 +20,22 @@ def lay_thoi_gian_thuc_vn():
     else:
         curr_date = datetime(now_vn.year, now_vn.month, now_vn.day) - timedelta(days=1)
     next_date = curr_date + timedelta(days=1)
-    min_date = curr_date - timedelta(days=364)
-    return curr_date, next_date, min_date
+    return curr_date, next_date
 
 SAFE_THRESHOLD = 52.50
 
 def chuan_hoa_ngay(ngay_raw):
+    """Xử lý mọi định dạng ngày tháng từ Excel (Hỗ trợ YYYY/MM/DD, DD-MM-YYYY...)"""
     if not ngay_raw or pd.isna(ngay_raw) or not str(ngay_raw).strip():
         return None
     try:
-        s = str(ngay_raw).strip().split()[0] # Bỏ giờ nếu có
+        s = str(ngay_raw).strip().split()[0]
         s = s.replace('-', '/').replace('.', '/')
         parts = s.split('/')
         if len(parts) != 3: return None
         d, m, y = parts[0], parts[1], parts[2]
-        
-        # Đảo ngược nếu Excel lưu kiểu YYYY/MM/DD
         if len(d) == 4:
             y, m, d = d, m, y
-            
         if len(d) == 1: d = "0" + d
         if len(m) == 1: m = "0" + m
         if len(y) == 2: y = "20" + y
@@ -54,10 +50,10 @@ def lay_max_days(thang, nam=2026):
     return 31
 
 def doc_database_tu_excel():
-    """Đọc file Ket_Qua_Loto27.xlsx từ GitHub"""
+    """Đọc file Excel vô hạn ngày từ GitHub"""
     db = {}
     if not os.path.exists(DATA_FILE):
-        return db, f"🛑 CHƯA THẤY FILE '{DATA_FILE}' TRÊN SERVER!"
+        return db, f"🛑 CHƯA THẤY FILE '{DATA_FILE}' TRÊN SERVER GITHUB!"
     
     try:
         df = pd.read_excel(DATA_FILE, dtype=str)
@@ -72,7 +68,6 @@ def doc_database_tu_excel():
             loto_raw = str(row[col_loto]).strip()
             loto_list = [x.strip()[-2:] for x in loto_raw.replace(',', ' ').split() if x.strip()]
             
-            # Đảm bảo lấy chuẩn 27 giải lô tô
             if len(loto_list) >= 27:
                 db[ngay_str] = loto_list[:27]
                 
@@ -95,28 +90,31 @@ def tinh_win_rate_so_tu_nap(ma_so, date_obj=None):
         if val < 0 or val > 99: return 0.0
     except: return 0.0
     if date_obj is None:
-        _, next_date, _ = lay_thoi_gian_thuc_vn()
+        _, next_date = lay_thoi_gian_thuc_vn()
         date_obj = next_date
     r_audit = random.Random(date_obj.year * 10000 + date_obj.month * 100 + date_obj.day + val * 100)
     return round(r_audit.uniform(50.80, 56.20), 2)
 
 # ==============================================================================
-# 🖥️ XỬ LÝ FULL 7 PHÂN HỆ DỰA TRÊN DỮ LIỆU FILE EXCEL REAL
+# 🖥️ XỬ LÝ FULL 7 PHÂN HỆ VỚI LÕI DATABASE VÔ HẠN
 # ==============================================================================
 
 def web_phan_he_1_sync():
     db, msg = doc_database_tu_excel()
-    curr_date, next_date, min_date = lay_thoi_gian_thuc_vn()
+    curr_date, next_date = lay_thoi_gian_thuc_vn()
     
-    res = f"📡 KẾT NỐI HỆ THỐNG DỮ LIỆU EXCEL THỰC TẾ:\n"
+    so_luong_ngay = len(db)
+    
+    res = f"📡 KẾT NỐI HỆ THỐNG DỮ LIỆU EXCEL THỰC TẾ (UNLIMITED TIME-SERIES):\n"
     res += f"---------------------------------------------------------------------------------\n"
-    res += f"• Trạng thái File  : {msg}\n"
-    res += f"• Ngày thực tế mới nhất : [{curr_date.strftime('%d/%m/%Y')}]\n"
+    res += f"• Trạng thái File       : {msg}\n"
+    res += f"• Tổng quy mô Database  : {so_luong_ngay} ngày (Không giới hạn chu kỳ)\n"
+    res += f"• Ngày giờ hệ thống VN  : [{datetime.now(timezone(timedelta(hours=7))).strftime('%d/%m/%Y %H:%M:%S')}]\n"
     res += f"• Kỳ quay dự đoán mới   : 🚀 [{next_date.strftime('%d/%m/%Y')}]\n"
     return res, f"#### Kỳ quay ngày: {next_date.strftime('%d/%m/%Y')}"
 
 def web_phan_he_2_predict():
-    _, next_date, _ = lay_thoi_gian_thuc_vn()
+    _, next_date = lay_thoi_gian_thuc_vn()
     codes = lay_danh_muc_ai_du_doan(next_date)
     weights = ['Mũi nhọn', 'Hòa vốn', 'Túi khí']
     prob = [0.5384, 0.5383, 0.5322]
@@ -133,7 +131,7 @@ def web_phan_he_2_predict():
     return res
 
 def web_phan_he_3_risk_audit(target_date_str, capital_vnd, c_mn, c_hv, c_tk):
-    _, next_date, _ = lay_thoi_gian_thuc_vn()
+    _, next_date = lay_thoi_gian_thuc_vn()
     res_date = chuan_hoa_ngay(target_date_str)
     t_obj = res_date[0] if res_date else next_date
     pred_codes = lay_danh_muc_ai_du_doan(t_obj)
@@ -174,7 +172,7 @@ def web_phan_he_4_single_day_backtest(ngay_raw):
     d_obj, ngay_str = res
     
     if ngay_str not in db:
-        return f"🛑 [KHÔNG TÌM THẤY DỮ LIỆU]: Ngày {ngay_str} chưa có trong file Excel '{DATA_FILE}'."
+        return f"🛑 [CHƯA CÓ DỮ LIỆU]: Ngày {ngay_str} chưa được sếp nhập vào file Excel '{DATA_FILE}'. Vui lòng bổ sung!"
         
     lo_to_27 = db[ngay_str]
     codes = lay_danh_muc_ai_du_doan(d_obj)
@@ -202,20 +200,23 @@ def web_phan_he_4_single_day_backtest(ngay_raw):
 
 def web_phan_he_5_monthly_audit(month, year):
     db, _ = doc_database_tu_excel()
-    curr_date, _, min_date = lay_thoi_gian_thuc_vn()
     try:
         thang, nam = int(month), int(year)
         max_days = lay_max_days(thang, nam)
-        ngay_chot = curr_date.day if (thang == curr_date.month and nam == curr_date.year) else max_days
         
         report = f"📊 BÁO CÁO LŨY KẾ THÁNG {thang:02d}/{nam} (ĐỌC TỪ EXCEL REAL):\n"
         report += f"-------------------------------------------------------------------------------------------------------\n"
         luy_ke_tien = 0
-        for d in range(1, ngay_chot + 1):
+        ngay_co_du_lieu = 0
+        
+        for d in range(1, max_days + 1):
             d_obj = datetime(nam, thang, d)
             ngay_str = d_obj.strftime("%d/%m/%Y")
+            
+            # Nếu ngày đó sếp không nhập vào Excel -> Tự động bỏ qua không báo lỗi
             if ngay_str not in db: continue
             
+            ngay_co_du_lieu += 1
             lo_to_27 = db[ngay_str]
             codes = lay_danh_muc_ai_du_doan(d_obj)
             nhay_list = [lo_to_27.count(c) for c in codes]
@@ -229,6 +230,7 @@ def web_phan_he_5_monthly_audit(month, year):
             report += f"{ngay_str} | {status_str:<10} | Mã: {codes} | LK: {luy_ke_tien:+,.0f} VND\n"
             
         report += f"-------------------------------------------------------------------------------------------------------\n"
+        report += f"📊 Đã quét {ngay_co_du_lieu} ngày có dữ liệu trong tháng {thang:02d}/{nam}.\n"
         report += f"📊 LỢI NHUẬN RÒNG LŨY KẾ THÁNG: {luy_ke_tien:+,.0f} VND\n"
         return report
     except: return "🛑 [ERROR] Lỗi bóc tách lũy kế."
@@ -240,11 +242,15 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw):
     t1 = res1[0]; t2 = res2[0]
     
     t_curr = t1; tong_von = 0; tong_thuong = 0; luy_ke_range = 0
+    ngay_co_du_lieu = 0
+    
     report = f"📈 BÁO CÁO CHU KỲ TỪ EXCEL TỪ [{res1[1]}] ĐẾN [{res2[1]}]:\n"
     report += f"-------------------------------------------------------------------------------------------------------\n"
     while t_curr <= t2:
         ngay_str = t_curr.strftime("%d/%m/%Y")
+        
         if ngay_str in db:
+            ngay_co_du_lieu += 1
             lo_to_27 = db[ngay_str]
             codes = lay_danh_muc_ai_du_doan(t_curr)
             nhay_list = [lo_to_27.count(c) for c in codes]
@@ -255,8 +261,11 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw):
             tong_von += phi_phien; tong_thuong += rev; luy_ke_range += delta
             status_str = "🟢 WIN " if sum(nhay_list) > 0 else "🔴 LOSS"
             report += f"{ngay_str} | {status_str} | Delta: {delta:+,.0f} | LK: {luy_ke_range:+,.0f} VND\n"
+            
         t_curr += timedelta(days=1)
+        
     report += f"-------------------------------------------------------------------------------------------------------\n"
+    report += f"📊 Đã quét {ngay_co_du_lieu} ngày có dữ liệu trong chu kỳ.\n"
     report += f"💰 LỢI NHUẬN RÒNG CHU KỲ: {(tong_thuong - tong_von):+,.0f} VND\n"
     return report
 
@@ -267,7 +276,7 @@ def web_phan_he_7_raw_db_lookup(ngay_raw):
     _, ngay_str = res
     
     if ngay_str not in db:
-        return f"🛑 [KHÔNG TÌM THẤY DỮ LIỆU]: Ngày {ngay_str} chưa có trong file Excel '{DATA_FILE}'."
+        return f"🛑 [CHƯA CÓ DỮ LIỆU]: Ngày {ngay_str} chưa được nạp vào file Excel '{DATA_FILE}'."
         
     lo_to_sorted = sorted(db[ngay_str])
     report = f"📅 KẾT QUẢ DẢI LÔ TÔ THỰC TẾ NGÀY {ngay_str} (ĐỌC TỪ EXCEL):\n"
@@ -279,13 +288,13 @@ def web_phan_he_7_raw_db_lookup(ngay_raw):
 # ==============================================================================
 # 🎨 GIAO DIỆN WEB GRADIO
 # ==============================================================================
-_, INITIAL_NEXT_DATE, _ = lay_thoi_gian_thuc_vn()
+_, INITIAL_NEXT_DATE = lay_thoi_gian_thuc_vn()
 
-with gr.Blocks(title="XSMB QUANT ENGINE V4.1 EXCEL", theme=gr.themes.Soft()) as demo:
-    gr.Markdown("# 🚀 XSMB QUANT ENGINE V4.1 — ĐỌC DỮ LIỆU THỰC TẾ TỪ EXCEL")
+with gr.Blocks(title="XSMB QUANT ENGINE V5.0 EXCEL UNLIMITED", theme=gr.themes.Soft()) as demo:
+    gr.Markdown("# 🚀 XSMB QUANT ENGINE V5.0 — LÕI DỮ LIỆU EXCEL VÔ HẠN")
     
     with gr.Tab("🔄 [1] Sync File Excel"):
-        btn_1 = gr.Button("⚡ KÍCH HOẠT NẠP DỮ LIỆU EXCEL", variant="primary")
+        btn_1 = gr.Button("⚡ KÍCH HOẠT NẠP DỮ LIỆU EXCEL (UNLIMITED)", variant="primary")
         out_1 = gr.Textbox(label="Báo cáo Nạp File Excel", lines=8)
         
     with gr.Tab("🎯 [2] Dự Đoán Kỳ Mới"):
