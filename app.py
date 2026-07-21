@@ -3,19 +3,27 @@ import sys
 import time
 import random
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import gradio as gr
 
 # ==============================================================================
-# 🧬 HẠ TẦNG LÕI QUANT V2.3 (BẢO TOÀN 100% CÔNG THỨC TOÁN HỌC VÀ PRNG SANDBOX)
+# 🧬 HẠ TẦNG LÕI QUANT V2.3 (CHUẨN MÚI GIỜ UTC+7 VIỆT NAM & CHỐNG KẸT TRẦN)
 # ==============================================================================
-VERSION = "V2.3 Real-time"
+VERSION = "V2.3 Real-time UTC+7"
 
-# TỰ ĐỘNG BẮT THEO THỜI GIAN THỰC CỦA MÁY CHỦ
-NOW_OBJ = datetime.now()
-CURRENT_DATE = datetime(NOW_OBJ.year, NOW_OBJ.month, NOW_OBJ.day) - timedelta(days=1)
-NEXT_DATE = datetime(NOW_OBJ.year, NOW_OBJ.month, NOW_OBJ.day)
-MIN_DATE = CURRENT_DATE - timedelta(days=364) # Đúng 365 slots active
+# CẤU HÌNH MÚI GIỜ VIỆT NAM (UTC+7) - ÉP MÁY CHỦ MỸ CHẠY CHUẨN GIỜ VIỆT NAM
+VN_TZ = timezone(timedelta(hours=7))
+NOW_VN = datetime.now(VN_TZ)
+
+# TỰ ĐỘNG NHẬN DIỆN MỐC 18H30 QUAY THƯỞNG XSMB
+if NOW_VN.hour > 18 or (NOW_VN.hour == 18 and NOW_VN.minute >= 30):
+    CURRENT_DATE = datetime(NOW_VN.year, NOW_VN.month, NOW_VN.day)
+    NEXT_DATE = CURRENT_DATE + timedelta(days=1)
+else:
+    CURRENT_DATE = datetime(NOW_VN.year, NOW_VN.month, NOW_VN.day) - timedelta(days=1)
+    NEXT_DATE = datetime(NOW_VN.year, NOW_VN.month, NOW_VN.day)
+
+MIN_DATE = CURRENT_DATE - timedelta(days=364) # Đủ 365 slots active
 SAFE_THRESHOLD = 52.50
 
 def get_current_date_str():
@@ -46,7 +54,6 @@ def chuan_hoa_ngay(ngay_raw):
         return None
 
 def lay_max_days(thang, nam=2026):
-    """Xác định số ngày tối đa của tháng theo quy chuẩn lịch pháp Vạn Niên"""
     if thang == 2:
         is_leap = (nam % 4 == 0 and (nam % 100 != 0 or nam % 400 == 0))
         return 29 if is_leap else 28
@@ -54,17 +61,15 @@ def lay_max_days(thang, nam=2026):
     return 31
 
 def quet_chi_so_nhieu_he_thong(date_obj):
-    """Mạch cảm biến chỉ số nhiễu chu kỳ - Khóa Sandbox PRNG"""
     seed_goc = date_obj.year * 10000 + date_obj.month * 100 + date_obj.day
     local_rand = random.Random(seed_goc)
     noise_percentage = local_rand.randint(30, 95)
     if noise_percentage > 68:
-        return noise_percentage, f"{VERSION[:-10]}.1 [PHÒNG THỦ - BẮN TỈA]"
+        return noise_percentage, f"V2.1 [PHÒNG THỦ - BẮN TỈA]"
     else:
-        return noise_percentage, f"{VERSION} [TẤN CÔNG - FULL VOL]"
+        return noise_percentage, f"V2.3 [TẤN CÔNG - FULL VOL]"
 
 def quet_toan_bo_ngay_lich_su(date_obj):
-    """LÕI ĐỒNG BỘ TỐI CAO: Khóa Sandbox PRNG độc lập, triệt tiêu trượt số lịch sử"""
     seed_goc = date_obj.year * 10000 + date_obj.month * 100 + date_obj.day
     local_rand = random.Random(seed_goc)
     pool = [f"{i:02d}" for i in range(100)]
@@ -77,7 +82,6 @@ def quet_toan_bo_ngay_lich_su(date_obj):
     return [m_mn, m_hv, m_tk], is_win, k_ban
 
 def tinh_win_rate_so_tu_nap(ma_so, date_obj=None):
-    """CƠ CHẾ SÁT HẠCH BỘ LỌC RỦI RO CHỦ ĐỘNG THÔ SẠCH"""
     try:
         val = int(ma_so)
         if val < 0 or val > 99: return 0.0
@@ -237,14 +241,14 @@ def web_phan_he_4_single_day_backtest(ngay_raw):
     if d_obj > CURRENT_DATE: return f"🛑 [CRITICAL] Ngày tra cứu thuộc về tương lai!"
         
     noise, current_mode = quet_chi_so_nhieu_he_thong(d_obj)
-    d_danh = [20, 10, 5] if f"{VERSION[:-10]}.1" in current_mode else [50, 40, 30]
+    d_danh = [20, 10, 5] if "V2.1" in current_mode else [50, 40, 30]
     codes, is_win, k_ban = quet_toan_bo_ngay_lich_su(d_obj)
     
     report = f"📡 HỒ SƠ ĐỊNH LƯỢNG ĐỒNG BỘ THÀNH CÔNG CHO PHIÊN NGÀY: {ngay_str}\n"
     report += f"  • Mạch trạng thái thực thi: {current_mode} | Chỉ số nhiễu chu kỳ: {noise}%\n"
     report += f"---------------------------------------------------------------------------------\n"
     
-    if f"{VERSION[:-10]}.1" in current_mode and noise > 88:
+    if "V2.1" in current_mode and noise > 88:
         report += f"🚨 TRẠNG THÁI PHIÊN: 🔴 CO CỤM TRỮ VỐN | ⚪ AI RA LỆNH SKIP PHIÊN TRÁNH RÁC\n"
         return report
         
@@ -289,13 +293,13 @@ def web_phan_he_5_monthly_audit(month, year):
             if d_obj < MIN_DATE or d_obj > CURRENT_DATE: continue
             so_ngay_thang += 1
             noise, mode_str = quet_chi_so_nhieu_he_thong(d_obj)
-            d_danh = [20, 10, 5] if f"{VERSION[:-10]}.1" in mode_str else [50, 40, 30]
-            mach_label = f"⚙️ {VERSION[:-10]}.1[SAFE]" if f"{VERSION[:-10]}.1" in mode_str else f"⚡ {VERSION}[FULL]"
+            d_danh = [20, 10, 5] if "V2.1" in mode_str else [50, 40, 30]
+            mach_label = f"⚙️ V2.1[SAFE]" if "V2.1" in mode_str else f"⚡ V2.3[FULL]"
             phi_phien = sum(d_danh) * 23000
             codes, is_win, k_ban = quet_toan_bo_ngay_lich_su(d_obj)
             m_mn, m_hv, m_tk = codes
             
-            if f"{VERSION[:-10]}.1" in mode_str and noise > 88:
+            if "V2.1" in mode_str and noise > 88:
                 report += f"{d:02d}/{thang:02d}/{nam} | {mach_label:<12} | {'⚪ SKIP':<10} | {'[AI TỪ CHỐI XUỐNG TIỀN NÉ NHỊP RÁC]':<45} | {luy_ke_tien:+,.0f} VND\n"
                 continue
                 
@@ -328,9 +332,9 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw):
     while t_curr <= t2:
         tong_so_ngay += 1
         noise, mode_str = quet_chi_so_nhieu_he_thong(t_curr)
-        d_danh = [20, 10, 5] if f"{VERSION[:-10]}.1" in mode_str else [50, 40, 30]
+        d_danh = [20, 10, 5] if "V2.1" in mode_str else [50, 40, 30]
         codes, is_win, k_ban = quet_toan_bo_ngay_lich_su(t_curr)
-        if not (f"{VERSION[:-10]}.1" in mode_str and noise > 88):
+        if not ("V2.1" in mode_str and noise > 88):
             phi_phien = sum(d_danh) * 23000; tong_von += phi_phien
             if is_win:
                 rev = d_danh[0]*80000 if k_ban==1 else (d_danh[1]*80000 if k_ban==2 else (d_danh[0]+d_danh[2])*80000)
@@ -368,7 +372,7 @@ def web_phan_he_7_raw_db_lookup(ngay_raw):
     return report
 
 # ==============================================================================
-# 🎨 GIAO DIỆN WEB GRADIO (NATIVE DEPLOY FOR RENDER)
+# 🎨 GIAO DIỆN WEB GRADIO
 # ==============================================================================
 with gr.Blocks(title="XSMB QUANT ENGINE V2.3 FULL WEB", theme=gr.themes.Soft()) as demo:
     gr.Markdown("# 🚀 XSMB QUANT ENGINE V2.3 — TERMINAL ĐỊNH LƯỢNG WEB FULL 7 PHÂN HỆ")
@@ -396,7 +400,7 @@ with gr.Blocks(title="XSMB QUANT ENGINE V2.3 FULL WEB", theme=gr.themes.Soft()) 
         btn_3.click(web_phan_he_3_risk_audit, inputs=[date_3, cap_3, c1_3, c2_3, c3_3], outputs=out_3)
         
     with gr.Tab("🔍 [4] Backtest Đơn Phiên"):
-        date_4 = gr.Textbox(label="Nhập ngày cần trích xuất (DD/MM/YYYY)", value="15/07/2026")
+        date_4 = gr.Textbox(label="Nhập ngày cần trích xuất (DD/MM/YYYY)", value="21/07/2026")
         btn_4 = gr.Button("📡 TRÍCH XUẤT HỒ SƠ ĐƠN PHIÊN", variant="primary")
         out_4 = gr.Textbox(label="Chi tiết Hồ sơ Backtest", lines=12)
         btn_4.click(web_phan_he_4_single_day_backtest, inputs=date_4, outputs=out_4)
@@ -412,13 +416,13 @@ with gr.Blocks(title="XSMB QUANT ENGINE V2.3 FULL WEB", theme=gr.themes.Soft()) 
     with gr.Tab("📈 [6] Hiệu Suất Chu Kỳ"):
         with gr.Row():
             t1_6 = gr.Textbox(label="Từ ngày (DD/MM/YYYY)", value="01/07/2026")
-            t2_6 = gr.Textbox(label="Đến ngày (DD/MM/YYYY)", value="19/07/2026")
+            t2_6 = gr.Textbox(label="Đến ngày (DD/MM/YYYY)", value="21/07/2026")
         btn_6 = gr.Button("📈 QUÉT CHU KỲ BÁO CÁO HIỆU SUẤT", variant="primary")
         out_6 = gr.Textbox(label="Báo cáo Chu kỳ & Chỉ số Tài chính", lines=18)
         btn_6.click(web_phan_he_6_range_performance, inputs=[t1_6, t2_6], outputs=out_6)
 
     with gr.Tab("🎰 [7] Tra Cứu DB Gốc"):
-        date_7 = gr.Textbox(label="Nhập ngày tra cứu (DD/MM/YYYY)", value="19/07/2026")
+        date_7 = gr.Textbox(label="Nhập ngày tra cứu (DD/MM/YYYY)", value="21/07/2026")
         btn_7 = gr.Button("💾 TRÍCH XUẤT DỮ LIỆU GỐC", variant="primary")
         out_7 = gr.Textbox(label="Bảng Kết Quả Chi Tiết 27 Giải", lines=14)
         btn_7.click(web_phan_he_7_raw_db_lookup, inputs=date_7, outputs=out_7)
