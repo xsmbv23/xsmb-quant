@@ -2,3 +2,4 @@ gradio
 torch
 pandas
 openpyxl
+numpy
