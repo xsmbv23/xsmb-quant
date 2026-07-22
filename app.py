@@ -9,9 +9,9 @@ from datetime import datetime, timedelta, timezone
 import gradio as gr
 
 # ==============================================================================
-# 🧬 HẠ TẦNG QUANT V16.1 - MULTI-PAIR SNIPER ENGINE (3-5 CẶP LÔ)
+# 🧬 HẠ TẦNG QUANT V16.2 - OCTO-SNIPER MASTER (CỐ ĐỊNH 4 CẶP / 8 CON LÔ)
 # ==============================================================================
-VERSION = "V16.1 MULTI-PAIR SNIPER ENGINE"
+VERSION = "V16.2 OCTO-SNIPER MASTER"
 DATA_FILE = "Ket_Qua_Loto27.xlsx"
 
 def lay_thoi_gian_thuc_vn():
@@ -68,13 +68,15 @@ def doc_database_tu_excel():
     except Exception as e: return db, f"🛑 LỖI ĐỌC FILE EXCEL: {e}"
 
 # ==============================================================================
-# 🎯 LÕI V16.1: TÍNH TOÁN DỰ ĐOÁN TỪ 3 ĐẾN 5 CẶP LÔ (AB - BA)
+# 🎯 LÕI V16.2: SOI TỐI ƯU 4 CẶP LÔ (8 CON SỐ) + KIỂM SOÁT WIN-RATE
 # ==============================================================================
-def tinh_cap_lo_v16(target_dt, db, num_pairs=3):
-    num_pairs = int(num_pairs)
-    if num_pairs < 3: num_pairs = 3
-    if num_pairs > 5: num_pairs = 5
-
+def tinh_4_cap_lo_v16_2(target_dt, db):
+    """
+    Trích xuất ĐÚNG 4 Cặp Lô Lộn (8 con) với 3 tầng kiểm soát rủi ro:
+    1. Lô Rơi Momentum + Heatmap Đầu/Đuôi
+    2. Cấm 100% Lô Khan > 5 ngày
+    3. Van Bóp Cò Siết Chặt Anomaly Score >= 7.8
+    """
     hist_days = []
     curr_t = target_dt - timedelta(days=1)
     for _ in range(12):
@@ -84,27 +86,30 @@ def tinh_cap_lo_v16(target_dt, db, num_pairs=3):
         curr_t -= timedelta(days=1)
 
     if len(hist_days) < 3:
-        default_pairs = [("12", "21"), ("34", "43"), ("56", "65"), ("78", "87"), ("09", "90")]
-        return default_pairs[:num_pairs], False, "🛑 THIẾU DATA NỀN - ĐÓNG VAN", 0.0
+        default_4_pairs = [("12", "21"), ("34", "43"), ("56", "65"), ("78", "87")]
+        return default_4_pairs, False, "🛑 THIẾU DATA NỀN - TẮT VAN", 0.0
 
     scores = np.zeros(100)
     head_counts = np.zeros(10)
     tail_counts = np.zeros(10)
 
+    # 1. Trọng số Lô Rơi phiên trước
     for p in hist_days[0]:
-        scores[p] += 3.8
+        scores[p] += 4.0
         head_counts[p // 10] += 1
         tail_counts[p % 10] += 1
 
+    # 2. Tần suất 3 phiên gần nhất
     for r_p in hist_days[:3]:
-        for p in r_p: scores[p] += 1.2
+        for p in r_p: scores[p] += 1.3
 
+    # 3. Cộng điểm Heatmap
     for i in range(100):
         h = i // 10; t = i % 10
         if head_counts[h] >= 4: scores[i] += 1.2
         if tail_counts[t] >= 4: scores[i] += 1.2
 
-    # Phong tỏa Lô Khan > 5 ngày
+    # 4. Phong tỏa CỨNG Lô Khan > 5 ngày
     for i in range(100):
         giam = 0
         for r_p in hist_days:
@@ -112,98 +117,95 @@ def tinh_cap_lo_v16(target_dt, db, num_pairs=3):
             giam += 1
         if giam >= 5: scores[i] = -999.0
 
-    # Ghép cặp lộn (c1, c2)
+    # Ghép Cặp Lộn
     pair_scores = {}
     for i in range(100):
         c1 = f"{i:02d}"
         c2 = c1[1] + c1[0]
-        if c1 == c2: continue
+        if c1 == c2: continue # Bỏ qua lô kép
         pair_key = tuple(sorted([c1, c2]))
         if pair_key not in pair_scores:
             idx1, idx2 = int(c1), int(c2)
             pair_scores[pair_key] = scores[idx1] + scores[idx2]
 
+    # Sắp xếp lấy Top 4 Cặp
     sorted_pairs = sorted(pair_scores.items(), key=lambda x: x[1], reverse=True)
-    top_pairs = [p[0] for p in sorted_pairs[:num_pairs]]
-    top_scores = [p[1] for p in sorted_pairs[:num_pairs]]
-    anomaly_score = float(np.mean(top_scores)) if top_scores else 0.0
+    top_4_pairs = [p[0] for p in sorted_pairs[:4]]
+    top_4_scores = [p[1] for p in sorted_pairs[:4]]
+    
+    anomaly_score = float(np.mean(top_4_scores)) if top_4_scores else 0.0
 
-    # Van bóp cò rủi ro
-    if anomaly_score < 6.5:
+    # 🎚️ VAN KIỂM SOÁT BÓP CÒ CỰC ĐOAN (Ngưỡng 7.8 để bảo vệ Win-Rate)
+    if anomaly_score < 7.8:
         is_trade = False
-        reason = f"🛡️ ĐÓNG VAN AN TOÀN: Anomaly Score ({anomaly_score:.1f} < 6.5) -> Né nhiễu rác"
-    elif anomaly_score < 8.0:
-        is_trade = True
-        reason = f"🌗 BÓP CÒ 50% VỐN (HALF SNIPER): Anomaly Score ({anomaly_score:.1f})"
+        reason = f"🛡️ ĐÓNG VAN AN TOÀN: Anomaly Score ({anomaly_score:.1f} < 7.8) -> Né nhiễu rác"
     else:
         is_trade = True
-        reason = f"🔥 BÓP CÒ 100% VỐN (FULL SNIPER): Anomaly Score ({anomaly_score:.1f})"
+        reason = f"🔥 BÓP CÒ BẮN TỈA: Anomaly Score Đạt Chuẩn ({anomaly_score:.1f} >= 7.8)"
 
-    return top_pairs, is_trade, reason, anomaly_score
+    return top_4_pairs, is_trade, reason, anomaly_score
 
 # ==============================================================================
-# 🖥️ FULL 7 PHÂN HỆ GIAO DIỆN V16.1
+# 🖥️ FULL 7 PHÂN HỆ GIAO DIỆN V16.2
 # ==============================================================================
 def web_phan_he_1_sync():
     db, msg = doc_database_tu_excel()
     curr_date, next_date = lay_thoi_gian_thuc_vn()
-    res = f"📡 KẾT NỐI HỆ THỐNG V16.1 MULTI-PAIR SNIPER ENGINE:\n"
+    res = f"📡 KẾT NỐI HỆ THỐNG V16.2 OCTO-SNIPER MASTER:\n"
     res += f"---------------------------------------------------------------------------------\n"
     res += f"• Trạng thái File       : {msg}\n"
     res += f"• Mốc chốt kết quả VN   : [{curr_date.strftime('%d/%m/%Y')}]\n"
     res += f"• Kỳ quay dự đoán mới   : 🚀 [{next_date.strftime('%d/%m/%Y')}]\n"
     res += f"---------------------------------------------------------------------------------\n"
-    res += f"💡 CƠ CHẾ MỚI: Dự đoán từ 3 - 5 Cặp Lô lộn, hiển thị chi tiết Cặp Lô, Tổng Tiền, Số Nháy & Số Lãi!"
+    res += f"💡 CƠ CHẾ V16.2: Tập trung chuẩn hóa 4 Cặp Lô (8 con), khóa Anomaly Gate >= 7.8 để đẩy Win-Rate!"
     return res, f"#### Kỳ quay ngày: {next_date.strftime('%d/%m/%Y')}"
 
-def web_phan_he_2_predict(num_pairs, cost_per_point, pts_per_code):
+def web_phan_he_2_predict(cost_per_point, pts_per_code):
     try:
         db, _ = doc_database_tu_excel()
         _, next_date = lay_thoi_gian_thuc_vn()
-        n_pairs = int(num_pairs)
         cost_pt = float(cost_per_point)
         pts = int(pts_per_code)
         
-        pairs, is_trade, reason, sc = tinh_cap_lo_v16(next_date, db, num_pairs=n_pairs)
+        pairs, is_trade, reason, sc = tinh_4_cap_lo_v16_2(next_date, db)
         pair_strs = [f"{p[0]}-{p[1]}" for p in pairs]
         
-        tong_con = n_pairs * 2
+        tong_con = 8 # 4 cặp x 2 con = 8 con
         tong_diem = tong_con * pts if is_trade else 0
         tong_von = tong_diem * cost_pt
         
-        res = f"🎯 BÁO CÁO DỰ ĐOÁN {n_pairs} CẶP LÔ KỲ NGÀY: {next_date.strftime('%d/%m/%Y')}\n"
+        res = f"🎯 BÁO CÁO DỰ ĐOÁN 4 CẶP LÔ (8 CON) CHO KỲ: {next_date.strftime('%d/%m/%Y')}\n"
         res += f"---------------------------------------------------------------------------------\n"
         res += f"🎚️ Phán quyết Van       : {reason}\n"
-        res += f"📋 CẶP LÔ DỰ ĐOÁN       : [ " + ", ".join(pair_strs) + " ]\n"
+        res += f"📋 4 CẶP LÔ DỰ ĐOÁN (8 CON): [ " + " | ".join(pair_strs) + " ]\n"
         res += f"💵 TỔNG TIỀN ĐÁNH       : {tong_von:,.0f} VND ({tong_diem} điểm - Giá {cost_pt:,.0f}đ)\n"
         res += f"---------------------------------------------------------------------------------\n"
-        res += f"📈 KỊCH BẢN DOANH THU & SỐ LÃI KHI NỔ NHÁY:\n"
+        res += f"📈 MA TRẬN ĐIỂM HÒA VỐN & SỐ LÃI DỰ KIẾN:\n"
         if not is_trade:
             res += f" 🛡️ Van đóng: Bảo toàn 100% tiền mặt (Tổng tiền đánh: 0 VNĐ - Số lãi: 0 VNĐ)\n"
         else:
-            for nhay in range(1, n_pairs + 3):
+            for nhay in range(1, 7):
                 rev = nhay * pts * 80000
                 so_lai = rev - tong_von
-                tag = "🟢 CÓ LÃI" if so_lai > 0 else ("⚖️ HÒA VỐN" if so_lai == 0 else "🔴 ÂM VỐN")
+                tag = "🟢 CÓ SỐ LÃI" if so_lai > 0 else ("⚖️ HÒA VỐN" if so_lai == 0 else "🔴 ÂM VỐN")
                 res += f" • Nổ x{nhay} nháy : Doanh thu {rev:,.0f} VND | Số lãi: {so_lai:+12,.0f} VND [{tag}]\n"
         return res
     except Exception as e: return f"🛑 [LỖI PHÂN HỆ 2]: {e}"
 
-def web_phan_he_3_risk_audit(capital_vnd, num_pairs, cost_per_point):
+def web_phan_he_3_risk_audit(capital_vnd, cost_per_point):
     try:
         cap_val = float(capital_vnd)
-        n_pairs = int(num_pairs)
         cost_pt = float(cost_per_point)
         
-        tong_con = n_pairs * 2
+        tong_con = 8
         tong_diem_kha_thi = int(cap_val // cost_pt)
         pts_per_code = int(tong_diem_kha_thi // tong_con)
         vong_von = pts_per_code * tong_con * cost_pt
         
-        report = f"🔍 SƠ ĐỒ PHÂN BỔ VỐN CHO {n_pairs} CẶP LÔ ({tong_con} CON SỐ):\n"
+        report = f"🔍 SƠ ĐỒ PHÂN BỔ VỐN CHO 4 CẶP LÔ (8 CON SỐ):\n"
         report += f"---------------------------------------------------------------------------------\n"
-        report += f" • Phân bổ đều          : {pts_per_code} điểm/con ({pts_per_code * 2} điểm/cặp)\n"
-        report += f" 💵 TỔNG TIỀN ĐÁNH      : {vong_von:,.0f} VND (Giá {cost_pt:,.0f}đ/điểm)\n"
+        report += f" • Chia đều 8 con lô    : {pts_per_code} điểm/con ({pts_per_code * 2} điểm/cặp)\n"
+        report += f" 💵 TỔNG TIỀN ĐÁNH      : {vong_von:,.0f} VND (Giá vốn {cost_pt:,.0f}đ/điểm)\n"
         report += f" 💵 Dư trả tài khoản    : {cap_val - vong_von:,.0f} VND\n"
         report += f"---------------------------------------------------------------------------------\n"
         min_hits = math.ceil(vong_von / (pts_per_code * 80000)) if pts_per_code > 0 else 0
@@ -211,7 +213,7 @@ def web_phan_he_3_risk_audit(capital_vnd, num_pairs, cost_per_point):
         return report
     except Exception as e: return f"🛑 [LỖI PHÂN HỆ 3]: {e}"
 
-def web_phan_he_4_single_day_backtest(ngay_raw, num_pairs, cost_per_point, pts_per_code):
+def web_phan_he_4_single_day_backtest(ngay_raw, cost_per_point, pts_per_code):
     try:
         db, _ = doc_database_tu_excel()
         res = chuan_hoa_ngay(ngay_raw)
@@ -219,18 +221,14 @@ def web_phan_he_4_single_day_backtest(ngay_raw, num_pairs, cost_per_point, pts_p
         d_obj, ngay_str = res
         if ngay_str not in db: return f"🛑 Ngày {ngay_str} chưa có trong file Excel."
             
-        n_pairs = int(num_pairs)
         cost_pt = float(cost_per_point)
         pts = int(pts_per_code)
         lo_to_27 = db[ngay_str]['prizes_str']
         
-        pairs, is_trade, reason, sc = tinh_cap_lo_v16(d_obj, db, num_pairs=n_pairs)
+        pairs, is_trade, reason, sc = tinh_4_cap_lo_v16_2(d_obj, db)
         pair_strs = [f"{p[0]}-{p[1]}" for p in pairs]
         
-        all_codes = []
-        for p in pairs:
-            all_codes.extend([p[0], p[1]])
-            
+        all_codes = [c for p in pairs for c in p]
         nhay_dict = {c: lo_to_27.count(c) for c in all_codes}
         tong_nhay = sum(nhay_dict.values())
         
@@ -254,18 +252,17 @@ def web_phan_he_4_single_day_backtest(ngay_raw, num_pairs, cost_per_point, pts_p
         return report
     except Exception as e: return f"🛑 [LỖI PHÂN HỆ 4]: {e}"
 
-def web_phan_he_5_monthly_audit(month, year, num_pairs, cost_per_point, pts_per_code):
+def web_phan_he_5_monthly_audit(month, year, cost_per_point, pts_per_code):
     try:
         db, _ = doc_database_tu_excel()
         thang, nam = int(month), int(year)
-        n_pairs = int(num_pairs)
         cost_pt = float(cost_per_point)
         pts = int(pts_per_code)
         max_days = lay_max_days(thang, nam)
         
-        report = f"📊 BÁO CÁO TÀI CHÍNH LŨY KẾ {n_pairs} CẶP LÔ THÁNG {thang:02d}/{nam}:\n"
+        report = f"📊 BÁO CÁO TÀI CHÍNH LŨY KẾ 4 CẶP LÔ THÁNG {thang:02d}/{nam}:\n"
         report += f"---------------------------------------------------------------------------------------------------------------------\n"
-        report += f"{'NGÀY':<10} | {'CẶP LÔ DỰ ĐOÁN':<20} | {'TIỀN ĐÁNH':<12} | {'SỐ NHÁY':<8} | {'SỐ LÃI PHIÊN':<14} | {'LŨY KẾ LÃI':<15}\n"
+        report += f"{'NGÀY':<10} | {'CẶP LÔ DỰ ĐOÁN':<22} | {'TỔNG TIỀN ĐÁNH':<14} | {'SỐ NHÁY':<8} | {'SỐ LÃI PHIÊN':<14} | {'LŨY KẾ LÃI':<15}\n"
         report += f"---------------------------------------------------------------------------------------------------------------------\n"
         
         luy_ke_tien = 0; traded_days = 0; skip_days = 0; win_days = 0
@@ -275,13 +272,13 @@ def web_phan_he_5_monthly_audit(month, year, num_pairs, cost_per_point, pts_per_
             ngay_str = d_obj.strftime("%d/%m/%Y")
             if ngay_str not in db: continue
             
-            pairs, is_trade, _, _ = tinh_cap_lo_v16(d_obj, db, num_pairs=n_pairs)
+            pairs, is_trade, _, _ = tinh_4_cap_lo_v16_2(d_obj, db)
             pair_strs = ",".join(f"{p[0]}-{p[1]}" for p in pairs)
             lo_to_27 = db[ngay_str]['prizes_str']
             
             if not is_trade:
                 skip_days += 1
-                report += f"{ngay_str} | {pair_strs:<20} | {0:>12,.0f} | {0:>8} | {0:>+14,.0f} | {luy_ke_tien:>+15,.0f} VND (🛡️ SKIP)\n"
+                report += f"{ngay_str} | {pair_strs:<22} | {0:>14,.0f} | {0:>8} | {0:>+14,.0f} | {luy_ke_tien:>+15,.0f} VND (🛡️ SKIP)\n"
                 continue
                 
             traded_days += 1
@@ -294,35 +291,34 @@ def web_phan_he_5_monthly_audit(month, year, num_pairs, cost_per_point, pts_per_
             luy_ke_tien += so_lai
             
             if so_lai >= 0: win_days += 1
-            report += f"{ngay_str} | {pair_strs:<20} | {tong_von:>12,.0f} | {tong_nhay:>8} | {so_lai:>+14,.0f} | {luy_ke_tien:>+15,.0f} VND\n"
+            report += f"{ngay_str} | {pair_strs:<22} | {tong_von:>14,.0f} | {tong_nhay:>8} | {so_lai:>+14,.0f} | {luy_ke_tien:>+15,.0f} VND\n"
             
         report += f"---------------------------------------------------------------------------------------------------------------------\n"
         win_rate = (win_days / traded_days * 100) if traded_days > 0 else 0
-        report += f"📊 Thống kê: Bóp cò {traded_days} phiên | Đóng van bảo toàn: {skip_days} phiên | Win-Rate: {win_rate:.2f}%\n"
+        report += f"📊 Thống kê: Bóp cò {traded_days} phiên | Đóng van bảo toàn: {skip_days} phiên | Tỷ lệ Win-Rate: {win_rate:.2f}%\n"
         report += f"💰 TỔNG SỐ LÃI LŨY KẾ THÁNG: {luy_ke_tien:+,.0f} VND\n"
         return report
     except Exception as e: return f"🛑 [LỖI PHÂN HỆ 5]: {e}"
 
-def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, num_pairs, cost_per_point, pts_per_code):
+def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, cost_per_point, pts_per_code):
     try:
         db, _ = doc_database_tu_excel()
         res1, res2 = chuan_hoa_ngay(tu_ngay_raw), chuan_hoa_ngay(den_ngay_raw)
         if not res1 or not res2: return "🛑 [ERROR] Lỗi định dạng ngày."
         t1 = res1[0]; t2 = res2[0]
-        n_pairs = int(num_pairs)
         cost_pt = float(cost_per_point)
         pts = int(pts_per_code)
         
         t_curr = t1; tong_von_all = 0; tong_thuong_all = 0; luy_ke_range = 0; active_days = 0; win_days = 0; skip_cnt = 0
         report = f"📈 BÁO CÁO CHU KỲ TỪ [{res1[1]}] ĐẾN [{res2[1]}]:\n"
         report += f"---------------------------------------------------------------------------------------------------------------------\n"
-        report += f"{'NGÀY':<10} | {'CẶP LÔ DỰ ĐOÁN':<20} | {'TIỀN ĐÁNH':<12} | {'SỐ NHÁY':<8} | {'SỐ LÃI PHIÊN':<14} | {'LŨY KẾ LÃI':<15}\n"
+        report += f"{'NGÀY':<10} | {'CẶP LÔ DỰ ĐOÁN':<22} | {'TỔNG TIỀN ĐÁNH':<14} | {'SỐ NHÁY':<8} | {'SỐ LÃI PHIÊN':<14} | {'LŨY KẾ LÃI':<15}\n"
         report += f"---------------------------------------------------------------------------------------------------------------------\n"
         
         while t_curr <= t2:
             ngay_str = t_curr.strftime("%d/%m/%Y")
             if ngay_str in db:
-                pairs, is_trade, _, _ = tinh_cap_lo_v16(t_curr, db, num_pairs=n_pairs)
+                pairs, is_trade, _, _ = tinh_4_cap_lo_v16_2(t_curr, db)
                 pair_strs = ",".join(f"{p[0]}-{p[1]}" for p in pairs)
                 lo_to_27 = db[ngay_str]['prizes_str']
                 
@@ -337,10 +333,10 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, num_pairs, cost_p
                     if so_lai >= 0: win_days += 1
                     
                     tong_von_all += phi_phien; tong_thuong_all += rev; luy_ke_range += so_lai
-                    report += f"{ngay_str} | {pair_strs:<20} | {phi_phien:>12,.0f} | {tong_nhay:>8} | {so_lai:>+14,.0f} | {luy_ke_range:>+15,.0f} VND\n"
+                    report += f"{ngay_str} | {pair_strs:<22} | {phi_phien:>14,.0f} | {tong_nhay:>8} | {so_lai:>+14,.0f} | {luy_ke_range:>+15,.0f} VND\n"
                 else:
                     skip_cnt += 1
-                    report += f"{ngay_str} | {pair_strs:<20} | {0:>12,.0f} | {0:>8} | {0:>+14,.0f} | {luy_ke_range:>+15,.0f} VND (🛡️ SKIP)\n"
+                    report += f"{ngay_str} | {pair_strs:<22} | {0:>14,.0f} | {0:>8} | {0:>+14,.0f} | {luy_ke_range:>+15,.0f} VND (🛡️ SKIP)\n"
             t_curr += timedelta(days=1)
             
         net_profit = tong_thuong_all - tong_von_all
@@ -372,67 +368,62 @@ def web_phan_he_7_raw_db_lookup(ngay_raw):
     except Exception as e: return f"🛑 [LỖI PHÂN HỆ 7]: {e}"
 
 # ==============================================================================
-# 🎨 GIAO DIỆN GRADIO V16.1
+# 🎨 GIAO DIỆN GRADIO V16.2 OCTO-SNIPER
 # ==============================================================================
 _, INITIAL_NEXT_DATE = lay_thoi_gian_thuc_vn()
 
-with gr.Blocks(title="XSMB QUANT ENGINE V16.1") as demo:
-    gr.Markdown("# 🚀 XSMB QUANT ENGINE V16.1 — MULTI-PAIR SNIPER (3-5 CẶP LÔ)")
+with gr.Blocks(title="XSMB QUANT ENGINE V16.2") as demo:
+    gr.Markdown("# 🚀 XSMB QUANT ENGINE V16.2 — OCTO-SNIPER MASTER (4 CẶP / 8 CON LÔ)")
     
     with gr.Tab("🔄 [1] Active Sync"):
-        btn_1 = gr.Button("⚡ KÍCH HOẠT ĐỒNG BỘ CẬP NHẬT CHẾ ĐỘ MULTI-PAIR", variant="primary")
+        btn_1 = gr.Button("⚡ KÍCH HOẠT ĐỒNG BỘ CẬP NHẬT CHẾ ĐỘ 4 CẶP LÔ", variant="primary")
         out_1 = gr.Textbox(label="Báo cáo Nạp Dữ Liệu", lines=8)
         
     with gr.Tab("🎯 [2] Dự Đoán Kỳ Mới"):
         title_2 = gr.Markdown(f"#### Kỳ quay ngày: {INITIAL_NEXT_DATE.strftime('%d/%m/%Y')}")
         with gr.Row():
-            np_2 = gr.Dropdown(label="Chọn số Cặp Lô dự đoán", choices=["3", "4", "5"], value="3")
             cost_2 = gr.Number(label="Giá vốn điểm (21700đ Web hoặc 23000đ Thường)", value=21700)
             pts_2 = gr.Number(label="Số điểm đánh mỗi con lô", value=10)
-        btn_2 = gr.Button("🔍 TRÍCH XUẤT DỰ ĐOÁN CẶP LÔ AI", variant="primary")
-        out_2 = gr.Textbox(label="Hồ sơ Dự đoán Cặp Lô AI", lines=12)
-        btn_2.click(web_phan_he_2_predict, inputs=[np_2, cost_2, pts_2], outputs=out_2)
+        btn_2 = gr.Button("🔍 TRÍCH XUẤT DỰ ĐOÁN 4 CẶP LÔ AI", variant="primary")
+        out_2 = gr.Textbox(label="Hồ sơ Dự đoán 4 Cặp Lô AI", lines=12)
+        btn_2.click(web_phan_he_2_predict, inputs=[cost_2, pts_2], outputs=out_2)
 
     with gr.Tab("🛡️ [3] Quản Trị Vốn"):
         with gr.Row():
             cap_3 = gr.Number(label="Số vốn giải ngân tổng (VND)", value=10000000)
-            np_3 = gr.Dropdown(label="Số Cặp Lô chia vốn", choices=["3", "4", "5"], value="3")
             cost_3 = gr.Number(label="Giá vốn điểm", value=21700)
-        btn_3 = gr.Button("🧪 LẬP SƠ ĐỒ PHÂN BỔ VỐN CẶP LÔ", variant="primary")
+        btn_3 = gr.Button("🧪 LẬP SƠ ĐỒ PHÂN BỔ VỐN 4 CẶP LÔ", variant="primary")
         out_3 = gr.Textbox(label="Chi Tiết Phân Bổ Vốn", lines=10)
-        btn_3.click(web_phan_he_3_risk_audit, inputs=[cap_3, np_3, cost_3], outputs=out_3)
+        btn_3.click(web_phan_he_3_risk_audit, inputs=[cap_3, cost_3], outputs=out_3)
 
     with gr.Tab("🔍 [4] Backtest Đơn Phiên"):
         with gr.Row():
             date_4 = gr.Textbox(label="Nhập ngày tra cứu (DD/MM/YYYY)", value=datetime.now().strftime("%d/%m/%Y"))
-            np_4 = gr.Dropdown(label="Số Cặp Lô", choices=["3", "4", "5"], value="3")
             cost_4 = gr.Number(label="Giá vốn điểm", value=21700)
             pts_4 = gr.Number(label="Số điểm/con", value=10)
-        btn_4 = gr.Button("📡 TRÍCH XUẤT BACKTEST CẶP LÔ", variant="primary")
-        out_4 = gr.Textbox(label="Báo cáo Trúng thưởng Cặp Lô", lines=12)
-        btn_4.click(web_phan_he_4_single_day_backtest, inputs=[date_4, np_4, cost_4, pts_4], outputs=out_4)
+        btn_4 = gr.Button("📡 TRÍCH XUẤT BACKTEST 4 CẶP LÔ", variant="primary")
+        out_4 = gr.Textbox(label="Báo cáo Trúng thưởng 4 Cặp Lô", lines=12)
+        btn_4.click(web_phan_he_4_single_day_backtest, inputs=[date_4, cost_4, pts_4], outputs=out_4)
 
     with gr.Tab("📊 [5] Lũy Kế Tháng"):
         with gr.Row():
             m_5 = gr.Number(label="Tháng cần xem", value=datetime.now().month)
             y_5 = gr.Number(label="Năm cần xem", value=datetime.now().year)
-            np_5 = gr.Dropdown(label="Số Cặp Lô", choices=["3", "4", "5"], value="3")
             cost_5 = gr.Number(label="Giá vốn điểm", value=21700)
             pts_5 = gr.Number(label="Số điểm/con", value=10)
-        btn_5 = gr.Button("📊 BÓC TÁCH LŨY KẾ CẶP LÔ THÁNG", variant="primary")
+        btn_5 = gr.Button("📊 BÓC TÁCH LŨY KẾ 4 CẶP LÔ THÁNG", variant="primary")
         out_5 = gr.Textbox(label="Nhật ký Báo cáo Tài chính Lũy kế", lines=16)
-        btn_5.click(web_phan_he_5_monthly_audit, inputs=[m_5, y_5, np_5, cost_5, pts_5], outputs=out_5)
+        btn_5.click(web_phan_he_5_monthly_audit, inputs=[m_5, y_5, cost_5, pts_5], outputs=out_5)
 
     with gr.Tab("📈 [6] Hiệu Suất Chu Kỳ"):
         with gr.Row():
             t1_6 = gr.Textbox(label="Từ ngày (DD/MM/YYYY)", value="01/07/2026")
             t2_6 = gr.Textbox(label="Đến ngày (DD/MM/YYYY)", value=datetime.now().strftime("%d/%m/%Y"))
-            np_6 = gr.Dropdown(label="Số Cặp Lô", choices=["3", "4", "5"], value="3")
             cost_6 = gr.Number(label="Giá vốn điểm", value=21700)
             pts_6 = gr.Number(label="Số điểm/con", value=10)
         btn_6 = gr.Button("📈 QUÉT CHU KỲ BÁO CÁO TÀI CHÍNH", variant="primary")
-        out_6 = gr.Textbox(label="Báo cáo Hiệu suất Dòng tiền Cặp Lô", lines=18)
-        btn_6.click(web_phan_he_6_range_performance, inputs=[t1_6, t2_6, np_6, cost_6, pts_6], outputs=out_6)
+        out_6 = gr.Textbox(label="Báo cáo Hiệu suất Dòng tiền 4 Cặp Lô", lines=18)
+        btn_6.click(web_phan_he_6_range_performance, inputs=[t1_6, t2_6, cost_6, pts_6], outputs=out_6)
 
     with gr.Tab("🎰 [7] Xem 27 Giải Excel"):
         date_7 = gr.Textbox(label="Nhập ngày tra cứu (DD/MM/YYYY)", value=datetime.now().strftime("%d/%m/%Y"))
