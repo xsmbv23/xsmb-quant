@@ -11,104 +11,14 @@ from typing import Dict, Tuple, List
 import gradio as gr
 
 # ==============================================================================
-# 🧬 HẠ TẦNG QUANT V12.1 - CLEAN SYNTAX MASTER ENGINE
+# 🧬 HẠ TẦNG QUANT V12.2 - UNBREAKABLE MASTER ENGINE
 # ==============================================================================
-VERSION = "V12.1 CLEAN MASTER ENGINE"
+VERSION = "V12.2 UNBREAKABLE MASTER"
 DATA_FILE = "Ket_Qua_Loto27.xlsx"
 
-# ------------------------------------------------------------------------------
-# 📐 CLASS 1: V11 CORE ENGINE (HIERARCHICAL RECONCILIATION & SELF-HEALING)
-# ------------------------------------------------------------------------------
-class V11CoreEngine:
-    def __init__(self, S_matrix: np.ndarray, tolerance: float = 1e-6):
-        self.S = S_matrix
-        self.tolerance = tolerance
-        self.P_bottom_up = np.linalg.inv(self.S.T @ self.S) @ self.S.T
+# Bộ nhớ đệm RAM tự động hóa
+GLOBAL_PRED_CACHE = {}
 
-    def blend_actual_and_forecast(
-        self, df_actual: pd.DataFrame, df_forecast: pd.DataFrame, current_day: int
-    ) -> pd.DataFrame:
-        df_blended = df_forecast.copy()
-        mask_actual = df_blended['day'] <= current_day
-        for col in df_actual.columns:
-            if col in df_blended.columns and col != 'day':
-                df_blended.loc[mask_actual, col] = df_actual.loc[mask_actual, col]
-        return df_blended
-
-    def reconcile_forecasts(self, y_hat: np.ndarray, W_inv: np.ndarray = None) -> np.ndarray:
-        if W_inv is None:
-            b_tilde = self.P_bottom_up @ y_hat
-            return self.S @ b_tilde
-        else:
-            S_T_W_inv = self.S.T @ W_inv
-            middle = np.linalg.inv(S_T_W_inv @ self.S)
-            P_mint = middle @ S_T_W_inv
-            return self.S @ (P_mint @ y_hat)
-
-    def run_deep_cross_test(
-        self, df_daily: pd.DataFrame, df_monthly: pd.DataFrame
-    ) -> Tuple[bool, Dict[str, float]]:
-        errors = {}
-        daily_sum = df_daily.groupby('series_id')['value'].sum()
-        monthly_val = df_monthly.set_index('series_id')['value']
-        time_diff = np.max(np.abs(daily_sum - monthly_val))
-        errors['cross_time_max_diff'] = float(time_diff)
-
-        bottom_series_count = self.S.shape[1]
-        for day, group in df_daily.groupby('day'):
-            y_t = group['value'].values
-            b_t = y_t[-bottom_series_count:]
-            y_calculated = self.S @ b_t
-            h_diff = np.max(np.abs(y_t - y_calculated))
-            if 'cross_hierarchy_max_diff' not in errors or h_diff > errors['cross_hierarchy_max_diff']:
-                errors['cross_hierarchy_max_diff'] = float(h_diff)
-
-        is_valid = all(err <= self.tolerance for err in errors.values())
-        return is_valid, errors
-
-    def self_healing_pipeline(
-        self, df_actual: pd.DataFrame, df_forecast_raw: pd.DataFrame, df_monthly_raw: pd.DataFrame, current_day: int
-    ) -> Tuple[pd.DataFrame, pd.DataFrame, str]:
-        logs = []
-        logs.append("[V11 CORE] 1. Tiến hành Trộn dữ liệu Actual & Forecast...")
-        df_blended = self.blend_actual_and_forecast(df_actual, df_forecast_raw, current_day)
-
-        logs.append("[V11 CORE] 2. Khởi chạy Hierarchical Reconciliation cho từng ngày...")
-        df_reconciled = df_blended.copy()
-        
-        for day, group in df_reconciled.groupby('day'):
-            y_hat = group['value'].values
-            y_tilde = self.reconcile_forecasts(y_hat)
-            df_reconciled.loc[df_reconciled['day'] == day, 'value'] = y_tilde
-
-        df_monthly_reconciled = df_reconciled.groupby('series_id', as_index=False)['value'].sum()
-
-        logs.append("[V11 CORE] 3. Chạy Deep Cross-Test kiểm tra toàn bộ phân hệ...")
-        is_valid, errors = self.run_deep_cross_test(df_reconciled, df_monthly_reconciled)
-
-        if not is_valid:
-            logs.append(f"[CẢNH BÁO V11] Lệch số phát hiện: {errors}")
-            logs.append("[AUTO-FIX] Kích hoạt Self-Healing Engine khẩn cấp...")
-            
-            for day in df_reconciled['day'].unique():
-                idx = df_reconciled['day'] == day
-                df_reconciled.loc[idx, 'value'] = self.S @ (self.P_bottom_up @ df_reconciled.loc[idx, 'value'].values)
-            
-            df_monthly_reconciled = df_reconciled.groupby('series_id', as_index=False)['value'].sum()
-            is_valid_after, errors_after = self.run_deep_cross_test(df_reconciled, df_monthly_reconciled)
-
-            if not is_valid_after:
-                logs.append(f"[CRITICAL FAIL] Lỗi V11 nghiêm trọng không thể tự sửa: {errors_after}.")
-            else:
-                logs.append("[THÀNH CÔNG] Self-Healing hoàn tất. Dữ liệu đã khớp 100%.")
-        else:
-            logs.append("[XÁC NHẬN] Dữ liệu V11 hoàn toàn sạch, trùng khớp 100% giữa tất cả các cấp.")
-
-        return df_reconciled, df_monthly_reconciled, "\n".join(logs)
-
-# ------------------------------------------------------------------------------
-# 🛠️ CÁC HÀM XỬ LÝ DỮ LIỆU THỜI GIAN
-# ------------------------------------------------------------------------------
 def lay_thoi_gian_thuc_vn():
     VN_TZ = timezone(timedelta(hours=7))
     now_vn = datetime.now(VN_TZ)
@@ -142,7 +52,7 @@ def lay_max_days(thang, nam=2026):
 
 def doc_database_tu_excel():
     db = {}
-    if not os.path.exists(DATA_FILE): return db, f"🛑 CHƯA THẤY FILE '{DATA_FILE}' TRÊN THƯ MỤC CƠ SỞ!"
+    if not os.path.exists(DATA_FILE): return db, f"🛑 CHƯA THẤY FILE '{DATA_FILE}' TRÊN SERVER GITHUB!"
     try:
         df = pd.read_excel(DATA_FILE, dtype=str)
         col_ngay = df.columns[0]; col_loto = df.columns[1]
@@ -193,29 +103,26 @@ def tinh_dan_lo_quantum(target_dt, db, top_n=6):
     return [f"{idx:02d}" for idx in ranking[:top_n]]
 
 # ==============================================================================
-# 🖥️ PHÂN HỆ XỬ LÝ GIAO DIỆN WEB GRADIO
+# 🖥️ XỬ LÝ AN TOÀN BỌC EXCEPTION CHO GIAO DIỆN GRADIO
 # ==============================================================================
 def web_phan_he_1_sync():
-    db, msg = doc_database_tu_excel()
-    curr_date, next_date = lay_thoi_gian_thuc_vn()
-    
-    S_matrix = np.array([[1, 1], [1, 0], [0, 1]])
-    engine_v11 = V11CoreEngine(S_matrix)
-    
-    df_act = pd.DataFrame({'day': [1, 2], 'series_id': [0, 0], 'value': [100.0, 120.0]})
-    df_fc = pd.DataFrame({'day': [1, 2, 3], 'series_id': [0, 0, 0], 'value': [98.0, 122.0, 110.0]})
-    df_m = pd.DataFrame({'series_id': [0], 'value': [330.0]})
-    
-    _, _, heal_log = engine_v11.self_healing_pipeline(df_act, df_fc, df_m, current_day=2)
-    
-    res = f"📡 ĐỒNG BỘ DỮ LIỆU & KÍCH HOẠT LÕI V11 RECONCILIATION ENGINE:\n"
-    res += f"---------------------------------------------------------------------------------\n"
-    res += f"• Trạng thái File       : {msg}\n"
-    res += f"• Ngày chốt kết quả VN  : [{curr_date.strftime('%d/%m/%Y')}]\n"
-    res += f"• Kỳ quay dự đoán mới   : 🚀 [{next_date.strftime('%d/%m/%Y')}]\n"
-    res += f"---------------------------------------------------------------------------------\n"
-    res += f"⚙️ NHẬT KÝ KIỂM TOÁN SELF-HEALING ENGINE:\n{heal_log}\n"
-    return res, f"#### Kỳ quay ngày: {next_date.strftime('%d/%m/%Y')}"
+    try:
+        global GLOBAL_PRED_CACHE
+        GLOBAL_PRED_CACHE.clear()
+        db, msg = doc_database_tu_excel()
+        curr_date, next_date = lay_thoi_gian_thuc_vn()
+        
+        res = f"📡 KẾT NỐI HỆ THỐNG QUANT V12.2 MASTER ENGINE:\n"
+        res += f"---------------------------------------------------------------------------------\n"
+        res += f"• Trạng thái File       : {msg}\n"
+        res += f"• Quy mô dữ liệu Real   : {len(db)} ngày (Vô hạn Time-Series từ Excel)\n"
+        res += f"• Ngày chốt kết quả VN  : [{curr_date.strftime('%d/%m/%Y')}]\n"
+        res += f"• Kỳ quay dự đoán mới   : 🚀 [{next_date.strftime('%d/%m/%Y')}]\n"
+        res += f"---------------------------------------------------------------------------------\n"
+        res += f"⚙️ KIỂM TOÁN TỰ ĐỘNG: Đã dọn dẹp RAM đệm & khôi phục trạng thái 100% sạch!"
+        return res, f"#### Kỳ quay ngày: {next_date.strftime('%d/%m/%Y')}"
+    except Exception as e:
+        return f"🛑 LỖI THỰC THI TAB 1: {e}", "#### Kỳ quay ngày: --/--/----"
 
 def web_phan_he_2_predict(basket_size, points_per_code):
     try:
@@ -246,8 +153,7 @@ def web_phan_he_2_predict(basket_size, points_per_code):
             tag = "🟢 CÓ LÃI" if net > 0 else ("⚖️ HÒA VỐN" if net == 0 else "🔴 ÂM VỐN")
             res += f" • Nổ x{nhay} nháy : Doanh thu {rev:,.0f} VND | Delta: {net:+12,.0f} VND [{tag}]\n"
         return res
-    except Exception as e:
-        return f"🛑 [LỖI PHÂN HỆ 2]: {e}"
+    except Exception as e: return f"🛑 [LỖI PHÂN HỆ 2]: {e}"
 
 def web_phan_he_3_risk_audit(capital_vnd, basket_size):
     try:
@@ -267,14 +173,13 @@ def web_phan_he_3_risk_audit(capital_vnd, basket_size):
         report += f" 💵 Vốn thực chi       : {vong_von:,.0f} VND\n"
         report += f" 💵 Dư trả tài khoản   : {cap_val - vong_von:,.0f} VND\n"
         return report
-    except Exception as e:
-        return f"🛑 [LỖI PHÂN HỆ 3]: {e}"
+    except Exception as e: return f"🛑 [LỖI PHÂN HỆ 3]: {e}"
 
 def web_phan_he_4_single_day_backtest(ngay_raw, basket_size, pts_per_code):
     try:
         db, _ = doc_database_tu_excel()
         res = chuan_hoa_ngay(ngay_raw)
-        if not res: return "🛑 [ERROR] Định dạng ngày nhập vào không hợp lệ."
+        if not res: return "🛑 [ERROR] Định dạng ngày nhập vào không hợp lệ. Dùng DD/MM/YYYY."
         d_obj, ngay_str = res
         if ngay_str not in db: return f"🛑 Ngày {ngay_str} chưa có trong file Excel."
             
@@ -300,8 +205,7 @@ def web_phan_he_4_single_day_backtest(ngay_raw, basket_size, pts_per_code):
         report += f"💵 Doanh thu   : {rev:,.0f} VND\n"
         report += f"📈 LỢI NHUẬN   : {'+' if net_profit>=0 else ''}{net_profit:,.0f} VND\n"
         return report
-    except Exception as e:
-        return f"🛑 [LỖI PHÂN HỆ 4]: {e}"
+    except Exception as e: return f"🛑 [LỖI PHÂN HỆ 4]: {e}"
 
 def web_phan_he_5_monthly_audit(month, year, basket_size, pts_per_code):
     try:
@@ -340,8 +244,7 @@ def web_phan_he_5_monthly_audit(month, year, basket_size, pts_per_code):
         report += f"📊 Thống kê Dàn {n_size} số: Tổng {traded_days} phiên | Phiên có lãi/hòa: {win_days} | Win-Rate: {win_rate:.2f}%\n"
         report += f"💰 LỢI NHUẬN RÒNG LŨY KẾ THÁNG: {luy_ke_tien:+,.0f} VND\n"
         return report
-    except Exception as e:
-        return f"🛑 [LỖI PHÂN HỆ 5]: {e}"
+    except Exception as e: return f"🛑 [LỖI PHÂN HỆ 5]: {e}"
 
 def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, basket_size, pts_per_code):
     try:
@@ -381,8 +284,7 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, basket_size, pts_
         report += f"💵 Tổng doanh thu hoàn : {tong_thuong:,.0f} VND\n"
         report += f"💰 LỢI NHUẬN RÒNG     : {net_profit:+,.0f} VND\n"
         return report
-    except Exception as e:
-        return f"🛑 [LỖI PHÂN HỆ 6]: {e}"
+    except Exception as e: return f"🛑 [LỖI PHÂN HỆ 6]: {e}"
 
 def web_phan_he_7_raw_db_lookup(ngay_raw):
     try:
@@ -398,20 +300,19 @@ def web_phan_he_7_raw_db_lookup(ngay_raw):
         for idx, lo in enumerate(lo_to_sorted): 
             report += f"[{lo}] " + ("\n" if (idx + 1) % 9 == 0 else " ")
         return report
-    except Exception as e:
-        return f"🛑 [LỖI PHÂN HỆ 7]: {e}"
+    except Exception as e: return f"🛑 [LỖI PHÂN HỆ 7]: {e}"
 
 # ==============================================================================
-# 🎨 GIAO DIỆN GRADIO V12.1
+# 🎨 GIAO DIÊN GRADIO V12.2 UNBREAKABLE
 # ==============================================================================
 _, INITIAL_NEXT_DATE = lay_thoi_gian_thuc_vn()
 
-with gr.Blocks(title="XSMB QUANT ENGINE V12.1") as demo:
-    gr.Markdown("# 🚀 XSMB QUANT ENGINE V12.1 — CLEAN MASTER ENGINE")
+with gr.Blocks(title="XSMB QUANT ENGINE V12.2") as demo:
+    gr.Markdown("# 🚀 XSMB QUANT ENGINE V12.2 — UNBREAKABLE MASTER")
     
-    with gr.Tab("🔄 [1] Active Sync & V11 Self-Healing"):
-        btn_1 = gr.Button("⚡ KÍCH HOẠT ĐỒNG BỘ VÀ CHẠY SELF-HEALING ENGINE", variant="primary")
-        out_1 = gr.Textbox(label="Báo cáo Tiến trình Nạp Dữ Liệu & Self-Healing Log", lines=12)
+    with gr.Tab("🔄 [1] Active Sync"):
+        btn_1 = gr.Button("⚡ KÍCH HOẠT ĐỒNG BỘ VÀ LÀM SẠCH CACHE", variant="primary")
+        out_1 = gr.Textbox(label="Báo cáo Tiến trình Nạp Dữ Liệu", lines=10)
         
     with gr.Tab("🎯 [2] Dự Đoán Kỳ Mới"):
         title_2 = gr.Markdown(f"#### Kỳ quay ngày: {INITIAL_NEXT_DATE.strftime('%d/%m/%Y')}")
@@ -455,7 +356,7 @@ with gr.Blocks(title="XSMB QUANT ENGINE V12.1") as demo:
             t2_6 = gr.Textbox(label="Đến ngày (DD/MM/YYYY)", value=datetime.now().strftime("%d/%m/%Y"))
             b_size_6 = gr.Dropdown(label="Kích thước Dàn Lô", choices=["3", "6", "8", "10"], value="6")
             pts_6 = gr.Number(label="Số điểm/mã", value=10)
-        btn_6 = gr.Button("📈 QUÉT BÁO CÁO CHU KỲ DÀN LÔ", variant="primary")
+        btn_6 = gr.Button("📈 QUÉT BÓC TÁCH CHU KỲ DÀN LÔ", variant="primary")
         out_6 = gr.Textbox(label="Báo cáo Hiệu suất Dòng tiền Dàn", lines=18)
         btn_6.click(web_phan_he_6_range_performance, inputs=[t1_6, t2_6, b_size_6, pts_6], outputs=out_6)
 
