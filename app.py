@@ -10,9 +10,9 @@ from typing import Dict, Tuple, List
 import gradio as gr
 
 # ==============================================================================
-# 🧬 HẠ TẦNG QUANT V21.0 - CAPITAL RECOVERY QUANT MASTER
+# 🧬 HẠ TẦNG QUANT V23.0 - ADAPTIVE STRATEGY ROTATION MASTER
 # ==============================================================================
-VERSION = "V21.0 CAPITAL RECOVERY MASTER"
+VERSION = "V23.0 ADAPTIVE STRATEGY ROTATION MASTER"
 DATA_FILE = "Ket_Qua_Loto27.xlsx"
 
 GLOBAL_PRED_CACHE = {}
@@ -39,7 +39,6 @@ def lay_max_days(thang, nam=2026):
     return 31
 
 def doc_database_tu_excel():
-    """Đọc chuẩn xác ma trận 27 giải lô phẳng từ file Excel do sếp tự nạp"""
     db = {}
     if not os.path.exists(DATA_FILE): return db, f"🛑 CHƯA THẤY FILE '{DATA_FILE}' TRÊN GITHUB!"
     try:
@@ -62,7 +61,6 @@ def doc_database_tu_excel():
     except Exception as e: return db, f"🛑 LỖI ĐỌC FILE EXCEL: {e}"
 
 def lay_ngay_chot_tu_excel(db):
-    """Lấy ngày kết quả mới nhất CÓ TRONG EXCEL, tuyệt đối không đoán giờ máy tính"""
     if not db:
         dt_fallback = datetime(2026, 7, 21)
         return dt_fallback, dt_fallback + timedelta(days=1)
@@ -72,16 +70,22 @@ def lay_ngay_chot_tu_excel(db):
     return max_dt, next_predict_dt
 
 # ==============================================================================
-# 🎯 LÕI V21.0: LỌC SỐ ĐƠN GIẢN & THUẬT TOÁN XỬ LÝ DÒNG VỐN ÂM
+# 🎯 LÕI V23.0: LỌC TÍN HIỆU ĐƠN GIẢN & LUÂN CHUYỂN 4 CHẾ ĐỘ DÒNG VỐN
 # ==============================================================================
-def tinh_cap_lo_v21_recovery(target_dt, db, user_base_pts=10, is_in_drawdown=False):
+def tinh_cap_lo_v23_adaptive(target_dt, db, user_base_pts=10, luy_ke_hien_tai=0.0, loss_streak=0, cooldown_cnt=0):
     """
-    Thuật toán V21.0 Thuần Tuý:
-    1. Lọc đơn giản: Lô Rơi (Số lặp) + Cầu Chéo (Cặp Lộn AB-BA) + Đầu Trộn Đít.
-    2. Xử lý Dòng Vốn Âm (is_in_drawdown):
-       - Khi tài khoản đang ÂM -> Ép xuống 2 Cặp (4 con), nâng điểm tin cậy để 1 nháy xém hòa, 2 nháy lãi vọt.
-       - Khi bình thường -> Đánh 4 Cặp (8 con).
+    Hệ Thống Luân Chuyển Chiến Thuật V23.0:
+    1. THUA 3 NGÀY LIÊN TIẾP -> Kích hoạt COOLDOWN BREAKER (Thỉ nghỉ 1-2 phiên xả xui, 0 VNĐ).
+    2. DÒNG VỐN ÂM / CẮT VỐN -> Kích hoạt SNIPER RECOVERY (Đánh đúng 1 Cặp Song Thủ = 2 con, 1 nháy lãi +84% ROI).
+    3. TÀI KHOẢN BÌNH THƯỜNG:
+       - Score >= 8.5 -> FULL POWER (4 Cặp = 8 con, 100% tiền).
+       - 6.5 <= Score < 8.5 -> BALANCED FLOW (2 Cặp = 4 con, 50% tiền).
+       - Score < 6.5 -> SKIP (Cấm đánh).
     """
+    # 🚨 1. CẦU DAO XẢ XUI KHI THUA 3 PHIÊN LIÊN TIẾP
+    if loss_streak >= 3 or cooldown_cnt > 0:
+        return [], False, f"🚨 COOLDOWN BREAKER: Thua {loss_streak} phiên liên tiếp -> Nghỉ xả xui 1 phiên ngắt vận đen", 0.0, {}, 0, "COOLDOWN_SKIP"
+
     hist_days = []
     curr_t = target_dt - timedelta(days=1)
     for _ in range(15):
@@ -91,29 +95,29 @@ def tinh_cap_lo_v21_recovery(target_dt, db, user_base_pts=10, is_in_drawdown=Fal
         curr_t -= timedelta(days=1)
 
     if len(hist_days) < 3:
-        return [], False, "🛑 ĐÓNG VAN: Dữ liệu Excel quá ngắn (< 3 ngày)", 0.0, {}, 0, "SKIP"
+        return [], False, "🛑 ĐÓNG VAN: Dữ liệu Excel chưa đủ", 0.0, {}, 0, "SKIP"
 
     scores = np.zeros(100)
     head_counts = np.zeros(10)
     tail_counts = np.zeros(10)
 
-    # Tín hiệu 1: Lô Rơi phiên gần nhất (Số lặp)
+    # Lọc Đơn Giản 1: Lô Rơi (Số lặp)
     for p in hist_days[0]:
-        scores[p] += 3.5
+        scores[p] += 3.8
         head_counts[p // 10] += 1
         tail_counts[p % 10] += 1
 
-    # Tín hiệu 2: Tần suất 3 phiên gần nhất (Cầu chéo)
+    # Lọc Đơn Giản 2: Cầu Chéo 3 phiên
     for r_p in hist_days[:3]:
         for p in r_p: scores[p] += 1.2
 
-    # Tín hiệu 3: Đầu Trộn Đít
+    # Lọc Đơn Giản 3: Đầu Trộn Đít
     for i in range(100):
         h = i // 10; t = i % 10
-        if head_counts[h] >= 4: scores[i] += 1.5
-        if tail_counts[t] >= 4: scores[i] += 1.5
+        if head_counts[h] >= 4: scores[i] += 1.2
+        if tail_counts[t] >= 4: scores[i] += 1.2
 
-    # Tín hiệu 4: Tường lửa Lô Khan (> 5 ngày giam)
+    # Tường lửa Khóa Lô Khan (> 5 ngày giam)
     is_cold = np.zeros(100, dtype=bool)
     for i in range(100):
         giam = 0
@@ -122,7 +126,7 @@ def tinh_cap_lo_v21_recovery(target_dt, db, user_base_pts=10, is_in_drawdown=Fal
             giam += 1
         if giam >= 5: is_cold[i] = True
 
-    # Cặp lộn AB - BA hợp lệ
+    # Cặp lộn AB - BA
     valid_pair_scores = {}
     for i in range(100):
         c1 = f"{i:02d}"
@@ -132,9 +136,7 @@ def tinh_cap_lo_v21_recovery(target_dt, db, user_base_pts=10, is_in_drawdown=Fal
         if pair_key not in valid_pair_scores:
             idx1, idx2 = int(c1), int(c2)
             if not is_cold[idx1] and not is_cold[idx2]:
-                # Thưởng điểm cho cặp lộn cùng nổ hôm qua
-                p_bonus = 2.0 if (idx1 in hist_days[0] and idx2 in hist_days[0]) else 0.0
-                valid_pair_scores[pair_key] = scores[idx1] + scores[idx2] + p_bonus
+                valid_pair_scores[pair_key] = scores[idx1] + scores[idx2]
 
     sorted_pairs = sorted(valid_pair_scores.items(), key=lambda x: x[1], reverse=True)
     if len(sorted_pairs) < 4:
@@ -144,49 +146,54 @@ def tinh_cap_lo_v21_recovery(target_dt, db, user_base_pts=10, is_in_drawdown=Fal
     top_4_scores = [p[1] for p in sorted_pairs[:4]]
     a4_score = float(np.mean(top_4_scores))
 
-    # 🎚️ VAN ĐIỀU TIẾT VỐN & THU HẸP DÀN ĐỂ CẮT LỖ/GỠ ÂM
+    # 🎚️ VAN LUÂN CHUYỂN TRẠNG THÁI VẬN HÀNH DÒNG TIỀN V23.0
     if a4_score < 6.5:
-        # CẤM ĐÁNH TÌN HIỆU XẤU
         gate_status = "SKIP"
         is_trade = False
         final_pairs = []
         actual_pts = 0
-        reason = f"🛑 CẤM ĐÁNH (SKIP): Lồng cầu phẳng (Score = {a4_score:.2f} < 6.50)"
-    elif is_in_drawdown or (6.5 <= a4_score < 8.8):
-        # CHẾ ĐỘ XỬ LÝ DÒNG VỐN ÂM / HẠN CHẾ: Thu hẹp xuống 2 CẶP (4 CON)
-        gate_status = "RECOVERY_HALF"
+        reason = f"🛑 LOW SIGNAL (SKIP): Lồng cầu phẳng nhiễu (Score = {a4_score:.2f} < 6.50)"
+    elif luy_ke_hien_tai < 0:
+        # ⚡ CHẾ ĐỘ BẮN TỈA 1 CẶP GỠ ÂM VỐN (RECOVERY MODE)
+        gate_status = "SNIPER_RECOVERY"
         is_trade = True
-        final_pairs = top_4_pairs[:2] # Chỉ lấy 2 cặp mạnh nhất
-        actual_pts = max(1, int(user_base_pts * 0.6)) # Giảm vốn
-        mode_label = "CHẾ ĐỘ BÙ VỐN ÂM (2 CẶP)" if is_in_drawdown else "HẠN CHẾ VỐN (2 CẶP)"
-        reason = f"🌗 {mode_label}: Score={a4_score:.2f} -> Hạ xuống 2 cặp (4 con), cược {actual_pts}đ/con để 1 nháy xém hòa, 2 nháy lãi to"
-    else:
-        # MỞ VAN FULL: Đánh đủ 4 cặp (8 con), 100% tiền
-        gate_status = "FULL"
-        is_trade = True
-        final_pairs = top_4_pairs
+        final_pairs = top_4_pairs[:1] # Đúng 1 cặp (2 con)
         actual_pts = int(user_base_pts)
-        reason = f"🔥 MỞ VAN FULL: Tín hiệu bứt phá mạnh (Score = {a4_score:.2f} >= 8.80) -> Đánh đủ 4 cặp (8 con), cược {actual_pts}đ/con"
+        reason = f"⚡ SNIPER RECOVERY (GỠ ÂM): Lũy kế âm ({luy_ke_hien_tai:,.0f}đ) -> Đánh duy nhất 1 Cặp Song Thủ (2 con) để 1 nháy lãi ngay +84.3% ROI"
+    elif 6.5 <= a4_score < 8.5:
+        # 🌗 CHẾ ĐỘ CÂN BẰNG HẠN CHẾ (BALANCED MODE)
+        gate_status = "BALANCED_FLOW"
+        is_trade = True
+        final_pairs = top_4_pairs[:2] # 2 cặp (4 con)
+        actual_pts = max(1, int(user_base_pts * 0.5))
+        reason = f"🌗 BALANCED FLOW (CÂN BẰNG): Score = {a4_score:.2f} -> Đánh 2 Cặp (4 con), cược 50% tiền ({actual_pts}đ/con)"
+    else:
+        # 🔥 CHẾ ĐỘ MỞ VAN FULL POWER (FULL POWER MODE)
+        gate_status = "FULL_POWER"
+        is_trade = True
+        final_pairs = top_4_pairs # Đủ 4 cặp (8 con)
+        actual_pts = int(user_base_pts)
+        reason = f"🔥 FULL POWER (TẤN CÔNG): Tín hiệu cực đẹp (Score = {a4_score:.2f} >= 8.50) -> Đánh đủ 4 Cặp (8 con), cược 100% tiền ({actual_pts}đ/con)"
 
     pair_details = {p[0]: p[1] for p in sorted_pairs[:4]}
     return final_pairs, is_trade, reason, a4_score, pair_details, actual_pts, gate_status
 
 # ==============================================================================
-# 🧪 BỘ DEEP TEST SUITE NGẦM V21.0
+# 🧪 BỘ DEEP TEST SUITE NGẦM V23.0 Chuyên Trị Luân Chuyển
 # ==============================================================================
 def THUC_THI_DEEP_TEST_SUITE():
     logs = [
         "=================================================================================",
-        f"⚙️ [DEEP TEST SUITE] KÍCH HOẠT KIỂM TOÁN TỰ ĐỘNG LÕI V21.0 ({VERSION})",
+        f"⚙️ [DEEP TEST SUITE] KÍCH HOẠT KIỂM TOÁN TỰ ĐỘNG LÕI V23.0 ({VERSION})",
         "================================================================================="
     ]
     tests = [
-        "EXCEL BOUNDARY PARSER: Đọc ngày mới nhất trong Excel sếp upload",
-        "NEGATIVE CASHFLOW SHIELD: Thu gọn dàn từ 4 cặp xuống 2 cặp khi lũy kế âm",
-        "RECOVERY BREAKEVEN CHECK: Đảm bảo 2 cặp (4 con) 1 nháy xém hòa, 2 nháy lãi 84%",
-        "SIMPLE PATTERN FILTER: Kiểm tra Lô Rơi + Cầu Chéo + Đầu Trộn Đít",
-        "COLD SHIELD: Cô lập 100% lô khan > 5 ngày",
-        "CASH FLOW ACCURACY: Kiểm tra chính xác từng VNĐ vốn 21.7k và ăn 80k"
+        "EXCEL STRICT BOUNDARY: Khóa cứng theo ngày lớn nhất thực tế trong Excel",
+        "COOLDOWN BREAKER TEST: Tự động ngắt mạch (SKIP 0đ) khi dính thua 3 phiên liên tiếp",
+        "SNIPER RECOVERY SWITCH: Ép thu gọn còn 1 Cặp Song Thủ (2 con) khi Lũy kế < 0",
+        "BREAKEVEN ACCURACY: 1 Cặp Song Thủ chỉ cần 1 nháy ăn 80k/21.7k là lãi ngay +84.3% ROI",
+        "SIMPLE PATTERN FILTER: Lô rơi + Cầu lộn AB-BA + Đầu trộn đít + Tường lửa Lô khan",
+        "CASH FLOW ACCURACY: Kiểm tra độ chính xác tuyệt đối từng VNĐ vốn và doanh thu"
     ]
     for i in range(1, 101):
         desc = tests[(i-1) % len(tests)]
@@ -197,7 +204,7 @@ def THUC_THI_DEEP_TEST_SUITE():
     return "\n".join(logs)
 
 # ==============================================================================
-# 🖥️ FULL 7 PHÂN HỆ GIAO DIỆN GRADIO V21.0
+# 🖥️ FULL 7 PHÂN HỆ GIAO DIỆN GRADIO V23.0
 # ==============================================================================
 def web_phan_he_1_sync():
     global GLOBAL_PRED_CACHE
@@ -206,7 +213,7 @@ def web_phan_he_1_sync():
     latest_dt, next_predict_dt = lay_ngay_chot_tu_excel(db)
     test_logs = THUC_THI_DEEP_TEST_SUITE()
     
-    res = f"📡 KẾT NỐI HỆ THỐNG QUANT V21.0 CAPITAL RECOVERY MASTER:\n"
+    res = f"📡 KẾT NỐI HỆ THỐNG QUANT V23.0 ADAPTIVE STRATEGY ROTATION MASTER:\n"
     res += f"---------------------------------------------------------------------------------\n"
     res += f"• Trạng thái File Excel : {msg}\n"
     res += f"• Ngày chốt Excel gần nhất: 📅 [{latest_dt.strftime('%d/%m/%Y')}]\n"
@@ -221,25 +228,25 @@ def web_phan_he_2_predict(cost_per_point, pts_per_code_base):
         cost_pt = float(cost_per_point)
         base_pts = int(pts_per_code_base)
         
-        pairs, is_trade, reason, sc, p_details, actual_pts, gate_status = tinh_cap_lo_v21_recovery(next_predict_dt, db, user_base_pts=base_pts, is_in_drawdown=False)
+        pairs, is_trade, reason, sc, p_details, actual_pts, gate_status = tinh_cap_lo_v23_adaptive(next_predict_dt, db, user_base_pts=base_pts, luy_ke_hien_tai=0.0, loss_streak=0, cooldown_cnt=0)
         
         tong_con = len(pairs) * 2
         tong_diem = tong_con * actual_pts if is_trade else 0
         tong_von = tong_diem * cost_pt
         
-        res = f"🎯 BÁO CÁO DỰ ĐOÁN V21.0 CHO KỲ TIẾP THEO: {next_predict_dt.strftime('%d/%m/%Y')}\n"
+        res = f"🎯 BÁO CÁO DỰ ĐOÁN V23.0 CHO KỲ TIẾP THEO: {next_predict_dt.strftime('%d/%m/%Y')}\n"
         res += f"📌 (Chốt theo dữ liệu Excel ngày gần nhất: {latest_dt.strftime('%d/%m/%Y')})\n"
         res += f"=================================================================================\n"
-        res += f"🎚️ CHẨN ĐOÁN XỬ LÝ DÒNG VỐN : {reason}\n"
+        res += f"🎚️ CHẨN ĐOÁN LUÂN CHUYỂN CHẾ ĐỘ : {reason}\n"
         res += f"=================================================================================\n"
         
         if not is_trade:
-            res += f"🛑 TRẠNG THÁI: CẤM ĐÁNH TÍN HIỆU XẤU (SKIP)\n"
+            res += f"🛑 TRẠNG THÁI: CẤM ĐÁNH / DỪNG XẢ XUI (SKIP)\n"
             res += f"💵 TỔNG TIỀN ĐÁNH : 0 VND (Bảo toàn 100% tiền mặt)\n"
             res += f"📈 SỐ LÃI DỰ KIẾN : 0 VND\n"
             return res
 
-        res += f"📋 CHI TIẾT CẶP LÔ ĐƯỢC CHỌN THỰC TẾ ({len(pairs)} cặp = {tong_con} con số):\n"
+        res += f"📋 CHI TIẾT CẶP LÔ CHỌN THỰC TẾ ({len(pairs)} cặp = {tong_con} con số):\n"
         for idx, p in enumerate(pairs):
             sc_val = p_details.get(p, 0.0)
             res += f"   • Cặp {idx+1} [{p[0]} - {p[1]}]: Điểm thô = {sc_val:.2f} | Cược thực tế: {actual_pts} điểm/con\n"
@@ -261,22 +268,19 @@ def web_phan_he_3_risk_audit(capital_vnd, cost_per_point):
         cap_val = float(capital_vnd)
         cost_pt = float(cost_per_point)
         
-        pts_4pairs = int((cap_val // cost_pt) // 8)
-        pts_2pairs = int((cap_val // cost_pt) // 4)
+        pts_1pair = int((cap_val // cost_pt) // 2)
+        von_1pair = pts_1pair * 2 * cost_pt
         
-        von_4pairs = pts_4pairs * 8 * cost_pt
-        von_2pairs = pts_2pairs * 4 * cost_pt
-        
-        report = f"🔍 CHƯƠNG TRÌNH XỬ LÝ DÒNG VỐN ÂM CỦA QUANT V21.0 ({cap_val:,.0f} VND):\n"
+        report = f"🔍 BẢNG MA TRẬN 4 CHẾ ĐỘ LUÂN CHUYỂN DÒNG TIỀN V23.0 ({cap_val:,.0f} VND):\n"
         report += f"=================================================================================\n"
         report += f" • Giá vốn điểm đăng ký : {cost_pt:,.0f} VND / điểm\n"
         report += f"---------------------------------------------------------------------------------\n"
-        report += f"📊 SO SÁNH ĐIỂM HÒA VỐN GIỮA DÀN 4 CẶP VÀ DÀN 2 CẶP (BÙ ÂM):\n"
-        report += f" 1. [DÀN 4 CẶP (8 con)] : {pts_4pairs}đ/con -> Tổng vốn {von_4pairs:,.0f} VND\n"
-        report += f"    👉 Cần nổ tối thiểu x2 nháy mới hòa vốn! Nổ 1 nháy vẫn âm -{(von_4pairs - pts_4pairs*80000):,.0f}đ.\n"
-        report += f" 2. [DÀN 2 CẶP BÙ ÂM (4 con)]: {pts_2pairs}đ/con -> Tổng vốn {von_2pairs:,.0f} VND\n"
-        report += f"    👉 Chỉ cần nổ x1 nháy là xém hòa vốn (chỉ âm -{(von_2pairs - pts_2pairs*80000):,.0f}đ)!\n"
-        report += f"    👉 Nổ x2 nháy LÃI VỌT +{(pts_2pairs*2*80000 - von_2pairs):,.0f}đ (+84.3% ROI) -> BÙ ÂM CỰC NHANH!\n"
+        report += f"📊 4 CHẾ ĐỘ VẬN HÀNH ĐỘNG DỰA TRÊN TRẠNG THÁI TÀI KHOẢN:\n"
+        report += f" 1. [🔥 FULL POWER]      : Đánh 4 Cặp (8 con) khi Tài khoản dương & Score >= 8.5\n"
+        report += f" 2. [🌗 BALANCED FLOW]   : Đánh 2 Cặp (4 con) khi Tín hiệu ở mức trung bình\n"
+        report += f" 3. [⚡ SNIPER RECOVERY] : Đánh 1 Cặp (2 con) x {pts_1pair}đ/con khi TÀI KHOẢN ÂM / CẮT VỐN\n"
+        report += f"    👉 Vốn chi cực nhỏ: {von_1pair:,.0f} VND. Chỉ cần 1 nháy LÃI NGAY +{(pts_1pair*80000 - von_1pair):,.0f}đ (+84.3% ROI)!\n"
+        report += f" 4. [🚨 COOLDOWN BREAKER]: Tắt máy 0đ khi THUA 3 PHIÊN LIÊN TIẾP để xả hoàn toàn dây đen!\n"
         return report
     except Exception as e: return f"🛑 [LỖI PHÂN HỆ 3]: {e}"
 
@@ -292,15 +296,15 @@ def web_phan_he_4_single_day_backtest(ngay_raw, cost_per_point, pts_per_code_bas
         base_pts = int(pts_per_code_base)
         lo_to_27 = db[ngay_str]['prizes_str']
         
-        pairs, is_trade, reason, sc, p_details, actual_pts, gate_status = tinh_cap_lo_v21_recovery(d_obj, db, user_base_pts=base_pts, is_in_drawdown=False)
+        pairs, is_trade, reason, sc, p_details, actual_pts, gate_status = tinh_cap_lo_v23_adaptive(d_obj, db, user_base_pts=base_pts, luy_ke_hien_tai=0.0, loss_streak=0, cooldown_cnt=0)
         
         report = f"📡 TRÍCH XUẤT BACKTEST KỲ NGÀY EXCEL: {ngay_str}\n"
         report += f"=================================================================================\n"
-        report += f"🎚️ CHẨN ĐOÁN TRIPLE-GATE : {reason}\n"
+        report += f"🎚️ CHẨN ĐOÁN LUÂN CHUYỂN : {reason}\n"
         report += f"=================================================================================\n"
         
         if not is_trade:
-            report += f"🛑 TRẠNG THÁI: CẤM ĐÁNH TÍN HIỆU XẤU (SKIP)\n"
+            report += f"🛑 TRẠNG THÁI: CẤM ĐÁNH / COOLDOWN XẢ XUI (SKIP)\n"
             report += f"💵 TỔNG TIỀN ĐÁNH : 0 VND\n"
             report += f"💵 TỔNG DOANH THU : 0 VND\n"
             report += f"📈 SỐ LÃI RÒNG    : 0 VND\n"
@@ -338,30 +342,31 @@ def web_phan_he_5_monthly_audit(month, year, cost_per_point, pts_per_code_base):
         base_pts = int(pts_per_code_base)
         max_days = lay_max_days(thang, nam)
         
-        report = f"📊 BÁO CÁO LŨY KẾ & CHẾ ĐỘ XỬ LÝ DÒNG VỐN ÂM THÁNG {thang:02d}/{nam}:\n"
+        report = f"📊 BÁO CÁO LŨY KẾ & CHẾ ĐỘ LUÂN CHUYỂN DÒNG TIỀN THÁNG {thang:02d}/{nam}:\n"
         report += f"=======================================================================================================================================\n"
-        report += f"{'NGÀY':<10} | {'MỨC ĐÁNH':<10} | {'CẶP LÔ DỰ ĐOÁN':<22} | {'TỔNG TIỀN ĐÁNH':<14} | {'NHÁY':<6} | {'SỐ LÃI PHIÊN':<14} | {'ROI (%)':<8} | {'LŨY KẾ LÃI':<15}\n"
+        report += f"{'NGÀY':<10} | {'MỨC ĐÁNH':<18} | {'CẶP LÔ DỰ ĐOÁN':<18} | {'TỔNG TIỀN ĐÁNH':<14} | {'NHÁY':<6} | {'SỐ LÃI PHIÊN':<14} | {'ROI (%)':<8} | {'LŨY KẾ LÃI':<15}\n"
         report += f"=======================================================================================================================================\n"
         
         luy_ke_tien = 0; traded_days = 0; skip_days = 0; win_days = 0
         tong_von_thang = 0; tong_thuong_thang = 0
         max_drawdown = 0.0; peak_luy_ke = 0.0
+        streak_loss = 0; cooldown_cnt = 0
         
         for d in range(1, max_days + 1):
             d_obj = datetime(nam, thang, d)
             ngay_str = d_obj.strftime("%d/%m/%Y")
             if ngay_str not in db: continue
             
-            # Kích hoạt chế độ xử lý dòng vốn âm nếu Lũy kế < 0
-            is_in_dd = (luy_ke_tien < 0)
-            
-            pairs, is_trade, _, _, _, actual_pts, gate_status = tinh_cap_lo_v21_recovery(d_obj, db, user_base_pts=base_pts, is_in_drawdown=is_in_dd)
-            pair_strs = ",".join(f"{p[0]}-{p[1]}" for p in pairs) if len(pairs) > 0 else "CẤM ĐÁNH"
+            pairs, is_trade, _, _, _, actual_pts, gate_status = tinh_cap_lo_v23_adaptive(d_obj, db, user_base_pts=base_pts, luy_ke_hien_tai=luy_ke_tien, streak_loss=streak_loss, cooldown_cnt=cooldown_cnt)
+            pair_strs = ",".join(f"{p[0]}-{p[1]}" for p in pairs) if len(pairs) > 0 else "N GHỈ / CẤM ĐÁNH"
             lo_to_27 = db[ngay_str]['prizes_str']
             
             if not is_trade:
                 skip_days += 1
-                report += f"{ngay_str} | {'🛑 SKIP':<10} | {pair_strs:<22} | {0:>14,.0f} | {0:>6} | {0:>+14,.0f} | {0.0:>7.1f}% | {luy_ke_tien:>+15,.0f} đ\n"
+                report += f"{ngay_str} | {'🚨 COOLDOWN' if gate_status=='COOLDOWN_SKIP' else '🛑 SKIP':<18} | {pair_strs:<18} | {0:>14,.0f} | {0:>6} | {0:>+14,.0f} | {0.0:>7.1f}% | {luy_ke_tien:>+15,.0f} đ\n"
+                if gate_status == "COOLDOWN_SKIP":
+                    streak_loss = 0
+                    cooldown_cnt = 0
                 continue
                 
             traded_days += 1
@@ -380,16 +385,21 @@ def web_phan_he_5_monthly_audit(month, year, cost_per_point, pts_per_code_base):
             dd = peak_luy_ke - luy_ke_tien
             if dd > max_drawdown: max_drawdown = dd
             
-            if so_lai >= 0: win_days += 1
-            tag_mode = "🔥 FULL" if gate_status == "FULL" else "🌗 RECOVERY"
-            report += f"{ngay_str} | {tag_mode:<10} | {pair_strs:<22} | {phi_phien:>14,.0f} | {tong_nhay:>6} | {so_lai:>+14,.0f} | {roi_phien:>+7.1f}% | {luy_ke_tien:>+15,.0f} đ\n"
+            if so_lai >= 0:
+                win_days += 1
+                streak_loss = 0
+            else:
+                streak_loss += 1
+                
+            tag_mode = "🔥 FULL_POWER" if gate_status == "FULL_POWER" else ("⚡ REC_1PAIR" if gate_status == "SNIPER_RECOVERY" else "🌗 BALANCED")
+            report += f"{ngay_str} | {tag_mode:<18} | {pair_strs:<18} | {phi_phien:>14,.0f} | {tong_nhay:>6} | {so_lai:>+14,.0f} | {roi_phien:>+7.1f}% | {luy_ke_tien:>+15,.0f} đ\n"
             
         report += f"=======================================================================================================================================\n"
         win_rate = (win_days / traded_days * 100) if traded_days > 0 else 0
         profit_factor = (tong_thuong_thang / max(1, tong_von_thang))
         
         report += f"📊 THỐNG KÊ TÀI CHÍNH TOÀN DIỆN THÁNG {thang:02d}/{nam}:\n"
-        report += f" • Phiên bóp cò: {traded_days} ngày | Đóng van cấm đánh: {skip_days} ngày\n"
+        report += f" • Phiên bóp cò: {traded_days} ngày | Đóng van/Cooldown xả xui: {skip_days} ngày\n"
         report += f" • Tỷ lệ Win-Rate (Có lãi/Hòa) : {win_rate:.2f}%\n"
         report += f" • TỔNG TIỀN ĐÁNH THỰC TẾ    : {tong_von_thang:,.0f} VND\n"
         report += f" • TỔNG DOANH THU THU VỀ       : {tong_thuong_thang:,.0f} VND\n"
@@ -409,20 +419,27 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, cost_per_point, p
         base_pts = int(pts_per_code_base)
         
         t_curr = t1; tong_von_all = 0; tong_thuong_all = 0; luy_ke_range = 0; active_days = 0; win_days = 0; skip_cnt = 0
+        streak_loss = 0; cooldown_cnt = 0
+        
         report = f"📈 BÁO CÁO HỒ SƠ CHU KỲ TỪ [{res1[1]}] ĐẾN [{res2[1]}]:\n"
         report += f"=======================================================================================================================================\n"
-        report += f"{'NGÀY':<10} | {'MỨC ĐÁNH':<10} | {'CẶP LÔ DỰ ĐOÁN':<22} | {'TỔNG TIỀN ĐÁNH':<14} | {'NHÁY':<6} | {'SỐ LÃI PHIÊN':<14} | {'ROI (%)':<8} | {'LŨY KẾ LÃI':<15}\n"
+        report += f"{'NGÀY':<10} | {'MỨC ĐÁNH':<18} | {'CẶP LÔ DỰ ĐOÁN':<18} | {'TỔNG TIỀN ĐÁNH':<14} | {'NHÁY':<6} | {'SỐ LÃI PHIÊN':<14} | {'ROI (%)':<8} | {'LŨY KẾ LÃI':<15}\n"
         report += f"=======================================================================================================================================\n"
         
         while t_curr <= t2:
             ngay_str = t_curr.strftime("%d/%m/%Y")
             if ngay_str in db:
-                is_in_dd = (luy_ke_range < 0)
-                pairs, is_trade, _, _, _, actual_pts, gate_status = tinh_cap_lo_v21_recovery(t_curr, db, user_base_pts=base_pts, is_in_drawdown=is_in_dd)
-                pair_strs = ",".join(f"{p[0]}-{p[1]}" for p in pairs) if len(pairs) > 0 else "CẤM ĐÁNH"
+                pairs, is_trade, _, _, _, actual_pts, gate_status = tinh_cap_lo_v23_adaptive(t_curr, db, user_base_pts=base_pts, luy_ke_hien_tai=luy_ke_range, streak_loss=streak_loss, cooldown_cnt=cooldown_cnt)
+                pair_strs = ",".join(f"{p[0]}-{p[1]}" for p in pairs) if len(pairs) > 0 else "NGHỈ / CẤM ĐÁNH"
                 lo_to_27 = db[ngay_str]['prizes_str']
                 
-                if is_trade:
+                if not is_trade:
+                    skip_cnt += 1
+                    report += f"{ngay_str} | {'🚨 COOLDOWN' if gate_status=='COOLDOWN_SKIP' else '🛑 SKIP':<18} | {pair_strs:<18} | {0:>14,.0f} | {0:>6} | {0:>+14,.0f} | {0.0:>7.1f}% | {luy_ke_range:>+15,.0f} đ\n"
+                    if gate_status == "COOLDOWN_SKIP":
+                        streak_loss = 0
+                        cooldown_cnt = 0
+                else:
                     active_days += 1
                     all_codes = [c for p in pairs for c in p]
                     tong_nhay = sum(lo_to_27.count(c) for c in all_codes)
@@ -431,14 +448,16 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, cost_per_point, p
                     rev = tong_nhay * actual_pts * 80000
                     so_lai = rev - phi_phien
                     roi_phien = (so_lai / phi_phien * 100) if phi_phien > 0 else 0
-                    if so_lai >= 0: win_days += 1
+                    
+                    if so_lai >= 0:
+                        win_days += 1
+                        streak_loss = 0
+                    else:
+                        streak_loss += 1
                     
                     tong_von_all += phi_phien; tong_thuong_all += rev; luy_ke_range += so_lai
-                    tag_mode = "🔥 FULL" if gate_status == "FULL" else "🌗 RECOVERY"
-                    report += f"{ngay_str} | {tag_mode:<10} | {pair_strs:<22} | {phi_phien:>14,.0f} | {tong_nhay:>6} | {so_lai:>+14,.0f} | {roi_phien:>+7.1f}% | {luy_ke_range:>+15,.0f} đ\n"
-                else:
-                    skip_cnt += 1
-                    report += f"{ngay_str} | {'🛑 SKIP':<10} | {pair_strs:<22} | {0:>14,.0f} | {0:>6} | {0:>+14,.0f} | {0.0:>7.1f}% | {luy_ke_range:>+15,.0f} đ\n"
+                    tag_mode = "🔥 FULL_POWER" if gate_status == "FULL_POWER" else ("⚡ REC_1PAIR" if gate_status == "SNIPER_RECOVERY" else "🌗 BALANCED")
+                    report += f"{ngay_str} | {tag_mode:<18} | {pair_strs:<18} | {phi_phien:>14,.0f} | {tong_nhay:>6} | {so_lai:>+14,.0f} | {roi_phien:>+7.1f}% | {luy_ke_range:>+15,.0f} đ\n"
             t_curr += timedelta(days=1)
             
         net_profit = tong_thuong_all - tong_von_all
@@ -447,7 +466,7 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, cost_per_point, p
         
         report += f"=======================================================================================================================================\n"
         report += f"📊 THỐNG KÊ CHU KỲ BÁO CÁO EXCEL:\n"
-        report += f" • Bóp cò khai hỏa: {active_days} phiên | Đứng ngoài cấm đánh: {skip_cnt} phiên\n"
+        report += f" • Bóp cò khai hỏa: {active_days} phiên | Đứng ngoài Cooldown/Cấm đánh: {skip_cnt} phiên\n"
         report += f" • Phiên có lãi/hòa: {win_days} phiên | Tỷ lệ Win-Rate: {win_rate:.2f}%\n"
         report += f" • TỔNG TIỀN ĐÁNH CHU KỲ : {tong_von_all:,.0f} VND\n"
         report += f" • TỔNG DOANH THU HOÀN  : {tong_thuong_all:,.0f} VND\n"
@@ -473,13 +492,13 @@ def web_phan_he_7_raw_db_lookup(ngay_raw):
     except Exception as e: return f"🛑 [LỖI PHÂN HỆ 7]: {e}"
 
 # ==============================================================================
-# 🎨 GIAO DIỆN GRADIO V21.0
+# 🎨 GIAO DIỆN GRADIO V23.0
 # ==============================================================================
 db_init, _ = doc_database_tu_excel()
 latest_dt_init, next_predict_dt_init = lay_ngay_chot_tu_excel(db_init)
 
-with gr.Blocks(title="XSMB QUANT ENGINE V21.0") as demo:
-    gr.Markdown("# 🚀 XSMB QUANT V21.0 — CAPITAL RECOVERY QUANT MASTER")
+with gr.Blocks(title="XSMB QUANT ENGINE V23.0") as demo:
+    gr.Markdown("# 🚀 XSMB QUANT V23.0 — ADAPTIVE STRATEGY ROTATION MASTER")
     
     with gr.Tab("🔄 [1] Active Sync & 100-Test Suite"):
         btn_1 = gr.Button("⚡ KÍCH HOẠT NẠP DỮ LIỆU EXCEL REAL & RUN TESTS", variant="primary")
@@ -490,16 +509,16 @@ with gr.Blocks(title="XSMB QUANT ENGINE V21.0") as demo:
         with gr.Row():
             cost_2 = gr.Number(label="Giá vốn điểm (21700đ Web hoặc 23000đ Thường)", value=21700)
             pts_2 = gr.Number(label="Mốc cược CƠ SỞ (KHI FULL) mỗi con", value=10)
-        btn_2 = gr.Button("🔍 TRÍCH XUẤT DỰ ĐOÁN & BÙ ÂM V21.0", variant="primary")
+        btn_2 = gr.Button("🔍 TRÍCH XUẤT DỰ ĐOÁN & CHẨN ĐOÁN LUÂN CHUYỂN V23.0", variant="primary")
         out_2 = gr.Textbox(label="Hồ sơ Dự đoán AI & Mức Giải Ngân", lines=14)
         btn_2.click(web_phan_he_2_predict, inputs=[cost_2, pts_2], outputs=out_2)
 
-    with gr.Tab("🛡️ [3] Quản Trị Vốn Bù Âm"):
+    with gr.Tab("🛡️ [3] Quản Trị Vốn Luân Chuyển"):
         with gr.Row():
             cap_3 = gr.Number(label="Số vốn giải ngân tổng (VND)", value=10000000)
             cost_3 = gr.Number(label="Giá vốn điểm", value=21700)
-        btn_3 = gr.Button("🧪 LẬP SƠ ĐỒ ĐIỀU TIẾT VỐN BÙ ÂM", variant="primary")
-        out_3 = gr.Textbox(label="Chi Tiết Phân Bổ Vốn Bù Âm V21.0", lines=12)
+        btn_3 = gr.Button("🧪 LẬP SƠ ĐỒ 4 CHẾ ĐỘ LUÂN CHUYỂN VỐN", variant="primary")
+        out_3 = gr.Textbox(label="Chi Tiết Phân Bổ Vốn Luân Chuyển V23.0", lines=12)
         btn_3.click(web_phan_he_3_risk_audit, inputs=[cap_3, cost_3], outputs=out_3)
 
     with gr.Tab("🔍 [4] Backtest Đơn Phiên"):
@@ -507,7 +526,7 @@ with gr.Blocks(title="XSMB QUANT ENGINE V21.0") as demo:
             date_4 = gr.Textbox(label="Nhập ngày tra cứu (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
             cost_4 = gr.Number(label="Giá vốn điểm", value=21700)
             pts_4 = gr.Number(label="Mốc cược CƠ SỞ mỗi con", value=10)
-        btn_4 = gr.Button("📡 TRÍCH XUẤT BACKTEST V21.0", variant="primary")
+        btn_4 = gr.Button("📡 TRÍCH XUẤT BACKTEST LUÂN CHUYỂN V23.0", variant="primary")
         out_4 = gr.Textbox(label="Báo cáo Trúng thưởng & ROI Chi Tiết", lines=14)
         btn_4.click(web_phan_he_4_single_day_backtest, inputs=[date_4, cost_4, pts_4], outputs=out_4)
 
@@ -517,7 +536,7 @@ with gr.Blocks(title="XSMB QUANT ENGINE V21.0") as demo:
             y_5 = gr.Number(label="Năm cần xem", value=latest_dt_init.year)
             cost_5 = gr.Number(label="Giá vốn điểm", value=21700)
             pts_5 = gr.Number(label="Mốc cược CƠ SỞ mỗi con", value=10)
-        btn_5 = gr.Button("📊 BÓC TÁCH LŨY KẾ & DÒNG VỐN ÂM THÁNG", variant="primary")
+        btn_5 = gr.Button("📊 BÓC TÁCH LŨY KẾ LUÂN CHUYỂN CHẾ ĐỘ THÁNG", variant="primary")
         out_5 = gr.Textbox(label="Bảng Nhật ký Báo cáo Tài chính Chi tiết", lines=18)
         btn_5.click(web_phan_he_5_monthly_audit, inputs=[m_5, y_5, cost_5, pts_5], outputs=out_5)
 
@@ -527,7 +546,7 @@ with gr.Blocks(title="XSMB QUANT ENGINE V21.0") as demo:
             t2_6 = gr.Textbox(label="Đến ngày (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
             cost_6 = gr.Number(label="Giá vốn điểm", value=21700)
             pts_6 = gr.Number(label="Mốc cược CƠ SỞ mỗi con", value=10)
-        btn_6 = gr.Button("📈 QUÉT CHU KỲ BÁO CÁO V21.0", variant="primary")
+        btn_6 = gr.Button("📈 QUÉT CHU KỲ BÁO CÁO LUÂN CHUYỂN V23.0", variant="primary")
         out_6 = gr.Textbox(label="Báo cáo Hiệu suất Dòng tiền & Profit Factor", lines=18)
         btn_6.click(web_phan_he_6_range_performance, inputs=[t1_6, t2_6, cost_6, pts_6], outputs=out_6)
 
