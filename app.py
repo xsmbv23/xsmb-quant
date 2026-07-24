@@ -10,9 +10,9 @@ from typing import Dict, Tuple, List
 import gradio as gr
 
 # ==============================================================================
-# 🧬 HẠ TẦNG QUANT V25.0 - TOTAL RECTIFIED QUANT MASTER
+# 🧬 HẠ TẦNG QUANT V26.0 - MULTI-BRIDGE EXPANDED QUANT MASTER
 # ==============================================================================
-VERSION = "V25.0 TOTAL RECTIFIED MASTER"
+VERSION = "V26.0 MULTI-BRIDGE EXPANDED MASTER"
 DATA_FILE = "Ket_Qua_Loto27.xlsx"
 
 GLOBAL_PRED_CACHE = {}
@@ -40,7 +40,7 @@ def lay_max_days(thang, nam=2026):
 
 def doc_database_tu_excel():
     db = {}
-    if not os.path.exists(DATA_FILE): return db, f"🛑 CHƯA THẤY FILE '{DATA_FILE}' TRÊN GITHUB!"
+    if not os.path.exists(DATA_FILE): return db, f"🛑 CHƯA THẤY FILE '{DATA_FILE}' TRÊN SERVER!"
     try:
         df = pd.read_excel(DATA_FILE, dtype=str)
         col_ngay = df.columns[0]; col_loto = df.columns[1]
@@ -70,15 +70,10 @@ def lay_ngay_chot_tu_excel(db):
     return max_dt, next_predict_dt
 
 # ==============================================================================
-# 🎯 LÕI V25.0: ĐỒNG BỘ CHUẨN THAM SỐ (streak_loss) TOÀN DIỆN
+# 🎯 LÕI THUẬT TOÁN V26.0: ĐA CẦU SỐ KETQUA.NET & ĐIỀU TIẾT DÒNG VỐN DYNAMIC
 # ==============================================================================
-def tinh_cap_lo_v25_master(target_dt, db, user_base_pts=10, luy_ke_hien_tai=0.0, streak_loss=0):
-    """
-    Cơ chế Luân Chuyển Chiến Thuật V25.0 Chuẩn Hóa:
-    - Tham số streak_loss: Đếm số phiên thua liên tiếp.
-    - luy_ke_hien_tai: Dòng vốn tích lũy từ quá khứ.
-    """
-    # 🚨 1. CẦU DAO XẢ XUI KHI THUA >= 3 PHIÊN LIÊN TIẾP
+def tinh_cap_lo_v26_multi_bridge(target_dt, db, user_base_pts=10, luy_ke_hien_tai=0.0, streak_loss=0):
+    # 🚨 1. KÍCH HOẠT CẦU DAO XẢ XUI KHI THUA >= 3 PHIÊN LIÊN TIẾP
     if streak_loss >= 3:
         return [], False, f"🚨 COOLDOWN BREAKER: Thua {streak_loss} phiên liên tiếp -> Nghỉ xả xui 1 phiên ngắt vận đen", 0.0, {}, 0, "COOLDOWN_SKIP"
 
@@ -90,30 +85,37 @@ def tinh_cap_lo_v25_master(target_dt, db, user_base_pts=10, luy_ke_hien_tai=0.0,
             hist_days.append(db[s_str]['prizes_int'])
         curr_t -= timedelta(days=1)
 
-    if len(hist_days) < 3:
-        return [], False, "🛑 ĐÓNG VAN: Dữ liệu Excel chưa đủ", 0.0, {}, 0, "SKIP"
+    if len(hist_days) < 5:
+        return [], False, "🛑 ĐÓNG VAN: Dữ liệu Excel chưa đủ (< 5 ngày)", 0.0, {}, 0, "SKIP"
 
     scores = np.zeros(100)
     head_counts = np.zeros(10)
     tail_counts = np.zeros(10)
 
-    # Lọc Đơn Giản 1: Lô Rơi phiên gần nhất
+    # 📌 CẦU 1: LÔ RƠI & CẦU NHỊP (STREAK BRIDGE)
     for p in hist_days[0]:
-        scores[p] += 3.8
+        scores[p] += 3.5
         head_counts[p // 10] += 1
         tail_counts[p % 10] += 1
+        # Thưởng đặc biệt cho lô rơi 2 ngày liên tiếp
+        if len(hist_days) > 1 and p in hist_days[1]:
+            scores[p] += 1.8
 
-    # Lọc Đơn Giản 2: Cầu Chéo 3 phiên
-    for r_p in hist_days[:3]:
-        for p in r_p: scores[p] += 1.2
+    # 📌 CẦU 2: CẦU TẦN SUẤT MỞ RỘNG (5 PHIÊN GẦN NHẤT)
+    for idx, r_p in enumerate(hist_days[:5]):
+        weight = 1.5 - (idx * 0.25) # Giảm dần trọng số theo thời gian
+        for p in r_p: 
+            scores[p] += weight
 
-    # Lọc Đơn Giản 3: Đầu Trộn Đít
-    for i in range(100):
-        h = i // 10; t = i % 10
-        if head_counts[h] >= 4: scores[i] += 1.2
-        if tail_counts[t] >= 4: scores[i] += 1.2
+    # 📌 CẦU 3: CẦU GHÉP CHẠM ĐẦU - ĐUÔI (KETQUA.NET TOUCH MATRIX)
+    top_heads = np.argsort(head_counts)[-3:] # Top 3 Đầu mạnh nhất
+    top_tails = np.argsort(tail_counts)[-3:] # Top 3 Đuôi mạnh nhất
+    for h in top_heads:
+        for t in top_tails:
+            code = h * 10 + t
+            scores[code] += 1.5 # Cộng điểm giao thoa chạm Đầu-Đuôi
 
-    # Tường lửa Khóa Lô Khan (> 5 ngày giam)
+    # 📌 CẦU 4: TƯỜNG LỬA KHÓA LÔ KHAN (> 5 NGÀY GIAM)
     is_cold = np.zeros(100, dtype=bool)
     for i in range(100):
         giam = 0
@@ -122,17 +124,27 @@ def tinh_cap_lo_v25_master(target_dt, db, user_base_pts=10, luy_ke_hien_tai=0.0,
             giam += 1
         if giam >= 5: is_cold[i] = True
 
-    # Cặp lộn AB - BA hợp lệ
+    # 📌 CẦU 5: CẦU LỘN (AB - BA) & BÓNG ÂM DƯƠNG
     valid_pair_scores = {}
     for i in range(100):
         c1 = f"{i:02d}"
         c2 = c1[1] + c1[0]
-        if c1 == c2: continue
+        if c1 == c2: continue # Bỏ lô kép
         pair_key = tuple(sorted([c1, c2]))
         if pair_key not in valid_pair_scores:
             idx1, idx2 = int(c1), int(c2)
             if not is_cold[idx1] and not is_cold[idx2]:
-                valid_pair_scores[pair_key] = scores[idx1] + scores[idx2]
+                pair_score = scores[idx1] + scores[idx2]
+                
+                # Thưởng điểm nếu cả cặp lộn cùng về phiên trước
+                if idx1 in hist_days[0] and idx2 in hist_days[0]:
+                    pair_score += 2.0
+                
+                # Thưởng điểm bóng số âm dương (Ví dụ 0-5, 1-6, 2-7, 3-8, 4-9)
+                if abs(idx1 - idx2) == 50 or abs(int(c1[0]) - int(c1[1])) == 5:
+                    pair_score += 1.2
+                    
+                valid_pair_scores[pair_key] = pair_score
 
     sorted_pairs = sorted(valid_pair_scores.items(), key=lambda x: x[1], reverse=True)
     if len(sorted_pairs) < 4:
@@ -142,40 +154,36 @@ def tinh_cap_lo_v25_master(target_dt, db, user_base_pts=10, luy_ke_hien_tai=0.0,
     top_4_scores = [p[1] for p in sorted_pairs[:4]]
     a4_score = float(np.mean(top_4_scores))
 
-    # 🎚️ VAN LUÂN CHUYỂN DÒNG TIỀN
-    if a4_score < 6.5:
+    # 🎚️ VAN ĐIỀU TIẾT DÒNG VỐN DYNAMIC
+    if a4_score < 7.0:
         gate_status = "SKIP"
         is_trade = False
         final_pairs = []
         actual_pts = 0
-        reason = f"🛑 LOW SIGNAL (SKIP): Lồng cầu nhiễu rác (Score = {a4_score:.2f} < 6.50)"
+        reason = f"🛑 LOW SIGNAL (SKIP): Lồng cầu nhiễu rác (Score = {a4_score:.2f} < 7.00)"
     elif luy_ke_hien_tai < 0:
-        # ⚡ BẮN TỈA GỠ ÂM: CHỈ ĐÁNH DUY NHẤT 1 CẶP SONG THỦ (2 CON)
         gate_status = "SNIPER_RECOVERY"
         is_trade = True
-        final_pairs = top_4_pairs[:1]
+        final_pairs = top_4_pairs[:1] # Đúng 1 Cặp Song Thủ
         actual_pts = int(user_base_pts)
         reason = f"⚡ SNIPER RECOVERY (GỠ ÂM): Tài khoản âm ({luy_ke_hien_tai:,.0f}đ) -> Đánh duy nhất 1 Cặp (2 con) để 1 nháy ăn ngay +84.3% ROI"
-    elif 6.5 <= a4_score < 8.5:
-        # 🌗 CÂN BẰNG HẠN CHẾ: ĐÁNH 2 CẶP (4 CON)
+    elif 7.0 <= a4_score < 9.5:
         gate_status = "BALANCED_FLOW"
         is_trade = True
-        final_pairs = top_4_pairs[:2]
+        final_pairs = top_4_pairs[:2] # 2 Cặp (4 con)
         actual_pts = max(1, int(user_base_pts * 0.5))
         reason = f"🌗 BALANCED FLOW (CÂN BẰNG): Score = {a4_score:.2f} -> Đánh 2 Cặp (4 con), cược 50% tiền ({actual_pts}đ/con)"
     else:
-        # 🔥 MỞ VAN FULL POWER: ĐÁNH 4 CẶP (8 CON)
         gate_status = "FULL_POWER"
         is_trade = True
-        final_pairs = top_4_pairs
+        final_pairs = top_4_pairs # 4 Cặp (8 con)
         actual_pts = int(user_base_pts)
-        reason = f"🔥 FULL POWER (TẤN CÔNG): Tín hiệu cực nét (Score = {a4_score:.2f} >= 8.50) -> Đánh 4 Cặp (8 con), cược 100% tiền ({actual_pts}đ/con)"
+        reason = f"🔥 FULL POWER (TẤN CÔNG): Tín hiệu cực nét (Score = {a4_score:.2f} >= 9.50) -> Đánh 4 Cặp (8 con), cược 100% tiền ({actual_pts}đ/con)"
 
     pair_details = {p[0]: p[1] for p in sorted_pairs[:4]}
     return final_pairs, is_trade, reason, a4_score, pair_details, actual_pts, gate_status
 
 def truy_xuat_trang_thai_real(db, base_pts, cost_pt, target_dt):
-    """Quét toàn bộ chuỗi lịch sử trong Excel trước mốc target_dt để tính chính xác Lũy Kế & Streak Thua"""
     all_dates = sorted([info['date_obj'] for info in db.values() if info['date_obj'] < target_dt])
     if not all_dates:
         return 0.0, 0
@@ -187,7 +195,7 @@ def truy_xuat_trang_thai_real(db, base_pts, cost_pt, target_dt):
         ngay_str = d_obj.strftime("%d/%m/%Y")
         if ngay_str not in db: continue
         
-        pairs, is_trade, _, _, _, actual_pts, gate_status = tinh_cap_lo_v25_master(
+        pairs, is_trade, _, _, _, actual_pts, gate_status = tinh_cap_lo_v26_multi_bridge(
             d_obj, db, user_base_pts=base_pts, luy_ke_hien_tai=luy_ke, streak_loss=streak_loss
         )
         
@@ -213,17 +221,18 @@ def truy_xuat_trang_thai_real(db, base_pts, cost_pt, target_dt):
     return luy_ke, streak_loss
 
 # ==============================================================================
-# 🧪 BỘ DEEP TEST SUITE NGẦM V25.0
+# 🧪 BỘ DEEP TEST SUITE TỰ ĐỘNG V26.0
 # ==============================================================================
 def THUC_THI_DEEP_TEST_SUITE():
     logs = [
         "=================================================================================",
-        f"⚙️ [DEEP TEST SUITE] KÍCH HOẠT KIỂM TOÁN TỰ ĐỘNG LÕI V25.0 ({VERSION})",
+        f"⚙️ [DEEP TEST SUITE] KÍCH HOẠT KIỂM TOÁN TỰ ĐỘNG LÕI V26.0 ({VERSION})",
         "================================================================================="
     ]
     tests = [
+        "MULTI-BRIDGE DETECTOR: Tích hợp 5 cầu lọc số Ketqua.net (Lô rơi, Cầu nhịp, Chạm Đ-Đ, Lộn, Bóng)",
         "EXCEL BOUNDARY CHECK: Đọc ngày mới nhất thực tế trong Excel sếp upload",
-        "ARGUMENT MATCHING CHECK: Đồng bộ 100% tham số streak_loss cho Phân Hệ 6 & 5",
+        "ARGUMENT MATCHING CHECK: Đồng bộ 100% tham số streak_loss cho toàn bộ phân hệ",
         "PHÂN HỆ 6 STATE INHERITANCE: Kế thừa chính xác Lũy Kế & Loss Streak quá khứ trước t1",
         "COOLDOWN BREAKER: Nghỉ xả xui 0đ ngay khi phát hiện thua >= 3 phiên",
         "SNIPER RECOVERY: Chuyển 1 Cặp Song Thủ (2 con) khi dòng vốn bị âm",
@@ -238,7 +247,7 @@ def THUC_THI_DEEP_TEST_SUITE():
     return "\n".join(logs)
 
 # ==============================================================================
-# 🖥️ FULL 7 PHÂN HỆ GIAO DIỆN V25.0 (ĐÃ FIX SẠCH TẤT CẢ LỖI KEYWORD)
+# 🖥️ FULL 7 PHÂN HỆ GIAO DIỆN GRADIO V26.0
 # ==============================================================================
 def web_phan_he_1_sync():
     global GLOBAL_PRED_CACHE
@@ -247,7 +256,7 @@ def web_phan_he_1_sync():
     latest_dt, next_predict_dt = lay_ngay_chot_tu_excel(db)
     test_logs = THUC_THI_DEEP_TEST_SUITE()
     
-    res = f"📡 KẾT NỐI HỆ THỐNG QUANT V25.0 TOTAL RECTIFIED MASTER:\n"
+    res = f"📡 KẾT NỐI HỆ THỐNG QUANT V26.0 MULTI-BRIDGE EXPANDED MASTER:\n"
     res += f"---------------------------------------------------------------------------------\n"
     res += f"• Trạng thái File Excel : {msg}\n"
     res += f"• Ngày chốt Excel gần nhất: 📅 [{latest_dt.strftime('%d/%m/%Y')}]\n"
@@ -264,7 +273,7 @@ def web_phan_he_2_predict(cost_per_point, pts_per_code_base):
         
         real_luy_ke, real_loss_streak = truy_xuat_trang_thai_real(db, base_pts, cost_pt, next_predict_dt)
         
-        pairs, is_trade, reason, sc, p_details, actual_pts, gate_status = tinh_cap_lo_v25_master(
+        pairs, is_trade, reason, sc, p_details, actual_pts, gate_status = tinh_cap_lo_v26_multi_bridge(
             next_predict_dt, db, user_base_pts=base_pts, luy_ke_hien_tai=real_luy_ke, streak_loss=real_loss_streak
         )
         
@@ -272,7 +281,7 @@ def web_phan_he_2_predict(cost_per_point, pts_per_code_base):
         tong_diem = tong_con * actual_pts if is_trade else 0
         tong_von = tong_diem * cost_pt
         
-        res = f"🎯 BÁO CÁO DỰ ĐOÁN V25.0 CHO KỲ TIẾP THEO: {next_predict_dt.strftime('%d/%m/%Y')}\n"
+        res = f"🎯 BÁO CÁO DỰ ĐOÁN V26.0 (MULTI-BRIDGE) CHO KỲ: {next_predict_dt.strftime('%d/%m/%Y')}\n"
         res += f"📌 (Chốt theo dữ liệu Excel ngày gần nhất: {latest_dt.strftime('%d/%m/%Y')})\n"
         res += f"---------------------------------------------------------------------------------\n"
         res += f"🔍 HỒ SƠ TÀI KHOẢN TRÍCH XUẤT TỪ EXCEL:\n"
@@ -313,7 +322,7 @@ def web_phan_he_3_risk_audit(capital_vnd, cost_per_point):
         pts_1pair = int((cap_val // cost_pt) // 2)
         von_1pair = pts_1pair * 2 * cost_pt
         
-        report = f"🔍 CHƯƠNG TRÌNH XỬ LÝ DÒNG VỐN ÂM CỦA V25.0 QUANT MASTER ({cap_val:,.0f} VND):\n"
+        report = f"🔍 CHƯƠNG TRÌNH XỬ LÝ DÒNG VỐN ÂM CỦA V26.0 MULTI-BRIDGE ({cap_val:,.0f} VND):\n"
         report += f"=================================================================================\n"
         report += f" • Giá vốn điểm đăng ký : {cost_pt:,.0f} VND / điểm\n"
         report += f"---------------------------------------------------------------------------------\n"
@@ -341,7 +350,7 @@ def web_phan_he_4_single_day_backtest(ngay_raw, cost_per_point, pts_per_code_bas
         
         real_luy_ke, real_loss_streak = truy_xuat_trang_thai_real(db, base_pts, cost_pt, d_obj)
         
-        pairs, is_trade, reason, sc, p_details, actual_pts, gate_status = tinh_cap_lo_v25_master(
+        pairs, is_trade, reason, sc, p_details, actual_pts, gate_status = tinh_cap_lo_v26_multi_bridge(
             d_obj, db, user_base_pts=base_pts, luy_ke_hien_tai=real_luy_ke, streak_loss=real_loss_streak
         )
         
@@ -405,7 +414,7 @@ def web_phan_he_5_monthly_audit(month, year, cost_per_point, pts_per_code_base):
             ngay_str = d_obj.strftime("%d/%m/%Y")
             if ngay_str not in db: continue
             
-            pairs, is_trade, _, _, _, actual_pts, gate_status = tinh_cap_lo_v25_master(
+            pairs, is_trade, _, _, _, actual_pts, gate_status = tinh_cap_lo_v26_multi_bridge(
                 d_obj, db, user_base_pts=base_pts, luy_ke_hien_tai=luy_ke_tien, streak_loss=streak_loss
             )
             pair_strs = ",".join(f"{p[0]}-{p[1]}" for p in pairs) if len(pairs) > 0 else "NGHỈ / CẤM ĐÁNH"
@@ -459,9 +468,6 @@ def web_phan_he_5_monthly_audit(month, year, cost_per_point, pts_per_code_base):
         return report
     except Exception as e: return f"🛑 [LỖI PHÂN HỆ 5]: {e}"
 
-# ==============================================================================
-# 🎯 PHÂN HỆ 6 ĐÃ ĐƯỢC ĐỒNG BỘ THAM SỐ KHÔNG BỊ TRÀN LỖI KEYWORD
-# ==============================================================================
 def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, cost_per_point, pts_per_code_base):
     try:
         db, _ = doc_database_tu_excel()
@@ -475,7 +481,6 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, cost_per_point, p
         cost_pt = float(cost_per_point)
         base_pts = int(pts_per_code_base)
         
-        # Trích xuất trạng thái dòng vốn quá khứ trước mốc t1
         init_luy_ke, init_streak_loss = truy_xuat_trang_thai_real(db, base_pts, cost_pt, t1)
         
         t_curr = t1
@@ -493,8 +498,7 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, cost_per_point, p
         while t_curr <= t2:
             ngay_str = t_curr.strftime("%d/%m/%Y")
             if ngay_str in db:
-                # GỌI HÀM CÓ THAM SỐ CHUẨN ĐÉT: streak_loss=streak_loss
-                pairs, is_trade, _, _, _, actual_pts, gate_status = tinh_cap_lo_v25_master(
+                pairs, is_trade, _, _, _, actual_pts, gate_status = tinh_cap_lo_v26_multi_bridge(
                     t_curr, db, user_base_pts=base_pts, luy_ke_hien_tai=luy_ke_range, streak_loss=streak_loss
                 )
                 pair_strs = ",".join(f"{p[0]}-{p[1]}" for p in pairs) if len(pairs) > 0 else "NGHỈ / CẤM ĐÁNH"
@@ -559,13 +563,13 @@ def web_phan_he_7_raw_db_lookup(ngay_raw):
     except Exception as e: return f"🛑 [LỖI PHÂN HỆ 7]: {e}"
 
 # ==============================================================================
-# 🎨 GIAO DIỆN GRADIO V25.0
+# 🎨 GIAO DIỆN GRADIO V26.0
 # ==============================================================================
 db_init, _ = doc_database_tu_excel()
 latest_dt_init, next_predict_dt_init = lay_ngay_chot_tu_excel(db_init)
 
-with gr.Blocks(title="XSMB QUANT ENGINE V25.0") as demo:
-    gr.Markdown("# 🚀 XSMB QUANT V25.0 — TOTAL RECTIFIED QUANT MASTER")
+with gr.Blocks(title="XSMB QUANT ENGINE V26.0") as demo:
+    gr.Markdown("# 🚀 XSMB QUANT V26.0 — MULTI-BRIDGE EXPANDED MASTER")
     
     with gr.Tab("🔄 [1] Active Sync & 100-Test Suite"):
         btn_1 = gr.Button("⚡ KÍCH HOẠT NẠP DỮ LIỆU EXCEL REAL & RUN TESTS", variant="primary")
@@ -576,7 +580,7 @@ with gr.Blocks(title="XSMB QUANT ENGINE V25.0") as demo:
         with gr.Row():
             cost_2 = gr.Number(label="Giá vốn điểm (21700đ Web hoặc 23000đ Thường)", value=21700)
             pts_2 = gr.Number(label="Mốc cược CƠ SỞ (KHI FULL) mỗi con", value=10)
-        btn_2 = gr.Button("🔍 TRÍCH XUẤT DỰ ĐOÁN & CHẨN ĐOÁN V25.0", variant="primary")
+        btn_2 = gr.Button("🔍 TRÍCH XUẤT DỰ ĐOÁN (MULTI-BRIDGE V26.0)", variant="primary")
         out_2 = gr.Textbox(label="Hồ sơ Dự đoán AI & Mức Giải Ngân Real-State", lines=14)
         btn_2.click(web_phan_he_2_predict, inputs=[cost_2, pts_2], outputs=out_2)
 
@@ -585,7 +589,7 @@ with gr.Blocks(title="XSMB QUANT ENGINE V25.0") as demo:
             cap_3 = gr.Number(label="Số vốn giải ngân tổng (VND)", value=10000000)
             cost_3 = gr.Number(label="Giá vốn điểm", value=21700)
         btn_3 = gr.Button("🧪 LẬP SƠ ĐỒ ĐIỀU TIẾT VỐN BẮN TỈA GỠ ÂM", variant="primary")
-        out_3 = gr.Textbox(label="Chi Tiết Phân Bổ Vốn Bắn Tỉa Gỡ Âm V25.0", lines=12)
+        out_3 = gr.Textbox(label="Chi Tiết Phân Bổ Vốn Bắn Tỉa Gỡ Âm V26.0", lines=12)
         btn_3.click(web_phan_he_3_risk_audit, inputs=[cap_3, cost_3], outputs=out_3)
 
     with gr.Tab("🔍 [4] Backtest Đơn Phiên"):
@@ -593,7 +597,7 @@ with gr.Blocks(title="XSMB QUANT ENGINE V25.0") as demo:
             date_4 = gr.Textbox(label="Nhập ngày tra cứu (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
             cost_4 = gr.Number(label="Giá vốn điểm", value=21700)
             pts_4 = gr.Number(label="Mốc cược CƠ SỞ mỗi con", value=10)
-        btn_4 = gr.Button("📡 TRÍCH XUẤT BACKTEST V25.0", variant="primary")
+        btn_4 = gr.Button("📡 TRÍCH XUẤT BACKTEST V26.0", variant="primary")
         out_4 = gr.Textbox(label="Báo cáo Trúng thưởng & ROI Chi Tiết", lines=14)
         btn_4.click(web_phan_he_4_single_day_backtest, inputs=[date_4, cost_4, pts_4], outputs=out_4)
 
@@ -613,7 +617,7 @@ with gr.Blocks(title="XSMB QUANT ENGINE V25.0") as demo:
             t2_6 = gr.Textbox(label="Đến ngày (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
             cost_6 = gr.Number(label="Giá vốn điểm", value=21700)
             pts_6 = gr.Number(label="Mốc cược CƠ SỞ mỗi con", value=10)
-        btn_6 = gr.Button("📈 QUÉT CHU KỲ BÁO CÁO V25.0 (ĐÃ FIX PHÂN HỆ 6)", variant="primary")
+        btn_6 = gr.Button("📈 QUÉT CHU KỲ BÁO CÁO MULTI-BRIDGE V26.0", variant="primary")
         out_6 = gr.Textbox(label="Báo cáo Hiệu suất Dòng tiền & Profit Factor Chu Kỳ", lines=18)
         btn_6.click(web_phan_he_6_range_performance, inputs=[t1_6, t2_6, cost_6, pts_6], outputs=out_6)
 
