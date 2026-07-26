@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 import gradio as gr
 
 # ==============================================================================
-# 🧬 HẠ TẦNG QUANT V30.1 - KHUNG 5 NGÀY (FULL 7 MENUS)
+# 🧬 HẠ TẦNG QUANT V30.2 - CROSS-VALIDATED MASTER (FULL 7 MENUS)
 # ==============================================================================
-VERSION = "V30.1 NUÔI KHUNG MASTER"
+VERSION = "V30.2 CROSS-VALIDATED MASTER"
 DATA_FILE = "Ket_Qua_Loto27.xlsx"
 COST_PER_POINT = 21700
 WIN_PER_NHAY = 80000
@@ -53,7 +53,7 @@ def doc_database_tu_excel():
                     'date_str': ngay_str,
                     'prizes_int': loto_list[:27]
                 }
-        return db, f"🟢 NẠP THÀNH CÔNG {len(db)} NGÀY"
+        return db, f"🟢 NẠP THÀNH CÔNG {len(db)} NGÀY DỮ LIỆU"
     except Exception as e: return db, f"🛑 LỖI ĐỌC FILE: {e}"
 
 def lay_ngay_chot_tu_excel(db):
@@ -89,6 +89,7 @@ def tim_cap_nuoi(target_dt, db):
             if c1 in day_res or c2 in day_res: break
             days_missed += 1
             
+        # Nén 4-6 ngày, chuẩn bị nổ
         if 4 <= days_missed <= 6:
             freq_30 = sum(1 for day_res in hist_days if day_res and (c1 in day_res or c2 in day_res))
             if freq_30 >= 6: 
@@ -99,8 +100,11 @@ def tim_cap_nuoi(target_dt, db):
     return sorted_pairs[0][0]
 
 def truy_xuat_trang_thai_khung(db, target_dt):
-    """Giả lập lùi về 20 ngày để xác định trạng thái Khung HIỆN TẠI ở ngày target_dt"""
-    start_dt = target_dt - timedelta(days=20)
+    """Giả lập từ NGÀY ĐẦU TIÊN CỦA FILE EXCEL để đồng bộ 100% trạng thái Tab 2, 4, 5, 6"""
+    all_dates = sorted([info['date_obj'] for info in db.values()])
+    if not all_dates: return False, [], 0
+    start_dt = all_dates[0]
+    
     curr = start_dt
     khung_active = False
     current_pair = []
@@ -119,23 +123,23 @@ def truy_xuat_trang_thai_khung(db, target_dt):
             lo_to = db[ngay_str]['prizes_int']
             nhay = lo_to.count(current_pair[0]) + lo_to.count(current_pair[1])
             if nhay > 0:
-                khung_active = False
+                khung_active = False # Nổ -> Xóa khung
             else:
-                if day_in_khung == 5: khung_active = False
-                else: day_in_khung += 1
+                if day_in_khung == 5: khung_active = False # Cắt lỗ -> Xóa khung
+                else: day_in_khung += 1 # Nuôi tiếp
         curr += timedelta(days=1)
         
     return khung_active, current_pair, day_in_khung
 
 # ==============================================================================
-# 🖥️ FULL 7 PHÂN HỆ GIAO DIỆN
+# 🖥️ FULL 7 PHÂN HỆ GIAO DIỆN (ĐÃ CROSS-VALIDATE)
 # ==============================================================================
 
 # --- TAB 1 ---
 def web_phan_he_1_sync():
     db, msg = doc_database_tu_excel()
     latest_dt, next_predict_dt = lay_ngay_chot_tu_excel(db)
-    res = f"📡 KẾT NỐI HỆ THỐNG V30.1 NUÔI KHUNG 5 NGÀY (FULL 7 TAB):\n"
+    res = f"📡 KẾT NỐI HỆ THỐNG V30.2 CROSS-VALIDATED MASTER:\n"
     res += f"---------------------------------------------------------------------------------\n"
     res += f"• Trạng thái File Excel : {msg}\n"
     res += f"• Ngày chốt Excel gần nhất: 📅 [{latest_dt.strftime('%d/%m/%Y')}]\n"
@@ -149,31 +153,30 @@ def web_phan_he_2_predict(pts_per_code_base):
         latest_dt, next_predict_dt = lay_ngay_chot_tu_excel(db)
         base_pts = int(pts_per_code_base)
         
-        # Xác định trạng thái khung
         active, pair, day_idx = truy_xuat_trang_thai_khung(db, next_predict_dt)
         status_msg = ""
         if not active:
             pair = tim_cap_nuoi(next_predict_dt, db)
             if not pair:
-                return f"🎯 BÁO CÁO KỲ: {next_predict_dt.strftime('%d/%m/%Y')}\n=====================\n🛑 Không có cặp nào đạt tiêu chuẩn độ nén. ĐỨNG NGOÀI QUAN SÁT."
+                return f"🎯 BÁO CÁO KỲ TƯƠNG LAI: {next_predict_dt.strftime('%d/%m/%Y')}\n=================================================================================\n🛑 QUAN SÁT: Không có cặp nào đạt tiêu chuẩn độ nén lò xo. HỆ THỐNG ĐỨNG NGOÀI."
             day_idx = 1
-            status_msg = "🔥 BẮT ĐẦU VÀO KHUNG MỚI"
+            status_msg = "🔥 TÍN HIỆU ĐẠT: BẮT ĐẦU VÀO KHUNG MỚI"
         else:
-            status_msg = f"⏳ NUÔI TIẾP NGÀY THỨ {day_idx} CỦA KHUNG"
+            status_msg = f"⏳ TIẾP TỤC THEO ĐUỔI: NGÀY THỨ {day_idx} CỦA KHUNG"
             
         pts_con = base_pts * TY_LE_VAO_TIEN[day_idx - 1]
         von_ngay = pts_con * 2 * COST_PER_POINT
         
-        res = f"🎯 BÁO CÁO DỰ ĐOÁN V30.1 CHO KỲ: {next_predict_dt.strftime('%d/%m/%Y')}\n"
+        res = f"🎯 BÁO CÁO DỰ ĐOÁN V30.2 CHO KỲ: {next_predict_dt.strftime('%d/%m/%Y')}\n"
         res += f"=================================================================================\n"
         res += f"🎚️ TRẠNG THÁI KHUNG : {status_msg}\n"
         res += f"=================================================================================\n"
-        res += f"📋 CẶP NUÔI DUY NHẤT: [{pair[0]:02d} - {pair[1]:02d}]\n"
+        res += f"📋 CẶP NUÔI ĐỘC BẢN: [{pair[0]:02d} - {pair[1]:02d}]\n"
         res += f" • Lệnh đi tiền: Ngày {day_idx} (Hệ số x{TY_LE_VAO_TIEN[day_idx - 1]})\n"
         res += f" • Mức cược   : {pts_con} điểm/con\n"
         res += f"---------------------------------------------------------------------------------\n"
         res += f"💰 TỔNG TIỀN ĐÁNH HÔM NAY : {von_ngay:,.0f} VND\n"
-        for nhay in range(1, 3):
+        for nhay in range(1, 4):
             rev = nhay * pts_con * 80000
             res += f" • Nổ {nhay} nháy: Thu về {rev:,.0f}đ\n"
         return res
@@ -195,7 +198,6 @@ def web_phan_he_3_risk_audit(base_pts):
             luy_ke_von += von_ngay
             thuong_1_nhay = pts_con * WIN_PER_NHAY
             lai = thuong_1_nhay - luy_ke_von
-            
             res += f" Ngày {i+1}    |  x{he_so:<2} | {pts_con:>12} | {von_ngay:>13,.0f} | {luy_ke_von:>10,.0f} | {thuong_1_nhay:>18,.0f} | {lai:>+10,.0f}\n"
         
         res += f"======================================================================================\n"
@@ -218,7 +220,7 @@ def web_phan_he_4_single_day_backtest(ngay_raw, pts_per_code_base):
         active, pair, day_idx = truy_xuat_trang_thai_khung(db, d_obj)
         if not active:
             pair = tim_cap_nuoi(d_obj, db)
-            if not pair: return f"📡 BACKTEST NGÀY: {ngay_str}\n=================\n🛑 Quan sát, không có lệnh."
+            if not pair: return f"📡 BACKTEST NGÀY: {ngay_str}\n=================================================================================\n🛑 QUAN SÁT: Không có tín hiệu."
             day_idx = 1
             
         pts_con = base_pts * TY_LE_VAO_TIEN[day_idx - 1]
@@ -227,7 +229,8 @@ def web_phan_he_4_single_day_backtest(ngay_raw, pts_per_code_base):
         thuong = nhay * pts_con * WIN_PER_NHAY
         lai = thuong - von_ngay
         
-        status = "🟢 NỔ (WIN)" if nhay > 0 else ("🔴 GÃY (CẮT LỖ)" if day_in_khung == 5 else "⏳ TRƯỢT (NUÔI TIẾP)")
+        # [FIXED BUG]: Sử dụng day_idx thay vì day_in_khung để chấm dứt NameError Crash
+        status = "🟢 NỔ (WIN & CHỐT KHUNG)" if nhay > 0 else ("🔴 GÃY (CẮT LỖ KHUNG)" if day_idx == 5 else "⏳ TRƯỢT (NUÔI TIẾP)")
         
         report = f"📡 TRÍCH XUẤT BACKTEST KỲ NGÀY EXCEL: {ngay_str}\n"
         report += f"=================================================================================\n"
@@ -249,16 +252,16 @@ def web_phan_he_5_monthly_audit(month, year, pts_per_code_base):
         base_pts = int(pts_per_code_base)
         max_days = lay_max_days(thang, nam)
         
-        # Bắt đầu từ ngày 1 của tháng
         start_dt = datetime(nam, thang, 1)
         end_dt = datetime(nam, thang, max_days)
         
+        # Đồng bộ hóa vị trí khung ngay ngày 1 của tháng
         khung_active, current_pair, day_in_khung = truy_xuat_trang_thai_khung(db, start_dt)
         von_khung_hien_tai = sum([base_pts * TY_LE_VAO_TIEN[i] * 2 * COST_PER_POINT for i in range(day_in_khung-1)]) if khung_active else 0
         
-        report = f"📊 BÁO CÁO LŨY KẾ THÁNG {thang:02d}/{nam} (NUÔI KHUNG 5 NGÀY):\n"
+        report = f"📊 BÁO CÁO LŨY KẾ THÁNG {thang:02d}/{nam} (ĐÃ ĐỒNG BỘ GLOBAL STATE):\n"
         report += f"=================================================================================================================\n"
-        report += f"{'NGÀY':<10} | {'TRẠNG THÁI':<15} | {'CẶP NUÔI':<10} | {'NGÀY THỨ':<8} | {'TIỀN ĐÁNH':<12} | {'KQ':<5} | {'LÃI PHIÊN/KHUNG':<15}\n"
+        report += f"{'NGÀY':<10} | {'TRẠNG THÁI':<16} | {'CẶP NUÔI':<10} | {'NGÀY THỨ':<8} | {'TIỀN ĐÁNH':<12} | {'KQ':<5} | {'LÃI PHIÊN/KHUNG':<15}\n"
         report += f"=================================================================================================================\n"
         
         luy_ke_thang = 0
@@ -273,7 +276,7 @@ def web_phan_he_5_monthly_audit(month, year, pts_per_code_base):
                     day_in_khung = 1
                     von_khung_hien_tai = 0
                 else:
-                    report += f"{ngay_str:<10} | {'🔭 QUAN SÁT':<15} | {'-':<10} | {'-':<8} | {0:<12} | {'-':<5} | {0:<15}\n"
+                    report += f"{ngay_str:<10} | {'🔭 QUAN SÁT':<16} | {'-':<10} | {'-':<8} | {0:<12} | {'-':<5} | {0:<15}\n"
                     curr += timedelta(days=1)
                     continue
                     
@@ -285,26 +288,26 @@ def web_phan_he_5_monthly_audit(month, year, pts_per_code_base):
                 lo_to = db[ngay_str]['prizes_int']
                 nhay = lo_to.count(current_pair[0]) + lo_to.count(current_pair[1])
                 thuong = nhay * pts_con * WIN_PER_NHAY
-                
                 p_str = f"{current_pair[0]:02d}-{current_pair[1]:02d}"
+                
                 if nhay > 0:
                     lai_khung = thuong - von_khung_hien_tai
                     luy_ke_thang += lai_khung
-                    report += f"{ngay_str:<10} | {'🟢 NỔ (WIN)':<15} | {p_str:<10} | {day_in_khung:<8} | {von_ngay:<12,.0f} | {nhay:<5} | {lai_khung:>+15,.0f}\n"
+                    report += f"{ngay_str:<10} | {'🟢 NỔ (WIN)':<16} | {p_str:<10} | {day_in_khung:<8} | {von_ngay:<12,.0f} | {nhay:<5} | {lai_khung:>+15,.0f}\n"
                     khung_active = False
                 else:
                     if day_in_khung == 5:
                         lai_khung = -von_khung_hien_tai
                         luy_ke_thang += lai_khung
-                        report += f"{ngay_str:<10} | {'🔴 GÃY (CẮT LỖ)':<15} | {p_str:<10} | {day_in_khung:<8} | {von_ngay:<12,.0f} | {0:<5} | {lai_khung:>+15,.0f}\n"
+                        report += f"{ngay_str:<10} | {'🔴 GÃY (CẮT LỖ)':<16} | {p_str:<10} | {day_in_khung:<8} | {von_ngay:<12,.0f} | {0:<5} | {lai_khung:>+15,.0f}\n"
                         khung_active = False
                     else:
-                        report += f"{ngay_str:<10} | {'⏳ NUÔI TIẾP':<15} | {p_str:<10} | {day_in_khung:<8} | {von_ngay:<12,.0f} | {0:<5} | {'...':<15}\n"
+                        report += f"{ngay_str:<10} | {'⏳ NUÔI TIẾP':<16} | {p_str:<10} | {day_in_khung:<8} | {von_ngay:<12,.0f} | {0:<5} | {'...':<15}\n"
                         day_in_khung += 1
             curr += timedelta(days=1)
             
         report += f"=================================================================================================================\n"
-        report += f"💰 TỔNG LÃI RÒNG CHỐT TRONG THÁNG: {luy_ke_thang:+,.0f} VND\n"
+        report += f"💰 TỔNG LÃI RÒNG CHỐT TRONG THÁNG (Bao gồm vốn bảo lưu): {luy_ke_thang:+,.0f} VND\n"
         return report
     except Exception as e: return f"🛑 LỖI TAB 5: {e}"
 
@@ -317,12 +320,13 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, pts_per_code_base
         start_dt, end_dt = min(res1[0], res2[0]), max(res1[0], res2[0])
         base_pts = int(pts_per_code_base)
         
+        # Bắt nhịp quá khứ chính xác tại mốc start_dt
         khung_active, current_pair, day_in_khung = truy_xuat_trang_thai_khung(db, start_dt)
         von_khung_hien_tai = sum([base_pts * TY_LE_VAO_TIEN[i] * 2 * COST_PER_POINT for i in range(day_in_khung-1)]) if khung_active else 0
         
         rep = f"📈 BÁO CÁO CHU KỲ (KHUNG 5 NGÀY) TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')}\n"
         rep += "="*115 + "\n"
-        rep += f"{'NGÀY':<10} | {'TRẠNG THÁI':<15} | {'CẶP NUÔI':<10} | {'NGÀY THỨ':<8} | {'TIỀN ĐÁNH':<12} | {'KQ':<5} | {'LÃI PHIÊN/KHUNG':<15} | {'LŨY KẾ':<12}\n"
+        rep += f"{'NGÀY':<10} | {'TRẠNG THÁI':<16} | {'CẶP NUÔI':<10} | {'NGÀY THỨ':<8} | {'TIỀN ĐÁNH':<12} | {'KQ':<5} | {'LÃI PHIÊN/KHUNG':<15} | {'LŨY KẾ':<12}\n"
         rep += "="*115 + "\n"
         
         curr = start_dt
@@ -339,7 +343,7 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, pts_per_code_base
                     day_in_khung = 1
                     von_khung_hien_tai = 0
                 else:
-                    rep += f"{ngay_str:<10} | {'🔭 QUAN SÁT':<15} | {'-':<10} | {'-':<8} | {0:<12} | {'-':<5} | {0:<15} | {total_lai:>+12,.0f}\n"
+                    rep += f"{ngay_str:<10} | {'🔭 QUAN SÁT':<16} | {'-':<10} | {'-':<8} | {0:<12} | {'-':<5} | {0:<15} | {total_lai:>+12,.0f}\n"
                     curr += timedelta(days=1)
                     continue
                     
@@ -357,17 +361,17 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, pts_per_code_base
                     lai_khung = thuong - von_khung_hien_tai
                     total_lai += lai_khung
                     k_thang += 1
-                    rep += f"{ngay_str:<10} | {'🟢 NỔ (WIN)':<15} | {p_str:<10} | {day_in_khung:<8} | {von_ngay:<12,.0f} | {nhay:<5} | {lai_khung:>+15,.0f} | {total_lai:>+12,.0f}\n"
+                    rep += f"{ngay_str:<10} | {'🟢 NỔ (WIN)':<16} | {p_str:<10} | {day_in_khung:<8} | {von_ngay:<12,.0f} | {nhay:<5} | {lai_khung:>+15,.0f} | {total_lai:>+12,.0f}\n"
                     khung_active = False 
                 else:
                     if day_in_khung == 5:
                         lai_khung = -von_khung_hien_tai
                         total_lai += lai_khung
                         k_thua += 1
-                        rep += f"{ngay_str:<10} | {'🔴 GÃY (CẮT LỖ)':<15} | {p_str:<10} | {day_in_khung:<8} | {von_ngay:<12,.0f} | {0:<5} | {lai_khung:>+15,.0f} | {total_lai:>+12,.0f}\n"
+                        rep += f"{ngay_str:<10} | {'🔴 GÃY (CẮT LỖ)':<16} | {p_str:<10} | {day_in_khung:<8} | {von_ngay:<12,.0f} | {0:<5} | {lai_khung:>+15,.0f} | {total_lai:>+12,.0f}\n"
                         khung_active = False 
                     else:
-                        rep += f"{ngay_str:<10} | {'⏳ NUÔI TIẾP':<15} | {p_str:<10} | {day_in_khung:<8} | {von_ngay:<12,.0f} | {0:<5} | {'...':<15} | {total_lai:>+12,.0f}\n"
+                        rep += f"{ngay_str:<10} | {'⏳ NUÔI TIẾP':<16} | {p_str:<10} | {day_in_khung:<8} | {von_ngay:<12,.0f} | {0:<5} | {'...':<15} | {total_lai:>+12,.0f}\n"
                         day_in_khung += 1
             curr += timedelta(days=1)
             
@@ -396,13 +400,13 @@ def web_phan_he_7_raw_db_lookup(ngay_raw):
     except Exception as e: return f"🛑 LỖI TAB 7: {e}"
 
 # ==============================================================================
-# 🎨 DỰNG LÊN GIAO DIỆN GRADIO V30.1
+# 🎨 GIAO DIỆN GRADIO V30.2
 # ==============================================================================
 db_init, _ = doc_database_tu_excel()
 latest_dt_init, next_predict_dt_init = lay_ngay_chot_tu_excel(db_init)
 
-with gr.Blocks(title="XSMB QUANT V30.1") as demo:
-    gr.Markdown("# 🚀 XSMB QUANT V30.1 — KHUNG 5 NGÀY (FULL 7 MENUS)")
+with gr.Blocks(title="XSMB QUANT V30.2") as demo:
+    gr.Markdown("# 🚀 XSMB QUANT V30.2 — KHUNG 5 NGÀY (CROSS-VALIDATED MASTER)")
     
     with gr.Tab("🔄 [1] Active Sync"):
         btn_1 = gr.Button("⚡ KÍCH HOẠT NẠP DỮ LIỆU", variant="primary")
@@ -413,7 +417,7 @@ with gr.Blocks(title="XSMB QUANT V30.1") as demo:
         with gr.Row():
             pts_2 = gr.Number(label="Mốc cược CƠ SỞ (Điểm/con cho Ngày 1)", value=10)
         btn_2 = gr.Button("🔍 TRÍCH XUẤT LỆNH HÔM NAY", variant="primary")
-        out_2 = gr.Textbox(label="Hồ sơ Lệnh V30.1", lines=12)
+        out_2 = gr.Textbox(label="Hồ sơ Lệnh V30.2", lines=12)
         btn_2.click(web_phan_he_2_predict, inputs=[pts_2], outputs=out_2)
 
     with gr.Tab("🛡️ [3] Bảng Vốn Khung 5 Ngày"):
