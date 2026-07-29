@@ -7,9 +7,9 @@ from datetime import datetime, timedelta
 import gradio as gr
 
 # ==============================================================================
-# 🧬 HẠ TẦNG QUANT V34.2 - SIÊU KHUNG T-7 & GIAO CẮT TINH HOA (SẠCH LỖI 100%)
+# 🧬 HẠ TẦNG QUANT V34.4 - SIÊU KHUNG T-7 (SẠCH SẼ 100% LOGIC KẾ TOÁN)
 # ==============================================================================
-VERSION = "V34.2 T-7 GIAO CẮT TINH HOA (SẠCH MỌI LỖI UI & LOGIC)"
+VERSION = "V34.4 T-7 GIAO CẮT KÉP (FINAL MASTERPIECE)"
 DATA_FILE = "Ket_Qua_Loto27.xlsx"
 COST_PER_POINT = 21700
 WIN_PER_NHAY = 80000
@@ -76,28 +76,35 @@ def get_signal_v34(target_dt, db, mode):
 
     dan_t7 = set(db[str_t7]['prizes_int'])
     
-    if mode == "Chỉ Đánh TINH HOA (Lọc bỏ Rác)":
+    if mode in ["Chỉ Đánh TINH HOA (Lọc bỏ Rác)", "Chỉ Đánh RÁC (Không rơi/lộn)"]:
         if str_t1 not in db:
             return None, "[KHUYẾT T-1]"
             
         kq_t1 = set(db[str_t1]['prizes_int'])
         tinh_hoa = set()
         for x in dan_t7:
-            lon = (x % 10) * 10 + (x // 10) # [ĐÃ FIX TRIỆT ĐỂ LỖI BÓNG/LỘN]
+            lon = (x % 10) * 10 + (x // 10)
             if x in kq_t1 or lon in kq_t1:
                 tinh_hoa.add(x)
-        return sorted(list(tinh_hoa)), "OK"
+                
+        if mode == "Chỉ Đánh TINH HOA (Lọc bỏ Rác)":
+            return sorted(list(tinh_hoa)), "OK"
+        else:
+            rac = dan_t7 - tinh_hoa
+            return sorted(list(rac)), "OK"
     else:
         return sorted(list(dan_t7)), "OK"
 
 # ==============================================================================
-# 🖥️ PHÂN HỆ GIAO DIỆN V34.2 (ĐÃ DIỆT SẠCH LỖI KẾ TOÁN ẢO)
+# 🖥️ PHÂN HỆ GIAO DIỆN V34.4
 # ==============================================================================
+
+MODES = ["Đánh Toàn Bộ T-7", "Chỉ Đánh TINH HOA (Lọc bỏ Rác)", "Chỉ Đánh RÁC (Không rơi/lộn)"]
 
 def web_phan_he_1_sync():
     db, msg = doc_database_tu_excel()
     _, latest_dt, next_predict_dt = lay_ngay_chot_tu_excel(db)
-    res = f"📡 HỆ THỐNG V34.2 (SIÊU KHUNG GIAO CẮT KÉP - BẢN SẠCH LỖI):\n"
+    res = f"📡 HỆ THỐNG V34.4 (FULL 3 CHẾ ĐỘ CHIẾN THUẬT - SẠCH LỖI):\n"
     res += f"---------------------------------------------------------------------------------\n"
     res += f"• Tình trạng DB : {msg}\n"
     res += f"• Cập nhật cuối : 📅 [{latest_dt.strftime('%d/%m/%Y')}]\n"
@@ -117,12 +124,12 @@ def web_phan_he_2_predict(pts_per_code_base, mode):
             
         so_luong_lo = len(dan)
         von_ngay = so_luong_lo * base_pts * COST_PER_POINT
-        dan_str = " ".join([f"{x:02d}" for x in dan]) if so_luong_lo > 0 else "[RỖNG - Không có số đạt chuẩn]"
+        dan_str = " ".join([f"{x:02d}" for x in dan]) if so_luong_lo > 0 else "[RỖNG LỆNH - Sạch Số]"
         
         doanh_thu_1_nhay = base_pts * WIN_PER_NHAY
         diem_hoa_von_nhay = math.ceil(von_ngay / doanh_thu_1_nhay) if so_luong_lo > 0 else 0
         
-        res = f"🎯 XUẤT LỆNH V34.2 CHO KỲ: {next_predict_dt.strftime('%d/%m/%Y')}\n"
+        res = f"🎯 XUẤT LỆNH V34.4 CHO KỲ: {next_predict_dt.strftime('%d/%m/%Y')}\n"
         res += f"=======================================================\n"
         res += f"🎚️ CHẾ ĐỘ ĐÁNH: {mode}\n"
         res += f"📋 DANH SÁCH LỆNH ({so_luong_lo} SỐ):\n"
@@ -134,7 +141,7 @@ def web_phan_he_2_predict(pts_per_code_base, mode):
         if so_luong_lo > 0:
             res += f"💡 KỊCH BẢN LÃI RÒNG: Cần trúng ÍT NHẤT {diem_hoa_von_nhay} Nháy.\n"
         else:
-            res += f"💡 HỆ THỐNG TRẢ VỀ RỖNG, KHÓA VAN TIỀN BẢO VỆ TÀI KHOẢN.\n"
+            res += f"💡 HỆ THỐNG TRẢ VỀ RỖNG LỆNH, BẢO TOÀN VỐN TUYỆT ĐỐI.\n"
         return res
     except Exception as e: return f"🛑 LỖI TAB 2: {e}"
 
@@ -150,14 +157,15 @@ def web_phan_he_3_risk_audit(base_pts, sim_size):
         res += f"====================================================================\n"
         res += f" KẾT QUẢ NHÁY | DOANH THU THU VỀ | LÃI / LỖ RÒNG | TRẠNG THÁI\n"
         res += f"====================================================================\n"
-        
-        # [ĐÃ FIX LỖI TÔ HỒNG]: Loại bỏ chữ HÒA ảo tưởng
         for nhay in range(0, int(so_luong_lo * 0.7) + 2):
             thuong = nhay * base_pts * WIN_PER_NHAY
             lai = thuong - von_ngay
             status = "🟢 LÃI RÒNG" if lai > 0 else "🔴 LỖ"
             if nhay == 0: status += " (MẤT TRẮNG)"
-            res += f" Về {nhay:>2} nháy  | {thuong:>16,.0f} | {lai:>+13,.0f} | {status}\n"
+            
+            # Xóa dấu + vô lý ở số âm/số 0
+            lai_str = f"{lai:+,.0f}" if lai != 0 else "0"
+            res += f" Về {nhay:>2} nháy  | {thuong:>16,.0f} | {lai_str:>13} | {status}\n"
         res += f"====================================================================\n"
         return res
     except Exception as e: return f"🛑 LỖI TAB 3: {e}"
@@ -183,7 +191,6 @@ def web_phan_he_4_single_day_backtest(ngay_raw, pts_per_code_base):
 
         dan_t7 = set(db[ngay_str_t7]['prizes_int'])
         
-        # [ĐÃ FIX]: Kế toán chuẩn không bốc phét chữ "HÒA"
         def cal_pnl(danh_sach):
             sl = len(danh_sach)
             if sl == 0: return 0, 0, 0, 0, 0, "⚫ TRỐNG LỆNH"
@@ -224,13 +231,12 @@ def web_phan_he_4_single_day_backtest(ngay_raw, pts_per_code_base):
         
         report += f"🗑️ [KỊCH BẢN 2] - BÓC TÁCH: CHỈ ĐÁNH SỐ 'RÁC' (Không Rơi/Không Lộn từ T-1)\n"
         if sl_r == 0:
-            report += f" 👉 KẾT QUẢ: KHÔNG CÓ RÁC TRONG DÀN T-7 (Sạch 100%)\n\n"
+            report += f" 👉 KẾT QUẢ: KHÔNG CÓ RÁC TRONG DÀN T-7 (Sạch 100% Tinh Hoa)\n\n"
         else:
             report += f" • Dàn {sl_r} số: " + " ".join([f"{x:02d}" for x in list_rac]) + "\n"
             report += f" • Nổ {nhay_r} nháy.  Vốn chi: {chi_r:,.0f}đ  | Thu về: {thu_r:,.0f}đ\n"
             report += f" 👉 KẾT QUẢ NUÔI RÁC: {lai_r:+,.0f} VNĐ ({st_r})\n\n"
         
-        # [ĐÃ FIX]: XÓA BỎ CHỮ 'BÓNG' ĐIÊU NGOA
         report += f"💎 [KỊCH BẢN 3] - BÓC TÁCH: CHỈ ĐÁNH 'TINH HOA' (Có Rơi/Lộn từ T-1)\n"
         if sl_t == 0:
             report += f" 👉 KẾT QUẢ: KHÔNG CÓ TINH HOA (Toàn bộ là Rác)\n\n"
@@ -239,10 +245,15 @@ def web_phan_he_4_single_day_backtest(ngay_raw, pts_per_code_base):
             report += f" • Nổ {nhay_t} nháy.  Vốn chi: {chi_t:,.0f}đ  | Thu về: {thu_t:,.0f}đ\n"
             report += f" 👉 LÃI/LỖ RÒNG: {lai_t:+,.0f} VNĐ ({st_t})\n\n"
         
+        # [ĐÃ FIX LỖI CÂM NÍN KHI sl_r == 0]
         report += f"========================================================================\n"
         report += f"💡 KẾT LUẬN KIỂM TOÁN TẠI NGÀY NÀY:\n"
-        if lai_r < 0: report += f" -> Sếp đã bị RÁC hút máu mất {-lai_r:,.0f}đ. Chọn chế độ đánh TINH HOA là tối ưu nhất!\n"
-        elif lai_r > 0: report += f" -> Rác bùng nổ mang lại {lai_r:,.0f}đ. Lồng cầu đang quay quá hỗn loạn.\n"
+        if sl_r == 0: 
+            report += f" -> Thật tuyệt vời! Dàn T-7 hôm nay sạch bóng Rác, 100% đều là Tinh Hoa có nhịp rơi.\n"
+        elif lai_r < 0: 
+            report += f" -> Sếp đã bị RÁC hút máu mất {-lai_r:,.0f}đ. Chọn chế độ đánh TINH HOA là quyết định cứu rỗi vốn!\n"
+        elif lai_r > 0: 
+            report += f" -> Cảnh báo! Rác bùng nổ mang lại lãi {lai_r:,.0f}đ. Lồng cầu đang quay cực kỳ hỗn loạn và không theo form.\n"
         return report
     except Exception as e: return f"🛑 LỖI TAB 4: {e}"
 
@@ -282,7 +293,7 @@ def web_phan_he_5_monthly_audit(month, year, pts_per_code_base, mode):
                 continue
                 
             if len(dan) == 0:
-                report += f"{ngay_str:<10} | {'🔭 QUAN SÁT':<15} | {'0':<6} | {'-':<12} | {'-':<5} | {'-':<12} | {'[RỖNG LỆNH]':<15} | {luy_ke_thang:>+12,.0f}\n"
+                report += f"{ngay_str:<10} | {'🔭 QUAN SÁT':<15} | {'0':<6} | {'-':<12} | {'-':<5} | {'-':<12} | {'[TRỐNG LỆNH]':<15} | {luy_ke_thang:>+12,.0f}\n"
                 curr += timedelta(days=1)
                 continue
                 
@@ -298,7 +309,6 @@ def web_phan_he_5_monthly_audit(month, year, pts_per_code_base, mode):
             cash_chi += von_1_phien
             cash_thu += thuong
             
-            # [ĐÃ FIX]: Không có HÒA giả tạo ở đây nữa
             status_str = "🟢 WIN" if lai > 0 else "🔴 LOSS"
             report += f"{ngay_str:<10} | {status_str:<15} | {so_luong_lo:<6} | {von_1_phien:<12,.0f} | {nhay:<5} | {thuong:<12,.0f} | {lai:>+15,.0f} | {luy_ke_thang:>+12,.0f}\n"
             curr += timedelta(days=1)
@@ -323,7 +333,7 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, pts_per_code_base
         
         if start_dt < min_dt: start_dt = min_dt
         if end_dt > max_dt: end_dt = max_dt
-        if start_dt > end_dt: return f"🛑 LỖI: Khoảng thời gian tra cứu hoàn toàn nằm ngoài Database (Chỉ có từ {min_dt.strftime('%d/%m/%Y')} đến {max_dt.strftime('%d/%m/%Y')})."
+        if start_dt > end_dt: return f"🛑 LỖI: Khoảng thời gian tra cứu hoàn toàn nằm ngoài Database."
         
         rep = f"📈 BÁO CÁO CHU KỲ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')} (CHẾ ĐỘ: {mode})\n"
         rep += "="*110 + "\n"
@@ -331,7 +341,7 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, pts_per_code_base
         rep += "="*110 + "\n"
         
         curr = start_dt
-        # [ĐÃ FIX]: Tiêu diệt biến ma k_hoa
+        # [ĐÃ FIX]: Không còn biến ma k_hoa nào hết!
         total_lai = 0; trades = 0; k_thang = 0; k_thua = 0
         cash_thu = 0; cash_chi = 0  
         
@@ -349,7 +359,7 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, pts_per_code_base
                 continue
                 
             if len(dan) == 0:
-                rep += f"{ngay_str:<10} | {'🔭 QUAN SÁT':<15} | {'0':<6} | {'-':<16} | {'-':<5} | {'[RỖNG LỆNH]':<15} | {total_lai:>+12,.0f}\n"
+                rep += f"{ngay_str:<10} | {'🔭 QUAN SÁT':<15} | {'0':<6} | {'-':<16} | {'-':<5} | {'[TRỐNG LỆNH]':<15} | {total_lai:>+12,.0f}\n"
                 curr += timedelta(days=1)
                 continue
                     
@@ -366,7 +376,6 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, pts_per_code_base
             cash_chi += von_1_phien
             cash_thu += thuong
             
-            # [ĐÃ FIX]: Không có HÒA ma giáo
             if lai > 0: 
                 k_thang += 1; status_str = "🟢 WIN"
             else: 
@@ -377,7 +386,7 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, pts_per_code_base
             
         roi = (total_lai / cash_chi * 100) if cash_chi > 0 else 0
         rep += "="*110 + "\n"
-        # [ĐÃ FIX]: Bỏ biến k_hoa khỏi giao diện
+        # [ĐÃ FIX]: Tuyệt đối không còn in Hòa 0 phiên
         rep += f"📊 HIỆU SUẤT LỆNH: {trades} Phiên Giao Dịch | Win: {k_thang} | Loss: {k_thua}\n"
         rep += f"📝 DÒNG TIỀN     : Chi {cash_chi:,.0f} đ | Thu {cash_thu:,.0f} đ\n"
         rep += f"💰 LỢI NHUẬN RÒNG: {total_lai:+,.0f} VNĐ (ROI: {roi:+.2f} %)\n"
@@ -401,13 +410,13 @@ def web_phan_he_7_raw_db_lookup(ngay_raw):
     except Exception as e: return f"🛑 LỖI TAB 7: {e}"
 
 # ==============================================================================
-# 🎨 GIAO DIỆN GRADIO V34.2
+# 🎨 GIAO DIỆN GRADIO V34.4
 # ==============================================================================
 db_init, _ = doc_database_tu_excel()
 _, latest_dt_init, next_predict_dt_init = lay_ngay_chot_tu_excel(db_init)
 
-with gr.Blocks(title="XSMB QUANT V34.2") as demo:
-    gr.Markdown("# 🚀 XSMB QUANT V34.2 — T-7 GIAO CẮT TINH HOA (FINAL STRICT AUDIT)")
+with gr.Blocks(title="XSMB QUANT V34.4") as demo:
+    gr.Markdown("# 🚀 XSMB QUANT V34.4 — T-7 GIAO CẮT TINH HOA & RÁC (FINAL MASTERPIECE)")
     
     with gr.Tab("🔄 [1] Cập Nhật DB"):
         btn_1 = gr.Button("⚡ KÍCH HOẠT NẠP & KIỂM TOÁN DB", variant="primary")
@@ -417,9 +426,9 @@ with gr.Blocks(title="XSMB QUANT V34.2") as demo:
         title_2 = gr.Markdown(f"#### Lệnh cho kỳ quay tiếp theo: {next_predict_dt_init.strftime('%d/%m/%Y')}")
         with gr.Row():
             pts_2 = gr.Number(label="Mốc cược CƠ SỞ (Điểm/1 con lô)", value=10)
-            mode_2 = gr.Radio(choices=["Đánh Toàn Bộ T-7", "Chỉ Đánh TINH HOA (Lọc bỏ Rác)"], value="Chỉ Đánh TINH HOA (Lọc bỏ Rác)", label="Tư Duy Chiến Thuật")
+            mode_2 = gr.Radio(choices=MODES, value="Chỉ Đánh TINH HOA (Lọc bỏ Rác)", label="Tư Duy Chiến Thuật")
         btn_2 = gr.Button("🔍 KIẾT XUẤT LỆNH", variant="primary")
-        out_2 = gr.Textbox(label="Hồ sơ Lệnh V34.2", lines=14)
+        out_2 = gr.Textbox(label="Hồ sơ Lệnh V34.4", lines=14)
         btn_2.click(web_phan_he_2_predict, inputs=[pts_2, mode_2], outputs=out_2)
 
     with gr.Tab("🛡️ [3] Bảng Vốn Khung Nháy"):
@@ -444,7 +453,7 @@ with gr.Blocks(title="XSMB QUANT V34.2") as demo:
             m_5 = gr.Slider(minimum=1, maximum=12, step=1, label="Tháng", value=latest_dt_init.month)
             y_5 = gr.Number(label="Năm", value=latest_dt_init.year)
             pts_5 = gr.Number(label="Mức cược (Điểm/con)", value=10)
-            mode_5 = gr.Radio(choices=["Đánh Toàn Bộ T-7", "Chỉ Đánh TINH HOA (Lọc bỏ Rác)"], value="Chỉ Đánh TINH HOA (Lọc bỏ Rác)", label="Tư Duy Chiến Thuật")
+            mode_5 = gr.Radio(choices=MODES, value="Chỉ Đánh TINH HOA (Lọc bỏ Rác)", label="Tư Duy Chiến Thuật")
         btn_5 = gr.Button("📊 KIỂM TOÁN DÒNG TIỀN THÁNG", variant="primary")
         out_5 = gr.Textbox(label="Nhật ký Audit", lines=20)
         btn_5.click(web_phan_he_5_monthly_audit, inputs=[m_5, y_5, pts_5, mode_5], outputs=out_5)
@@ -454,7 +463,7 @@ with gr.Blocks(title="XSMB QUANT V34.2") as demo:
             t1_6 = gr.Textbox(label="Từ ngày (DD/MM/YYYY)", value="01/01/2026")
             t2_6 = gr.Textbox(label="Đến ngày (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
             pts_6 = gr.Number(label="Mức cược (Điểm/con)", value=10)
-            mode_6 = gr.Radio(choices=["Đánh Toàn Bộ T-7", "Chỉ Đánh TINH HOA (Lọc bỏ Rác)"], value="Chỉ Đánh TINH HOA (Lọc bỏ Rác)", label="Tư Duy Chiến Thuật")
+            mode_6 = gr.Radio(choices=MODES, value="Chỉ Đánh TINH HOA (Lọc bỏ Rác)", label="Tư Duy Chiến Thuật")
         btn_6 = gr.Button("📈 KIỂM TOÁN TOÀN BỘ LỊCH SỬ", variant="primary")
         out_6 = gr.Textbox(label="Báo cáo Tổng Dòng Tiền", lines=20)
         btn_6.click(web_phan_he_6_range_performance, inputs=[t1_6, t2_6, pts_6, mode_6], outputs=out_6)
