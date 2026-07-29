@@ -4,13 +4,14 @@ import pandas as pd
 import numpy as np
 import math
 import calendar
+import re
 from datetime import datetime, timedelta
 import gradio as gr
 
 # ==============================================================================
-# 🧬 HẠ TẦNG QUANT V34.6 - T-7 GIAO CẮT KÉP (UI FIX ĐA THIẾT BỊ)
+# 🧬 HẠ TẦNG QUANT V36.0 - PHIÊN BẢN THƯƠNG MẠI CAO CẤP (COMMERCIAL EDITION)
 # ==============================================================================
-VERSION = "V34.6 T-7 3 CHẾ ĐỘ (DEEP AUDITED & UI FULL RESPONSIVE)"
+VERSION = "V36.0 PRO ALGO (BẢN THƯƠNG MẠI - ĐA NỀN TẢNG)"
 DATA_FILE = "Ket_Qua_Loto27.xlsx"
 COST_PER_POINT = 21700
 WIN_PER_NHAY = 80000
@@ -30,36 +31,39 @@ def chuan_hoa_ngay(ngay_raw):
     except: return None
 
 def lay_max_days(thang, nam):
-    # [ĐÃ FIX DEEP-TEST]: Dùng thư viện calendar gốc của Python để chống lỗi năm nhuận tuyệt đối
     return calendar.monthrange(nam, thang)[1]
 
 def doc_database_tu_excel():
     db = {}
     if not os.path.exists(DATA_FILE): 
-        return db, f"🛑 LỖI HỆ THỐNG: Không tìm thấy file '{DATA_FILE}'."
+        return db, f"🛑 LỖI HỆ THỐNG: Không tìm thấy cơ sở dữ liệu '{DATA_FILE}'."
     try:
         df = pd.read_excel(DATA_FILE, dtype=str)
         if df.shape[1] < 2:
-            return db, "🛑 LỖI CẤU TRÚC FILE: File Excel phải có ít nhất 2 cột (Ngày và Lô Tô)."
+            return db, "🛑 LỖI CẤU TRÚC: File dữ liệu phải có ít nhất 2 cột (Ngày và Danh sách kết quả)."
             
         col_ngay = df.columns[0]; col_loto = df.columns[1]
         for _, row in df.iterrows():
             res_date = chuan_hoa_ngay(row[col_ngay])
             if not res_date: continue
             dt_obj, ngay_str = res_date
-            loto_raw = str(row[col_loto]).strip()
-            loto_list = [int(x.strip()[-2:]) for x in loto_raw.replace(',', ' ').replace(';', ' ').split() if x.strip().isdigit()]
+            
+            loto_raw = re.sub(r'[^\d\s]', ' ', str(row[col_loto]))
+            loto_list = [int(x.strip()[-2:]) for x in loto_raw.split() if x.strip().isdigit()]
+            
             if len(loto_list) >= 27:
                 db[ngay_str] = {
                     'date_obj': dt_obj,
                     'date_str': ngay_str,
                     'prizes_int': loto_list[:27]
                 }
-        return db, f"🟢 NẠP THÀNH CÔNG {len(db)} NGÀY HỢP LỆ."
-    except Exception as e: return db, f"🛑 LỖI ĐỌC FILE: {e}"
+        return db, f"🟢 ĐỒNG BỘ THÀNH CÔNG {len(db)} PHIÊN GIAO DỊCH."
+    except Exception as e: return db, f"🛑 LỖI TRUY XUẤT DỮ LIỆU: {e}"
 
 def lay_ngay_chot_tu_excel(db):
-    if not db: return datetime(2026, 7, 21), datetime(2026, 7, 21), datetime(2026, 7, 22)
+    if not db: 
+        today = datetime.now()
+        return today, today, today + timedelta(days=1)
     all_dates = [info['date_obj'] for info in db.values()]
     min_dt = min(all_dates)
     max_dt = max(all_dates)
@@ -68,20 +72,20 @@ def lay_ngay_chot_tu_excel(db):
 # ==============================================================================
 # 🎯 LÕI THUẬT TOÁN: BỘ LỌC ĐA CHẾ ĐỘ 
 # ==============================================================================
-def get_signal_v34(target_dt, db, mode):
+def get_signal_v36(target_dt, db, mode):
     t_minus_7 = target_dt - timedelta(days=7)
     t_minus_1 = target_dt - timedelta(days=1)
     str_t7 = t_minus_7.strftime("%d/%m/%Y")
     str_t1 = t_minus_1.strftime("%d/%m/%Y")
     
     if str_t7 not in db:
-        return None, "[KHUYẾT T-7]"
+        return None, "[THIẾU DỮ LIỆU T-7]"
 
     dan_t7 = set(db[str_t7]['prizes_int'])
     
-    if mode in ["Chỉ Đánh TINH HOA (Lọc bỏ Rác)", "Chỉ Đánh RÁC (Không rơi/lộn)"]:
+    if mode in ["Chỉ Giao Dịch TINH HOA (Lọc Số Khuyết)", "Chỉ Giao Dịch SỐ KHUYẾT (Không Rơi/Đảo)"]:
         if str_t1 not in db:
-            return None, "[KHUYẾT T-1]"
+            return None, "[THIẾU DỮ LIỆU T-1]"
             
         kq_t1 = set(db[str_t1]['prizes_int'])
         tinh_hoa = set()
@@ -90,7 +94,7 @@ def get_signal_v34(target_dt, db, mode):
             if x in kq_t1 or lon in kq_t1:
                 tinh_hoa.add(x)
                 
-        if mode == "Chỉ Đánh TINH HOA (Lọc bỏ Rác)":
+        if mode == "Chỉ Giao Dịch TINH HOA (Lọc Số Khuyết)":
             return sorted(list(tinh_hoa)), "OK"
         else:
             rac = dan_t7 - tinh_hoa
@@ -99,116 +103,133 @@ def get_signal_v34(target_dt, db, mode):
         return sorted(list(dan_t7)), "OK"
 
 # ==============================================================================
-# 🖥️ PHÂN HỆ GIAO DIỆN V34.6
+# 🖥️ PHÂN HỆ XỬ LÝ DỮ LIỆU & BÁO CÁO TÀI CHÍNH
 # ==============================================================================
 
-MODES = ["Đánh Toàn Bộ T-7", "Chỉ Đánh TINH HOA (Lọc bỏ Rác)", "Chỉ Đánh RÁC (Không rơi/lộn)"]
+MODES = ["Giao Dịch Toàn Bộ T-7", "Chỉ Giao Dịch TINH HOA (Lọc Số Khuyết)", "Chỉ Giao Dịch SỐ KHUYẾT (Không Rơi/Đảo)"]
+
+def check_valid_number(val, name):
+    if val is None or str(val).strip() == "":
+        return False, f"🛑 LỖI THÔNG SỐ: Vui lòng nhập thông tin cho '{name}'."
+    try:
+        if float(val) <= 0:
+            return False, f"🛑 LỖI THÔNG SỐ: Giá trị '{name}' phải lớn hơn 0."
+        return True, ""
+    except ValueError:
+        return False, f"🛑 LỖI THÔNG SỐ: '{name}' không đúng định dạng."
 
 def web_phan_he_1_sync():
     db, msg = doc_database_tu_excel()
     _, latest_dt, next_predict_dt = lay_ngay_chot_tu_excel(db)
-    res = f"📑 [TAB 1] BÁO CÁO: CẬP NHẬT DB\n"
+    res = f"📑 [PHÂN HỆ 1] BÁO CÁO: ĐỒNG BỘ CƠ SỞ DỮ LIỆU\n"
     res += f"=================================================================================\n"
-    res += f"• Phiên bản    : {VERSION}\n"
-    res += f"• Tình trạng DB: {msg}\n"
-    res += f"• Cập nhật cuối: 📅 [{latest_dt.strftime('%d/%m/%Y')}]\n"
-    res += f"• Lịch tính toán: 🚀 [{next_predict_dt.strftime('%d/%m/%Y')}]\n"
-    return res, f"#### CẤP LỆNH KỲ TIẾP THEO: {next_predict_dt.strftime('%d/%m/%Y')}"
+    res += f"• Phiên bản hệ thống : {VERSION}\n"
+    res += f"• Trạng thái Dữ liệu : {msg}\n"
+    res += f"• Phiên cập nhật cuối: 📅 [{latest_dt.strftime('%d/%m/%Y')}]\n"
+    res += f"• Lịch phân tích tới : 🚀 [{next_predict_dt.strftime('%d/%m/%Y')}]\n"
+    return res, f"#### KHUYẾN NGHỊ GIAO DỊCH KỲ: {next_predict_dt.strftime('%d/%m/%Y')}"
 
 def web_phan_he_2_predict(pts_per_code_base, mode):
     try:
         db, _ = doc_database_tu_excel()
         _, latest_dt, next_predict_dt = lay_ngay_chot_tu_excel(db)
+        
+        is_valid, err_msg = check_valid_number(pts_per_code_base, "Khối lượng vốn")
+        if not is_valid: return err_msg
         base_pts = int(pts_per_code_base)
-        if base_pts <= 0: return "🛑 LỖI KẾ TOÁN: Mức cược phải lớn hơn 0."
         
-        dan, msg = get_signal_v34(next_predict_dt, db, mode)
+        dan, msg = get_signal_v36(next_predict_dt, db, mode)
         
-        res = f"📑 [TAB 2] BÁO CÁO: LỆNH CHỐT KẾ TIẾP\n"
+        res = f"📑 [PHÂN HỆ 2] BÁO CÁO: KHUYẾN NGHỊ GIAO DỊCH KẾ TIẾP\n"
         res += f"=======================================================\n"
+        res += f"🎯 PHIÊN GIAO DỊCH MỤC TIÊU: {next_predict_dt.strftime('%d/%m/%Y')}\n"
+        res += f"🎚️ CHIẾN LƯỢC ÁP DỤNG: {mode}\n\n"
         
         if dan is None: 
-            res += f"🎯 LỆNH KỲ: {next_predict_dt.strftime('%d/%m/%Y')}\n"
-            res += f"🛑 CẢNH BÁO: Dữ liệu tham chiếu {msg} bị khuyết. HỆ THỐNG KHÓA LỆNH ĐỂ BẢO TOÀN VỐN.\n"
+            res += f"🛑 CẢNH BÁO RỦI RO: Dữ liệu tham chiếu {msg}.\n"
+            res += f"HỆ THỐNG TỰ ĐỘNG TẠM NGỪNG CẤP TÍN HIỆU ĐỂ BẢO TOÀN VỐN.\n"
             return res
             
         so_luong_lo = len(dan)
         von_ngay = so_luong_lo * base_pts * COST_PER_POINT
-        dan_str = " ".join([f"{x:02d}" for x in dan]) if so_luong_lo > 0 else "[RỖNG LỆNH - Sạch Số]"
         
-        doanh_thu_1_nhay = base_pts * WIN_PER_NHAY
-        diem_hoa_von_nhay = math.ceil(von_ngay / doanh_thu_1_nhay) if so_luong_lo > 0 else 0
-        
-        res += f"🎯 XUẤT LỆNH CHO KỲ: {next_predict_dt.strftime('%d/%m/%Y')}\n"
-        res += f"🎚️ CHẾ ĐỘ ĐÁNH: {mode}\n"
-        res += f"📋 DANH SÁCH LỆNH ({so_luong_lo} SỐ):\n"
-        res += f" [ {dan_str} ]\n"
-        res += f"-------------------------------------------------------\n"
-        res += f" • Khối lượng Cược: {base_pts} điểm / 1 con lô\n"
-        res += f"💰 TỔNG TIỀN PHẢI XUẤT: {von_ngay:,.0f} VND\n"
         if so_luong_lo > 0:
-            res += f"💡 KỊCH BẢN LÃI RÒNG: Cần trúng ÍT NHẤT {diem_hoa_von_nhay} Nháy.\n"
+            dan_str = " ".join([f"{x:02d}" for x in dan])
+            res += f"📋 DANH MỤC MÃ SỐ ĐẠT CHUẨN ({so_luong_lo} MÃ):\n"
+            res += f" [ {dan_str} ]\n"
+            res += f"-------------------------------------------------------\n"
+            res += f" • Khối lượng phân bổ : {base_pts} điểm / 1 mã\n"
+            res += f"💰 TỔNG VỐN YÊU CẦU   : {von_ngay:,.0f} VND\n"
+            diem_hoa_von_nhay = math.ceil(von_ngay / (base_pts * WIN_PER_NHAY))
+            res += f"💡 MỤC TIÊU HÒA VỐN   : Cần tối thiểu {diem_hoa_von_nhay} lượt trúng.\n"
         else:
-            res += f"💡 HỆ THỐNG TRẢ VỀ RỖNG LỆNH, BẢO TOÀN VỐN TUYỆT ĐỐI.\n"
+            res += f"📋 DANH MỤC MÃ SỐ ĐẠT CHUẨN:\n"
+            res += f" 👉 🚫 [KHÔNG CÓ TÍN HIỆU KHẢ THI]\n"
+            res += f"-------------------------------------------------------\n"
+            res += f"💰 TỔNG VỐN YÊU CẦU: 0 VND\n"
+            res += f"💡 HỆ THỐNG KHUYẾN NGHỊ ĐỨNG NGOÀI THỊ TRƯỜNG TRONG PHIÊN NÀY.\n"
         return res
-    except Exception as e: return f"🛑 LỖI TAB 2: {e}"
+    except Exception as e: return f"🛑 LỖI PHÂN HỆ 2: {e}"
 
 def web_phan_he_3_risk_audit(base_pts, sim_size):
     try:
+        valid1, err1 = check_valid_number(base_pts, "Khối lượng vốn")
+        valid2, err2 = check_valid_number(sim_size, "Số lượng Mã")
+        if not valid1: return err1
+        if not valid2: return err2
+        
         base_pts = int(base_pts)
         so_luong_lo = int(sim_size)
-        if base_pts <= 0 or so_luong_lo <= 0: return "🛑 LỖI: Nhập số lớn hơn 0."
-        
         von_ngay = so_luong_lo * base_pts * COST_PER_POINT
-        res = f"📑 [TAB 3] BÁO CÁO: BẢNG VỐN KHUNG NHÁY\n"
+        
+        res = f"📑 [PHÂN HỆ 3] BÁO CÁO: QUẢN TRỊ RỦI RO & MÔ PHỎNG LỢI NHUẬN\n"
         res += f"====================================================================\n"
-        res += f"📊 KỊCH BẢN ĐÁNH DÀN {so_luong_lo} SỐ - TỔNG CHI PHÍ: {von_ngay:,.0f} VNĐ\n"
+        res += f"📊 KỊCH BẢN PHÂN BỔ {so_luong_lo} MÃ - TỔNG VỐN ĐẦU TƯ: {von_ngay:,.0f} VNĐ\n"
         res += f"--------------------------------------------------------------------\n"
-        res += f" KẾT QUẢ NHÁY | DOANH THU THU VỀ | LÃI / LỖ RÒNG | TRẠNG THÁI\n"
+        res += f" LƯỢT TRÚNG   | DOANH THU KỲ VỌNG | LỢI NHUẬN RÒNG | TRẠNG THÁI\n"
         res += f"--------------------------------------------------------------------\n"
         for nhay in range(0, int(so_luong_lo * 0.7) + 2):
             thuong = nhay * base_pts * WIN_PER_NHAY
             lai = thuong - von_ngay
-            status = "🟢 LÃI RÒNG" if lai > 0 else "🔴 LỖ"
-            if nhay == 0: status += " (MẤT TRẮNG)"
-            
+            status = "🟢 LÃI RÒNG" if lai > 0 else "🔴 THUA LỖ"
+            if nhay == 0: status += " (MẤT VỐN)"
             lai_str = f"{lai:+,.0f}" if lai != 0 else "0"
-            res += f" Về {nhay:>2} nháy  | {thuong:>16,.0f} | {lai_str:>13} | {status}\n"
+            res += f" Đạt {nhay:>2} lượt  | {thuong:>17,.0f} | {lai_str:>14} | {status}\n"
         res += f"====================================================================\n"
         return res
-    except Exception as e: return f"🛑 LỖI TAB 3: {e}"
+    except Exception as e: return f"🛑 LỖI PHÂN HỆ 3: {e}"
 
 def web_phan_he_4_single_day_backtest(ngay_raw, pts_per_code_base):
     try:
         db, _ = doc_database_tu_excel()
         res = chuan_hoa_ngay(ngay_raw)
-        if not res: return "🛑 Lỗi định dạng ngày."
+        if not res: return "🛑 LỖI DỮ LIỆU: Định dạng ngày không hợp lệ."
         d_obj, ngay_str = res
-        if ngay_str not in db: return f"🛑 DỮ LIỆU RỖNG: Ngày {ngay_str} không có trong Excel."
+        if ngay_str not in db: return f"🛑 KHÔNG TÌM THẤY DỮ LIỆU: Phiên giao dịch {ngay_str} chưa được cập nhật."
             
+        valid, err = check_valid_number(pts_per_code_base, "Khối lượng vốn")
+        if not valid: return err
         base_pts = int(pts_per_code_base)
-        if base_pts <= 0: return "🛑 LỖI KẾ TOÁN: Mức cược phải lớn hơn 0."
         
         lo_to_27_today = db[ngay_str]['prizes_int']
-        
         t_minus_7 = d_obj - timedelta(days=7)
         t_minus_1 = d_obj - timedelta(days=1)
         ngay_str_t7 = t_minus_7.strftime("%d/%m/%Y")
         ngay_str_t1 = t_minus_1.strftime("%d/%m/%Y")
         
-        report = f"📑 [TAB 4] BÁO CÁO: TÁCH LỚP 1 NGÀY (SOI RÁC & TINH HOA)\n"
+        report = f"📑 [PHÂN HỆ 4] BÁO CÁO: KIỂM TOÁN HIỆU SUẤT ĐƠN PHIÊN\n"
         report += f"========================================================================\n\n"
         
         if ngay_str_t7 not in db:
-            report += f"📡 KIỂM TOÁN NGÀY {ngay_str}\n"
-            report += f"🔭 LỖI: Ngày T-7 ({ngay_str_t7}) bị khuyết dữ liệu. Không thể phân lập chu kỳ!\n"
+            report += f"📡 THÔNG TIN PHIÊN: {ngay_str}\n"
+            report += f"🔭 LỖI CHU KỲ: Thiếu dữ liệu mốc T-7 ({ngay_str_t7}). Không thể phân tích!\n"
             return report
 
         dan_t7 = set(db[ngay_str_t7]['prizes_int'])
         
         def cal_pnl(danh_sach):
             sl = len(danh_sach)
-            if sl == 0: return 0, 0, 0, 0, 0, "⚫ TRỐNG LỆNH"
+            if sl == 0: return 0, 0, 0, 0, 0, "⚫ KHÔNG GIAO DỊCH"
             chi_phi = sl * base_pts * COST_PER_POINT
             nhay = sum(lo_to_27_today.count(x) for x in danh_sach)
             doanh_thu = nhay * base_pts * WIN_PER_NHAY
@@ -220,14 +241,14 @@ def web_phan_he_4_single_day_backtest(ngay_raw, pts_per_code_base):
         sl_f, chi_f, nhay_f, thu_f, lai_f, st_f = cal_pnl(list_full)
         lai_f_str = f"{lai_f:+,.0f}" if lai_f != 0 else "0"
 
-        report += f"📡 KẾT QUẢ THỰC TẾ NGÀY: {ngay_str} (MỨC CƯỢC: {base_pts}đ/con)\n\n"
-        report += f"🛑 [KỊCH BẢN 1] - ĐÁNH TOÀN BỘ T-7 (Bao gồm Tinh hoa + Rác)\n"
-        report += f" • Dàn {sl_f} số: " + " ".join([f"{x:02d}" for x in list_full]) + "\n"
-        report += f" • Nổ {nhay_f} nháy.  Vốn chi: {chi_f:,.0f}đ  | Thu về: {thu_f:,.0f}đ\n"
-        report += f" 👉 LÃI/LỖ RÒNG: {lai_f_str} VNĐ ({st_f})\n\n"
+        report += f"📡 KẾT QUẢ GIAO DỊCH PHIÊN: {ngay_str} (Phân bổ: {base_pts}đ/mã)\n\n"
+        report += f"🛑 [KỊCH BẢN 1] - GIAO DỊCH TOÀN BỘ T-7 (Tinh hoa + Khuyết nhịp)\n"
+        report += f" • Danh mục {sl_f} mã: " + " ".join([f"{x:02d}" for x in list_full]) + "\n"
+        report += f" • Đạt {nhay_f} lượt.  Vốn đầu tư: {chi_f:,.0f}đ  | Doanh thu: {thu_f:,.0f}đ\n"
+        report += f" 👉 LỢI NHUẬN RÒNG: {lai_f_str} VNĐ ({st_f})\n\n"
 
         if ngay_str_t1 not in db:
-            report += f"⚠️ LƯU Ý: Ngày T-1 ({ngay_str_t1}) khuyết dữ liệu.\nKhông thể bóc tách Kịch bản 2 (Rác) và Kịch bản 3 (Tinh Hoa).\n"
+            report += f"⚠️ LƯU Ý: Thiếu dữ liệu mốc T-1 ({ngay_str_t1}).\nKhông thể phân tách rủi ro cho Kịch bản 2 và 3.\n"
             return report
 
         kq_t1 = set(db[ngay_str_t1]['prizes_int'])
@@ -247,40 +268,44 @@ def web_phan_he_4_single_day_backtest(ngay_raw, pts_per_code_base):
         lai_r_str = f"{lai_r:+,.0f}" if lai_r != 0 else "0"
         lai_t_str = f"{lai_t:+,.0f}" if lai_t != 0 else "0"
         
-        report += f"🗑️ [KỊCH BẢN 2] - BÓC TÁCH: CHỈ ĐÁNH SỐ 'RÁC' (Không Rơi/Không Lộn từ T-1)\n"
+        report += f"📉 [KỊCH BẢN 2] - BÓC TÁCH: SỐ KHUYẾT NHỊP (Không Rơi/Đảo từ T-1)\n"
         if sl_r == 0:
-            report += f" 👉 KẾT QUẢ: KHÔNG CÓ RÁC TRONG DÀN T-7 (Sạch 100% Tinh Hoa)\n\n"
+            report += f" 👉 KẾT QUẢ: 100% Danh mục duy trì động lượng tốt (Không có mã khuyết nhịp)\n\n"
         else:
-            report += f" • Dàn {sl_r} số: " + " ".join([f"{x:02d}" for x in list_rac]) + "\n"
-            report += f" • Nổ {nhay_r} nháy.  Vốn chi: {chi_r:,.0f}đ  | Thu về: {thu_r:,.0f}đ\n"
-            report += f" 👉 KẾT QUẢ NUÔI RÁC: {lai_r_str} VNĐ ({st_r})\n\n"
+            report += f" • Danh mục {sl_r} mã: " + " ".join([f"{x:02d}" for x in list_rac]) + "\n"
+            report += f" • Đạt {nhay_r} lượt.  Vốn đầu tư: {chi_r:,.0f}đ  | Doanh thu: {thu_r:,.0f}đ\n"
+            report += f" 👉 HIỆU QUẢ CỦA MÃ KHUYẾT: {lai_r_str} VNĐ ({st_r})\n\n"
         
-        report += f"💎 [KỊCH BẢN 3] - BÓC TÁCH: CHỈ ĐÁNH 'TINH HOA' (Có Rơi/Lộn từ T-1)\n"
+        report += f"💎 [KỊCH BẢN 3] - BÓC TÁCH: SỐ TINH HOA (Động lượng Rơi/Đảo từ T-1)\n"
         if sl_t == 0:
-            report += f" 👉 KẾT QUẢ: KHÔNG CÓ TINH HOA (Toàn bộ là Rác)\n\n"
+            report += f" 👉 KẾT QUẢ: KHÔNG CÓ MÃ ĐẠT CHUẨN (Toàn bộ danh mục mất động lượng)\n\n"
         else:
-            report += f" • Dàn {sl_t} số: " + " ".join([f"{x:02d}" for x in list_tinh_hoa]) + "\n"
-            report += f" • Nổ {nhay_t} nháy.  Vốn chi: {chi_t:,.0f}đ  | Thu về: {thu_t:,.0f}đ\n"
-            report += f" 👉 LÃI/LỖ RÒNG: {lai_t_str} VNĐ ({st_t})\n\n"
+            report += f" • Danh mục {sl_t} mã: " + " ".join([f"{x:02d}" for x in list_tinh_hoa]) + "\n"
+            report += f" • Đạt {nhay_t} lượt.  Vốn đầu tư: {chi_t:,.0f}đ  | Doanh thu: {thu_t:,.0f}đ\n"
+            report += f" 👉 LỢI NHUẬN RÒNG: {lai_t_str} VNĐ ({st_t})\n\n"
         
         report += f"========================================================================\n"
-        report += f"💡 KẾT LUẬN KIỂM TOÁN TẠI NGÀY NÀY:\n"
+        report += f"💡 KẾT LUẬN KIỂM TOÁN CHUYÊN SÂU:\n"
         if sl_r == 0: 
-            report += f" -> Thật tuyệt vời! Dàn T-7 hôm nay sạch bóng Rác, 100% đều là Tinh Hoa có nhịp rơi.\n"
+            report += f" -> Đánh giá: Danh mục cấu trúc vững chắc, 100% các mã số duy trì xu hướng tích cực.\n"
         elif lai_r < 0: 
-            report += f" -> Sếp đã bị RÁC hút máu mất {-lai_r:,.0f}đ. Chọn chế độ đánh TINH HOA là quyết định cứu rỗi vốn!\n"
+            report += f" -> Phân tích: Các mã khuyết nhịp đã làm suy giảm {-lai_r:,.0f} VNĐ lợi nhuận. Chiến lược TINH HOA là phương án bảo toàn vốn tối ưu.\n"
         elif lai_r > 0: 
-            report += f" -> Cảnh báo! Rác bùng nổ mang lại lãi {lai_r:,.0f}đ. Lồng cầu đang quay cực kỳ hỗn loạn và không theo form.\n"
+            report += f" -> Lưu ý rủi ro: Nhóm số khuyết nhịp tạo ra lợi nhuận bất thường {lai_r:,.0f} VNĐ. Thị trường đang có biến động ngoài dự kiến.\n"
         return report
-    except Exception as e: return f"🛑 LỖI TAB 4: {e}"
+    except Exception as e: return f"🛑 LỖI PHÂN HỆ 4: {e}"
 
 def web_phan_he_5_monthly_audit(month, year, pts_per_code_base, mode):
     try:
         db, _ = doc_database_tu_excel()
-        thang, nam = int(month), int(year)
-        base_pts = int(pts_per_code_base)
-        if base_pts <= 0: return "🛑 LỖI KẾ TOÁN: Mức cược phải lớn hơn 0."
+        valid_m, err_m = check_valid_number(month, "Tháng")
+        valid_y, err_y = check_valid_number(year, "Năm")
+        valid_p, err_p = check_valid_number(pts_per_code_base, "Khối lượng vốn")
+        if not valid_m: return err_m
+        if not valid_y: return err_y
+        if not valid_p: return err_p
         
+        thang, nam, base_pts = int(month), int(year), int(pts_per_code_base)
         min_dt, max_dt, _ = lay_ngay_chot_tu_excel(db)
         
         start_dt = datetime(nam, thang, 1)
@@ -288,13 +313,13 @@ def web_phan_he_5_monthly_audit(month, year, pts_per_code_base, mode):
         
         if start_dt < min_dt: start_dt = min_dt
         if end_dt > max_dt: end_dt = max_dt
-        if start_dt > end_dt: return f"🛑 BÁO CÁO: Tháng {thang:02d}/{nam} hoàn toàn chưa có dữ liệu."
+        if start_dt > end_dt: return f"🛑 BÁO CÁO: Kỳ kế toán {thang:02d}/{nam} hoàn toàn trống dữ liệu."
         
-        report = f"📑 [TAB 5] BÁO CÁO: KIỂM TOÁN THEO THÁNG\n"
+        report = f"📑 [PHÂN HỆ 5] BÁO CÁO: TỔNG HỢP HIỆU SUẤT THEO THÁNG\n"
         report += f"===================================================================================================================\n"
-        report += f"📊 THÁNG {thang:02d}/{nam} - CHẾ ĐỘ: {mode}\n"
+        report += f"📊 KỲ BÁO CÁO: {thang:02d}/{nam} - CHIẾN LƯỢC ĐẦU TƯ: {mode}\n"
         report += f"-------------------------------------------------------------------------------------------------------------------\n"
-        report += f"{'NGÀY':<10} | {'TRẠNG THÁI':<15} | {'SỐ LÔ':<6} | {'CHI PHÍ':<12} | {'NHÁY':<5} | {'DOANH THU':<12} | {'LÃI / LỖ':<15} | {'LŨY KẾ':<12}\n"
+        report += f"{'NGÀY G.DỊCH':<12} | {'TRẠNG THÁI':<15} | {'SỐ MÃ':<7} | {'VỐN ĐẦU TƯ':<14} | {'LƯỢT':<5} | {'DOANH THU':<14} | {'LỢI NHUẬN':<15} | {'LŨY KẾ':<12}\n"
         report += f"-------------------------------------------------------------------------------------------------------------------\n"
         
         luy_ke_thang = 0; cash_thu = 0; cash_chi = 0; total_phien_danh = 0
@@ -303,18 +328,18 @@ def web_phan_he_5_monthly_audit(month, year, pts_per_code_base, mode):
         while curr <= end_dt:
             ngay_str = curr.strftime("%d/%m/%Y")
             if ngay_str not in db:
-                report += f"{ngay_str:<10} | {'⚠️ MISSING DATA':<15} | {'-':<6} | {'-':<12} | {'-':<5} | {'-':<12} | {'-':<15} | {luy_ke_thang:>+12,.0f}\n"
+                report += f"{ngay_str:<12} | {'⚠️ THIẾU DATA':<15} | {'-':<7} | {'-':<14} | {'-':<5} | {'-':<14} | {'-':<15} | {luy_ke_thang:>+12,.0f}\n"
                 curr += timedelta(days=1)
                 continue
                 
-            dan, msg = get_signal_v34(curr, db, mode)
+            dan, msg = get_signal_v36(curr, db, mode)
             if dan is None:
-                report += f"{ngay_str:<10} | {'🔭 QUAN SÁT':<15} | {'0':<6} | {'-':<12} | {'-':<5} | {'-':<12} | {msg:<15} | {luy_ke_thang:>+12,.0f}\n"
+                report += f"{ngay_str:<12} | {'🔭 THEO DÕI':<15} | {'0':<7} | {'-':<14} | {'-':<5} | {'-':<14} | {msg:<15} | {luy_ke_thang:>+12,.0f}\n"
                 curr += timedelta(days=1)
                 continue
                 
             if len(dan) == 0:
-                report += f"{ngay_str:<10} | {'🔭 QUAN SÁT':<15} | {'0':<6} | {'-':<12} | {'-':<5} | {'-':<12} | {'[TRỐNG LỆNH]':<15} | {luy_ke_thang:>+12,.0f}\n"
+                report += f"{ngay_str:<12} | {'🔭 THEO DÕI':<15} | {'0':<7} | {'-':<14} | {'-':<5} | {'-':<14} | {'[KHÔNG TÍN HIỆU]':<15} | {luy_ke_thang:>+12,.0f}\n"
                 curr += timedelta(days=1)
                 continue
                 
@@ -332,37 +357,38 @@ def web_phan_he_5_monthly_audit(month, year, pts_per_code_base, mode):
             cash_thu += thuong
             
             status_str = "🟢 WIN" if lai > 0 else "🔴 LOSS"
-            report += f"{ngay_str:<10} | {status_str:<15} | {so_luong_lo:<6} | {von_1_phien:<12,.0f} | {nhay:<5} | {thuong:<12,.0f} | {lai:>+15,.0f} | {luy_ke_thang:>+12,.0f}\n"
+            report += f"{ngay_str:<12} | {status_str:<15} | {so_luong_lo:<7} | {von_1_phien:<14,.0f} | {nhay:<5} | {thuong:<14,.0f} | {lai:>+15,.0f} | {luy_ke_thang:>+12,.0f}\n"
             curr += timedelta(days=1)
             
         roi = (luy_ke_thang / cash_chi * 100) if cash_chi > 0 else 0
         report += f"===================================================================================================================\n"
-        report += f"📝 ĐỐI SOÁT KẾ TOÁN: {total_phien_danh} NGÀY ĐÁNH\n"
-        report += f"• TỔNG DÒNG TIỀN (CASH FLOW): Chi {cash_chi:,.0f} đ | Thu {cash_thu:,.0f} đ\n"
-        report += f"• LỢI NHUẬN RÒNG & ROI      : {luy_ke_thang:+,.0f} VND ({roi:+.2f} %)\n"
+        report += f"📝 ĐỐI SOÁT KẾ TOÁN: {total_phien_danh} PHIÊN CÓ XUẤT LỆNH\n"
+        report += f"• TỔNG DÒNG TIỀN (CASH FLOW): Giải ngân {cash_chi:,.0f} đ | Thu về {cash_thu:,.0f} đ\n"
+        report += f"• LỢI NHUẬN RÒNG & BIÊN R.O.I: {luy_ke_thang:+,.0f} VND ({roi:+.2f} %)\n"
         return report
-    except Exception as e: return f"🛑 LỖI TAB 5: {e}"
+    except Exception as e: return f"🛑 LỖI PHÂN HỆ 5: {e}"
 
 def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, pts_per_code_base, mode):
     try:
         db, _ = doc_database_tu_excel()
         res1, res2 = chuan_hoa_ngay(tu_ngay_raw), chuan_hoa_ngay(den_ngay_raw)
-        if not res1 or not res2: return "🛑 Lỗi định dạng ngày."
+        if not res1 or not res2: return "🛑 LỖI THÔNG SỐ: Định dạng ngày không hợp lệ."
         start_dt, end_dt = min(res1[0], res2[0]), max(res1[0], res2[0])
         
+        valid, err = check_valid_number(pts_per_code_base, "Khối lượng vốn")
+        if not valid: return err
         base_pts = int(pts_per_code_base)
-        if base_pts <= 0: return "🛑 LỖI KẾ TOÁN: Mức cược phải lớn hơn 0."
         
         min_dt, max_dt, _ = lay_ngay_chot_tu_excel(db)
         if start_dt < min_dt: start_dt = min_dt
         if end_dt > max_dt: end_dt = max_dt
-        if start_dt > end_dt: return "🛑 LỖI: Khoảng thời gian tra cứu hoàn toàn nằm ngoài Database."
+        if start_dt > end_dt: return "🛑 LỖI TRUY XUẤT: Khoảng thời gian tra cứu nằm ngoài Phạm vi Dữ liệu hệ thống."
         
-        report = f"📑 [TAB 6] BÁO CÁO: QUÉT TOÀN CHU KỲ\n"
+        report = f"📑 [PHÂN HỆ 6] BÁO CÁO: ĐẠI KẾ TOÁN QUÉT TOÀN CHU KỲ\n"
         report += f"===================================================================================================================\n"
-        report += f"📈 KẾT QUẢ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')} (CHẾ ĐỘ: {mode})\n"
+        report += f"📈 KẾT QUẢ TỪ GIAI ĐOẠN {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')} (CHIẾN LƯỢC: {mode})\n"
         report += f"-------------------------------------------------------------------------------------------------------------------\n"
-        report += f"{'NGÀY':<10} | {'TRẠNG THÁI':<15} | {'SỐ LÔ':<6} | {'CHI PHÍ HÔM NAY':<16} | {'NHÁY':<5} | {'LÃI / LỖ PHIÊN':<15} | {'LŨY KẾ':<12}\n"
+        report += f"{'NGÀY G.DỊCH':<12} | {'TRẠNG THÁI':<15} | {'SỐ MÃ':<7} | {'VỐN ĐẦU TƯ':<14} | {'LƯỢT':<5} | {'LỢI NHUẬN PHIÊN':<16} | {'LŨY KẾ':<12}\n"
         report += f"-------------------------------------------------------------------------------------------------------------------\n"
         
         curr = start_dt
@@ -372,18 +398,18 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, pts_per_code_base
         while curr <= end_dt:
             ngay_str = curr.strftime("%d/%m/%Y")
             if ngay_str not in db:
-                report += f"{ngay_str:<10} | {'⚠️ MISSING DATA':<15} | {'-':<6} | {'-':<16} | {'-':<5} | {'-':<15} | {total_lai:>+12,.0f}\n"
+                report += f"{ngay_str:<12} | {'⚠️ THIẾU DATA':<15} | {'-':<7} | {'-':<14} | {'-':<5} | {'-':<16} | {total_lai:>+12,.0f}\n"
                 curr += timedelta(days=1)
                 continue
                 
-            dan, msg = get_signal_v34(curr, db, mode)
+            dan, msg = get_signal_v36(curr, db, mode)
             if dan is None:
-                report += f"{ngay_str:<10} | {'🔭 QUAN SÁT':<15} | {'0':<6} | {'-':<16} | {'-':<5} | {msg:<15} | {total_lai:>+12,.0f}\n"
+                report += f"{ngay_str:<12} | {'🔭 THEO DÕI':<15} | {'0':<7} | {'-':<14} | {'-':<5} | {msg:<16} | {total_lai:>+12,.0f}\n"
                 curr += timedelta(days=1)
                 continue
                 
             if len(dan) == 0:
-                report += f"{ngay_str:<10} | {'🔭 QUAN SÁT':<15} | {'0':<6} | {'-':<16} | {'-':<5} | {'[TRỐNG LỆNH]':<15} | {total_lai:>+12,.0f}\n"
+                report += f"{ngay_str:<12} | {'🔭 THEO DÕI':<15} | {'0':<7} | {'-':<14} | {'-':<5} | {'[KHÔNG TÍN HIỆU]':<16} | {total_lai:>+12,.0f}\n"
                 curr += timedelta(days=1)
                 continue
                     
@@ -405,107 +431,133 @@ def web_phan_he_6_range_performance(tu_ngay_raw, den_ngay_raw, pts_per_code_base
             else: 
                 k_thua += 1; status_str = "🔴 LOSS"
                 
-            report += f"{ngay_str:<10} | {status_str:<15} | {so_luong_lo:<6} | {von_1_phien:<16,.0f} | {nhay:<5} | {lai:>+15,.0f} | {total_lai:>+12,.0f}\n"
+            report += f"{ngay_str:<12} | {status_str:<15} | {so_luong_lo:<7} | {von_1_phien:<14,.0f} | {nhay:<5} | {lai:>+16,.0f} | {total_lai:>+12,.0f}\n"
             curr += timedelta(days=1)
             
         roi = (total_lai / cash_chi * 100) if cash_chi > 0 else 0
         report += f"===================================================================================================================\n"
-        report += f"📊 HIỆU SUẤT LỆNH: {trades} Phiên | Win: {k_thang} | Loss: {k_thua}\n"
-        report += f"📝 DÒNG TIỀN     : Chi {cash_chi:,.0f} đ | Thu {cash_thu:,.0f} đ\n"
-        report += f"💰 LỢI NHUẬN RÒNG: {total_lai:+,.0f} VNĐ (ROI: {roi:+.2f} %)\n"
+        report += f"📊 HIỆU SUẤT GIAO DỊCH: {trades} Phiên Thực Tế (Win: {k_thang} | Loss: {k_thua})\n"
+        report += f"📝 TỔNG DÒNG TIỀN    : Giải ngân {cash_chi:,.0f} đ | Thu về {cash_thu:,.0f} đ\n"
+        report += f"💰 LỢI NHUẬN RÒNG    : {total_lai:+,.0f} VNĐ (ROI: {roi:+.2f} %)\n"
         return report
-    except Exception as e: return f"🛑 LỖI TAB 6: {e}"
+    except Exception as e: return f"🛑 LỖI PHÂN HỆ 6: {e}"
 
 def web_phan_he_7_raw_db_lookup(ngay_raw):
     try:
         db, _ = doc_database_tu_excel()
         res = chuan_hoa_ngay(ngay_raw)
-        if not res: return "🛑 Lỗi định dạng ngày."
+        if not res: return "🛑 LỖI THÔNG SỐ: Định dạng ngày không hợp lệ."
         _, ngay_str = res
-        if ngay_str not in db: return f"🛑 NO DATA: Ngày {ngay_str} chưa có trong Excel."
+        if ngay_str not in db: return f"🛑 DỮ LIỆU RỖNG: Phiên {ngay_str} chưa tồn tại trên hệ thống."
             
         lo_to_raw = db[ngay_str]['prizes_int']
         lo_to_sorted = sorted([f"{x:02d}" for x in lo_to_raw])
         
-        report = f"📑 [TAB 7] BÁO CÁO: TRUY XUẤT RAW DB (DỮ LIỆU GỐC)\n"
+        report = f"📑 [PHÂN HỆ 7] BÁO CÁO: TRUY XUẤT RAW DB (DỮ LIỆU THÔ)\n"
         report += f"=======================================================\n"
-        report += f"📅 KẾT QUẢ DẢI LÔ TÔ THỰC TẾ NGÀY: {ngay_str}\n"
-        report += f"🎰 27 Giải ma trận phẳng:\n"
+        report += f"📅 BIÊN BẢN KẾT QUẢ PHIÊN GIAO DỊCH: {ngay_str}\n"
+        report += f"🎰 Danh sách 27 giải ma trận phẳng:\n"
         for idx, lo in enumerate(lo_to_sorted): 
             report += f"[{lo}] " + ("\n" if (idx + 1) % 9 == 0 else " ")
         return report
-    except Exception as e: return f"🛑 LỖI TAB 7: {e}"
+    except Exception as e: return f"🛑 LỖI PHÂN HỆ 7: {e}"
 
 # ==============================================================================
-# 🎨 GIAO DIỆN GRADIO V34.6 (ĐÃ THÊM HỘP CHỨA gr.Tabs ĐỂ DIỆT LỖI MENU DROP-DOWN)
+# 🎨 GIAO DIỆN V36.0 (HỆ ĐIỀU HÀNH BẢNG ĐIỀU KHIỂN - CHUẨN THƯƠNG MẠI)
 # ==============================================================================
 db_init, _ = doc_database_tu_excel()
 _, latest_dt_init, next_predict_dt_init = lay_ngay_chot_tu_excel(db_init)
 
-with gr.Blocks(title="XSMB QUANT V34.6") as demo:
-    gr.Markdown("# 🚀 XSMB QUANT V34.6 — T-7 GIAO CẮT KÉP (UI FIX ĐA THIẾT BỊ)")
-    gr.Markdown("*(Đã diệt sạch lỗi kẹt Menu. Các Tab hoạt động trơn tru. Báo cáo in rành mạch Header)*")
+MENU_OPTIONS = [
+    "🔄 1. ĐỒNG BỘ DỮ LIỆU",
+    "🎯 2. KHUYẾN NGHỊ LỆNH",
+    "🛡️ 3. QUẢN TRỊ RỦI RO",
+    "🔍 4. KIỂM TOÁN ĐƠN PHIÊN",
+    "📊 5. BÁO CÁO THÁNG",
+    "📈 6. PHÂN TÍCH CHU KỲ",
+    "🎰 7. DỮ LIỆU THÔ"
+]
+
+with gr.Blocks(title="XSMB QUANT V36.0 PRO") as demo:
+    gr.Markdown("# 🚀 XSMB QUANT V36.0 — PHIÊN BẢN THƯƠNG MẠI CAO CẤP")
+    gr.Markdown("*(Hệ thống Phân tích Định lượng & Quản trị Rủi ro. Tối ưu hóa trên đa nền tảng Thiết bị.)*")
     
-    # [ĐÃ FIX GIAO DIỆN]: Bọc toàn bộ TabItem vào trong một gr.Tabs() container
-    with gr.Tabs() as tabs:
+    with gr.Row():
+        nav_menu = gr.Radio(choices=MENU_OPTIONS, value=MENU_OPTIONS[0], label="🎛️ BẢNG ĐIỀU KHIỂN CHÍNH (Vui lòng chọn chức năng)")
         
-        with gr.TabItem("🔄 [1] CẬP NHẬT DB"):
-            btn_1 = gr.Button("⚡ KÍCH HOẠT NẠP & KIỂM TOÁN DB", variant="primary")
-            out_1 = gr.Textbox(label="Báo cáo Nạp Dữ Liệu", lines=7)
-            
-        with gr.TabItem("🎯 [2] LỆNH CHỐT KẾ TIẾP"):
-            title_2 = gr.Markdown(f"#### Lệnh cho kỳ quay tiếp theo: {next_predict_dt_init.strftime('%d/%m/%Y')}")
-            with gr.Row():
-                pts_2 = gr.Number(label="Mốc cược CƠ SỞ (Điểm/1 con lô)", value=10)
-                mode_2 = gr.Radio(choices=MODES, value="Chỉ Đánh TINH HOA (Lọc bỏ Rác)", label="Tư Duy Chiến Thuật")
-            btn_2 = gr.Button("🔍 KIẾT XUẤT LỆNH", variant="primary")
-            out_2 = gr.Textbox(label="Hồ sơ Lệnh V34.6", lines=15)
-            btn_2.click(web_phan_he_2_predict, inputs=[pts_2, mode_2], outputs=out_2)
+    with gr.Column(visible=True) as col_1:
+        btn_1 = gr.Button("⚡ KHỞI CHẠY KIỂM TOÁN VÀ ĐỒNG BỘ DỮ LIỆU", variant="primary")
+        out_1 = gr.Textbox(label="Biên bản Hệ thống", lines=7)
+        
+    with gr.Column(visible=False) as col_2:
+        title_2 = gr.Markdown(f"#### Dự phóng Tín hiệu cho phiên giao dịch kế tiếp: {next_predict_dt_init.strftime('%d/%m/%Y')}")
+        with gr.Row():
+            pts_2 = gr.Number(label="Khối lượng Vốn Cơ sở (Điểm / Mã)", value=10)
+            mode_2 = gr.Radio(choices=MODES, value="Chỉ Giao Dịch TINH HOA (Lọc Số Khuyết)", label="Chiến lược Áp dụng")
+        btn_2 = gr.Button("🔍 XUẤT KHUYẾN NGHỊ GIAO DỊCH", variant="primary")
+        out_2 = gr.Textbox(label="Hồ sơ Giao dịch V36.0", lines=16)
+        btn_2.click(web_phan_he_2_predict, inputs=[pts_2, mode_2], outputs=out_2)
 
-        with gr.TabItem("🛡️ [3] BẢNG VỐN KHUNG NHÁY"):
-            with gr.Row():
-                pts_3 = gr.Number(label="Mức cược (Điểm/1 con lô)", value=10)
-                sim_size = gr.Number(label="Số lượng Lô giả định", value=12)
-            btn_3 = gr.Button("🧪 MÔ PHỎNG LỢI NHUẬN TÙY BIẾN", variant="primary")
-            out_3 = gr.Textbox(label="Phân Tích Hòa Vốn & Có Lãi", lines=16)
-            btn_3.click(web_phan_he_3_risk_audit, inputs=[pts_3, sim_size], outputs=out_3)
+    with gr.Column(visible=False) as col_3:
+        with gr.Row():
+            pts_3 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
+            sim_size = gr.Number(label="Quy mô Danh mục (Số lượng mã)", value=12)
+        btn_3 = gr.Button("🧪 KHỞI CHẠY MÔ PHỎNG LỢI NHUẬN", variant="primary")
+        out_3 = gr.Textbox(label="Báo cáo Quản trị Biên độ Rủi ro", lines=16)
+        btn_3.click(web_phan_he_3_risk_audit, inputs=[pts_3, sim_size], outputs=out_3)
 
-        with gr.TabItem("🔍 [4] TÁCH LỚP 1 NGÀY (SOI RÁC & TINH HOA)"):
-            gr.Markdown("*(Dùng để chẩn đoán xem ngày hôm đó Rác hay Tinh Hoa đang chiếm ưu thế)*")
-            with gr.Row():
-                date_4 = gr.Textbox(label="Ngày Truy Xuất (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
-                pts_4 = gr.Number(label="Mức cược (Điểm/con)", value=10)
-            btn_4 = gr.Button("📡 KIỂM TOÁN TÁCH LỚP DÒNG TIỀN", variant="primary")
-            out_4 = gr.Textbox(label="Báo cáo Lãi/Lỗ Tách Lớp", lines=24)
-            btn_4.click(web_phan_he_4_single_day_backtest, inputs=[date_4, pts_4], outputs=out_4)
+    with gr.Column(visible=False) as col_4:
+        with gr.Row():
+            date_4 = gr.Textbox(label="Phiên Giao dịch Truy xuất (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
+            pts_4 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
+        btn_4 = gr.Button("📡 KIỂM TOÁN HIỆU SUẤT ĐƠN PHIÊN", variant="primary")
+        out_4 = gr.Textbox(label="Báo cáo Bóc tách Động lượng", lines=24)
+        btn_4.click(web_phan_he_4_single_day_backtest, inputs=[date_4, pts_4], outputs=out_4)
 
-        with gr.TabItem("📊 [5] KIỂM TOÁN THEO THÁNG"):
-            with gr.Row():
-                m_5 = gr.Slider(minimum=1, maximum=12, step=1, label="Tháng", value=latest_dt_init.month)
-                y_5 = gr.Number(label="Năm", value=latest_dt_init.year)
-                pts_5 = gr.Number(label="Mức cược (Điểm/con)", value=10)
-                mode_5 = gr.Radio(choices=MODES, value="Chỉ Đánh TINH HOA (Lọc bỏ Rác)", label="Tư Duy Chiến Thuật")
-            btn_5 = gr.Button("📊 KIỂM TOÁN DÒNG TIỀN THÁNG", variant="primary")
-            out_5 = gr.Textbox(label="Nhật ký Audit", lines=22)
-            btn_5.click(web_phan_he_5_monthly_audit, inputs=[m_5, y_5, pts_5, mode_5], outputs=out_5)
+    with gr.Column(visible=False) as col_5:
+        with gr.Row():
+            m_5 = gr.Number(label="Kỳ Báo cáo (Tháng 1-12)", value=latest_dt_init.month)
+            y_5 = gr.Number(label="Năm Tài chính", value=latest_dt_init.year)
+            pts_5 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
+            mode_5 = gr.Radio(choices=MODES, value="Chỉ Giao Dịch TINH HOA (Lọc Số Khuyết)", label="Chiến lược Áp dụng")
+        btn_5 = gr.Button("📊 TRUY XUẤT BÁO CÁO TÀI CHÍNH THÁNG", variant="primary")
+        out_5 = gr.Textbox(label="Sổ Cái Kế Toán", lines=22)
+        btn_5.click(web_phan_he_5_monthly_audit, inputs=[m_5, y_5, pts_5, mode_5], outputs=out_5)
 
-        with gr.TabItem("📈 [6] QUÉT TOÀN CHU KỲ"):
-            with gr.Row():
-                t1_6 = gr.Textbox(label="Từ ngày (DD/MM/YYYY)", value="01/01/2026")
-                t2_6 = gr.Textbox(label="Đến ngày (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
-                pts_6 = gr.Number(label="Mức cược (Điểm/con)", value=10)
-                mode_6 = gr.Radio(choices=MODES, value="Chỉ Đánh TINH HOA (Lọc bỏ Rác)", label="Tư Duy Chiến Thuật")
-            btn_6 = gr.Button("📈 KIỂM TOÁN TOÀN BỘ LỊCH SỬ", variant="primary")
-            out_6 = gr.Textbox(label="Báo cáo Tổng Dòng Tiền", lines=22)
-            btn_6.click(web_phan_he_6_range_performance, inputs=[t1_6, t2_6, pts_6, mode_6], outputs=out_6)
+    with gr.Column(visible=False) as col_6:
+        with gr.Row():
+            t1_6 = gr.Textbox(label="Từ ngày (DD/MM/YYYY)", value="01/01/2026")
+            t2_6 = gr.Textbox(label="Đến ngày (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
+            pts_6 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
+            mode_6 = gr.Radio(choices=MODES, value="Chỉ Giao Dịch TINH HOA (Lọc Số Khuyết)", label="Chiến lược Áp dụng")
+        btn_6 = gr.Button("📈 KIỂM TOÁN BIÊN ĐỘ LỢI NHUẬN CHU KỲ", variant="primary")
+        out_6 = gr.Textbox(label="Báo cáo Tổng Dòng Tiền", lines=22)
+        btn_6.click(web_phan_he_6_range_performance, inputs=[t1_6, t2_6, pts_6, mode_6], outputs=out_6)
 
-        with gr.TabItem("🎰 [7] RAW DB"):
-            date_7 = gr.Textbox(label="Nhập ngày (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
-            btn_7 = gr.Button("💾 TRUY XUẤT RAW DATA", variant="primary")
-            out_7 = gr.Textbox(label="Bảng Kết Quả Thô", lines=10)
-            btn_7.click(web_phan_he_7_raw_db_lookup, inputs=date_7, outputs=out_7)
+    with gr.Column(visible=False) as col_7:
+        date_7 = gr.Textbox(label="Phiên Giao dịch Truy xuất (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
+        btn_7 = gr.Button("💾 TRUY XUẤT DỮ LIỆU THÔ (RAW DATA)", variant="primary")
+        out_7 = gr.Textbox(label="Log Dữ Liệu Máy Chủ", lines=10)
+        btn_7.click(web_phan_he_7_raw_db_lookup, inputs=date_7, outputs=out_7)
 
     btn_1.click(web_phan_he_1_sync, outputs=[out_1, title_2])
+
+    def update_visibility(choice):
+        return [
+            gr.update(visible=(choice == MENU_OPTIONS[0])),
+            gr.update(visible=(choice == MENU_OPTIONS[1])),
+            gr.update(visible=(choice == MENU_OPTIONS[2])),
+            gr.update(visible=(choice == MENU_OPTIONS[3])),
+            gr.update(visible=(choice == MENU_OPTIONS[4])),
+            gr.update(visible=(choice == MENU_OPTIONS[5])),
+            gr.update(visible=(choice == MENU_OPTIONS[6])),
+        ]
+        
+    nav_menu.change(
+        fn=update_visibility, 
+        inputs=[nav_menu], 
+        outputs=[col_1, col_2, col_3, col_4, col_5, col_6, col_7]
+    )
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
