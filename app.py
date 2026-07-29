@@ -3,13 +3,14 @@ import sys
 import pandas as pd
 import numpy as np
 import math
+import calendar
 from datetime import datetime, timedelta
 import gradio as gr
 
 # ==============================================================================
-# 🧬 HẠ TẦNG QUANT V34.5 - T-7 GIAO CẮT 3 CHẾ ĐỘ (DEEP AUDITED & UI ĐỒNG BỘ)
+# 🧬 HẠ TẦNG QUANT V34.6 - T-7 GIAO CẮT KÉP (UI FIX ĐA THIẾT BỊ)
 # ==============================================================================
-VERSION = "V34.5 T-7 GIAO CẮT KÉP (3 CHẾ ĐỘ - ĐỒNG BỘ 7 TAB)"
+VERSION = "V34.6 T-7 3 CHẾ ĐỘ (DEEP AUDITED & UI FULL RESPONSIVE)"
 DATA_FILE = "Ket_Qua_Loto27.xlsx"
 COST_PER_POINT = 21700
 WIN_PER_NHAY = 80000
@@ -29,9 +30,8 @@ def chuan_hoa_ngay(ngay_raw):
     except: return None
 
 def lay_max_days(thang, nam):
-    if thang == 2: return 29 if (nam % 4 == 0 and (nam % 100 != 0 or nam % 400 == 0)) else 28
-    elif thang in [4, 6, 9, 11]: return 30
-    return 31
+    # [ĐÃ FIX DEEP-TEST]: Dùng thư viện calendar gốc của Python để chống lỗi năm nhuận tuyệt đối
+    return calendar.monthrange(nam, thang)[1]
 
 def doc_database_tu_excel():
     db = {}
@@ -39,7 +39,6 @@ def doc_database_tu_excel():
         return db, f"🛑 LỖI HỆ THỐNG: Không tìm thấy file '{DATA_FILE}'."
     try:
         df = pd.read_excel(DATA_FILE, dtype=str)
-        # [DEEP-TEST]: Chống sập nếu Excel mất cột
         if df.shape[1] < 2:
             return db, "🛑 LỖI CẤU TRÚC FILE: File Excel phải có ít nhất 2 cột (Ngày và Lô Tô)."
             
@@ -67,7 +66,7 @@ def lay_ngay_chot_tu_excel(db):
     return min_dt, max_dt, max_dt + timedelta(days=1)
 
 # ==============================================================================
-# 🎯 LÕI THUẬT TOÁN: BỘ LỌC ĐA CHẾ ĐỘ (V34.4 KẾ THỪA)
+# 🎯 LÕI THUẬT TOÁN: BỘ LỌC ĐA CHẾ ĐỘ 
 # ==============================================================================
 def get_signal_v34(target_dt, db, mode):
     t_minus_7 = target_dt - timedelta(days=7)
@@ -100,7 +99,7 @@ def get_signal_v34(target_dt, db, mode):
         return sorted(list(dan_t7)), "OK"
 
 # ==============================================================================
-# 🖥️ PHÂN HỆ GIAO DIỆN (ĐỒNG BỘ 100% HIỂN THỊ TÊN TAB)
+# 🖥️ PHÂN HỆ GIAO DIỆN V34.6
 # ==============================================================================
 
 MODES = ["Đánh Toàn Bộ T-7", "Chỉ Đánh TINH HOA (Lọc bỏ Rác)", "Chỉ Đánh RÁC (Không rơi/lộn)"]
@@ -135,7 +134,7 @@ def web_phan_he_2_predict(pts_per_code_base, mode):
             
         so_luong_lo = len(dan)
         von_ngay = so_luong_lo * base_pts * COST_PER_POINT
-        dan_str = " ".join([f"{x:02d}" for x in dan]) if so_luong_lo > 0 else "[RỖNG LỆNH - Không có số đạt chuẩn]"
+        dan_str = " ".join([f"{x:02d}" for x in dan]) if so_luong_lo > 0 else "[RỖNG LỆNH - Sạch Số]"
         
         doanh_thu_1_nhay = base_pts * WIN_PER_NHAY
         diem_hoa_von_nhay = math.ceil(von_ngay / doanh_thu_1_nhay) if so_luong_lo > 0 else 0
@@ -438,70 +437,73 @@ def web_phan_he_7_raw_db_lookup(ngay_raw):
     except Exception as e: return f"🛑 LỖI TAB 7: {e}"
 
 # ==============================================================================
-# 🎨 GIAO DIỆN GRADIO V34.5
+# 🎨 GIAO DIỆN GRADIO V34.6 (ĐÃ THÊM HỘP CHỨA gr.Tabs ĐỂ DIỆT LỖI MENU DROP-DOWN)
 # ==============================================================================
 db_init, _ = doc_database_tu_excel()
 _, latest_dt_init, next_predict_dt_init = lay_ngay_chot_tu_excel(db_init)
 
-with gr.Blocks(title="XSMB QUANT V34.5") as demo:
-    gr.Markdown("# 🚀 XSMB QUANT V34.5 — CHUẨN MỰC 3 CHẾ ĐỘ (DEEP TESTED)")
-    gr.Markdown("*(7 Tab Tinh Gọn. Báo cáo in rành mạch Header. Vá chặt đầu vào Kế toán)*")
+with gr.Blocks(title="XSMB QUANT V34.6") as demo:
+    gr.Markdown("# 🚀 XSMB QUANT V34.6 — T-7 GIAO CẮT KÉP (UI FIX ĐA THIẾT BỊ)")
+    gr.Markdown("*(Đã diệt sạch lỗi kẹt Menu. Các Tab hoạt động trơn tru. Báo cáo in rành mạch Header)*")
     
-    with gr.Tab("🔄 [1] CẬP NHẬT DB"):
-        btn_1 = gr.Button("⚡ KÍCH HOẠT NẠP & KIỂM TOÁN DB", variant="primary")
-        out_1 = gr.Textbox(label="Báo cáo Nạp Dữ Liệu", lines=7)
+    # [ĐÃ FIX GIAO DIỆN]: Bọc toàn bộ TabItem vào trong một gr.Tabs() container
+    with gr.Tabs() as tabs:
         
-    with gr.Tab("🎯 [2] LỆNH CHỐT KẾ TIẾP"):
-        title_2 = gr.Markdown(f"#### Lệnh cho kỳ quay tiếp theo: {next_predict_dt_init.strftime('%d/%m/%Y')}")
-        with gr.Row():
-            pts_2 = gr.Number(label="Mốc cược CƠ SỞ (Điểm/1 con lô)", value=10)
-            mode_2 = gr.Radio(choices=MODES, value="Chỉ Đánh TINH HOA (Lọc bỏ Rác)", label="Tư Duy Chiến Thuật")
-        btn_2 = gr.Button("🔍 KIẾT XUẤT LỆNH", variant="primary")
-        out_2 = gr.Textbox(label="Hồ sơ Lệnh V34.5", lines=15)
-        btn_2.click(web_phan_he_2_predict, inputs=[pts_2, mode_2], outputs=out_2)
+        with gr.TabItem("🔄 [1] CẬP NHẬT DB"):
+            btn_1 = gr.Button("⚡ KÍCH HOẠT NẠP & KIỂM TOÁN DB", variant="primary")
+            out_1 = gr.Textbox(label="Báo cáo Nạp Dữ Liệu", lines=7)
+            
+        with gr.TabItem("🎯 [2] LỆNH CHỐT KẾ TIẾP"):
+            title_2 = gr.Markdown(f"#### Lệnh cho kỳ quay tiếp theo: {next_predict_dt_init.strftime('%d/%m/%Y')}")
+            with gr.Row():
+                pts_2 = gr.Number(label="Mốc cược CƠ SỞ (Điểm/1 con lô)", value=10)
+                mode_2 = gr.Radio(choices=MODES, value="Chỉ Đánh TINH HOA (Lọc bỏ Rác)", label="Tư Duy Chiến Thuật")
+            btn_2 = gr.Button("🔍 KIẾT XUẤT LỆNH", variant="primary")
+            out_2 = gr.Textbox(label="Hồ sơ Lệnh V34.6", lines=15)
+            btn_2.click(web_phan_he_2_predict, inputs=[pts_2, mode_2], outputs=out_2)
 
-    with gr.Tab("🛡️ [3] BẢNG VỐN KHUNG NHÁY"):
-        with gr.Row():
-            pts_3 = gr.Number(label="Mức cược (Điểm/1 con lô)", value=10)
-            sim_size = gr.Number(label="Số lượng Lô giả định", value=12)
-        btn_3 = gr.Button("🧪 MÔ PHỎNG LỢI NHUẬN TÙY BIẾN", variant="primary")
-        out_3 = gr.Textbox(label="Phân Tích Hòa Vốn & Có Lãi", lines=16)
-        btn_3.click(web_phan_he_3_risk_audit, inputs=[pts_3, sim_size], outputs=out_3)
+        with gr.TabItem("🛡️ [3] BẢNG VỐN KHUNG NHÁY"):
+            with gr.Row():
+                pts_3 = gr.Number(label="Mức cược (Điểm/1 con lô)", value=10)
+                sim_size = gr.Number(label="Số lượng Lô giả định", value=12)
+            btn_3 = gr.Button("🧪 MÔ PHỎNG LỢI NHUẬN TÙY BIẾN", variant="primary")
+            out_3 = gr.Textbox(label="Phân Tích Hòa Vốn & Có Lãi", lines=16)
+            btn_3.click(web_phan_he_3_risk_audit, inputs=[pts_3, sim_size], outputs=out_3)
 
-    with gr.Tab("🔍 [4] TÁCH LỚP 1 NGÀY (SOI RÁC & TINH HOA)"):
-        gr.Markdown("*(Dùng để chẩn đoán xem ngày hôm đó Rác hay Tinh Hoa đang chiếm ưu thế)*")
-        with gr.Row():
-            date_4 = gr.Textbox(label="Ngày Truy Xuất (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
-            pts_4 = gr.Number(label="Mức cược (Điểm/con)", value=10)
-        btn_4 = gr.Button("📡 KIỂM TOÁN TÁCH LỚP DÒNG TIỀN", variant="primary")
-        out_4 = gr.Textbox(label="Báo cáo Lãi/Lỗ Tách Lớp", lines=24)
-        btn_4.click(web_phan_he_4_single_day_backtest, inputs=[date_4, pts_4], outputs=out_4)
+        with gr.TabItem("🔍 [4] TÁCH LỚP 1 NGÀY (SOI RÁC & TINH HOA)"):
+            gr.Markdown("*(Dùng để chẩn đoán xem ngày hôm đó Rác hay Tinh Hoa đang chiếm ưu thế)*")
+            with gr.Row():
+                date_4 = gr.Textbox(label="Ngày Truy Xuất (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
+                pts_4 = gr.Number(label="Mức cược (Điểm/con)", value=10)
+            btn_4 = gr.Button("📡 KIỂM TOÁN TÁCH LỚP DÒNG TIỀN", variant="primary")
+            out_4 = gr.Textbox(label="Báo cáo Lãi/Lỗ Tách Lớp", lines=24)
+            btn_4.click(web_phan_he_4_single_day_backtest, inputs=[date_4, pts_4], outputs=out_4)
 
-    with gr.Tab("📊 [5] KIỂM TOÁN THEO THÁNG"):
-        with gr.Row():
-            m_5 = gr.Slider(minimum=1, maximum=12, step=1, label="Tháng", value=latest_dt_init.month)
-            y_5 = gr.Number(label="Năm", value=latest_dt_init.year)
-            pts_5 = gr.Number(label="Mức cược (Điểm/con)", value=10)
-            mode_5 = gr.Radio(choices=MODES, value="Chỉ Đánh TINH HOA (Lọc bỏ Rác)", label="Tư Duy Chiến Thuật")
-        btn_5 = gr.Button("📊 KIỂM TOÁN DÒNG TIỀN THÁNG", variant="primary")
-        out_5 = gr.Textbox(label="Nhật ký Audit", lines=22)
-        btn_5.click(web_phan_he_5_monthly_audit, inputs=[m_5, y_5, pts_5, mode_5], outputs=out_5)
+        with gr.TabItem("📊 [5] KIỂM TOÁN THEO THÁNG"):
+            with gr.Row():
+                m_5 = gr.Slider(minimum=1, maximum=12, step=1, label="Tháng", value=latest_dt_init.month)
+                y_5 = gr.Number(label="Năm", value=latest_dt_init.year)
+                pts_5 = gr.Number(label="Mức cược (Điểm/con)", value=10)
+                mode_5 = gr.Radio(choices=MODES, value="Chỉ Đánh TINH HOA (Lọc bỏ Rác)", label="Tư Duy Chiến Thuật")
+            btn_5 = gr.Button("📊 KIỂM TOÁN DÒNG TIỀN THÁNG", variant="primary")
+            out_5 = gr.Textbox(label="Nhật ký Audit", lines=22)
+            btn_5.click(web_phan_he_5_monthly_audit, inputs=[m_5, y_5, pts_5, mode_5], outputs=out_5)
 
-    with gr.Tab("📈 [6] QUÉT TOÀN CHU KỲ"):
-        with gr.Row():
-            t1_6 = gr.Textbox(label="Từ ngày (DD/MM/YYYY)", value="01/01/2026")
-            t2_6 = gr.Textbox(label="Đến ngày (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
-            pts_6 = gr.Number(label="Mức cược (Điểm/con)", value=10)
-            mode_6 = gr.Radio(choices=MODES, value="Chỉ Đánh TINH HOA (Lọc bỏ Rác)", label="Tư Duy Chiến Thuật")
-        btn_6 = gr.Button("📈 KIỂM TOÁN TOÀN BỘ LỊCH SỬ", variant="primary")
-        out_6 = gr.Textbox(label="Báo cáo Tổng Dòng Tiền", lines=22)
-        btn_6.click(web_phan_he_6_range_performance, inputs=[t1_6, t2_6, pts_6, mode_6], outputs=out_6)
+        with gr.TabItem("📈 [6] QUÉT TOÀN CHU KỲ"):
+            with gr.Row():
+                t1_6 = gr.Textbox(label="Từ ngày (DD/MM/YYYY)", value="01/01/2026")
+                t2_6 = gr.Textbox(label="Đến ngày (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
+                pts_6 = gr.Number(label="Mức cược (Điểm/con)", value=10)
+                mode_6 = gr.Radio(choices=MODES, value="Chỉ Đánh TINH HOA (Lọc bỏ Rác)", label="Tư Duy Chiến Thuật")
+            btn_6 = gr.Button("📈 KIỂM TOÁN TOÀN BỘ LỊCH SỬ", variant="primary")
+            out_6 = gr.Textbox(label="Báo cáo Tổng Dòng Tiền", lines=22)
+            btn_6.click(web_phan_he_6_range_performance, inputs=[t1_6, t2_6, pts_6, mode_6], outputs=out_6)
 
-    with gr.Tab("🎰 [7] RAW DB"):
-        date_7 = gr.Textbox(label="Nhập ngày (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
-        btn_7 = gr.Button("💾 TRUY XUẤT RAW DATA", variant="primary")
-        out_7 = gr.Textbox(label="Bảng Kết Quả Thô", lines=10)
-        btn_7.click(web_phan_he_7_raw_db_lookup, inputs=date_7, outputs=out_7)
+        with gr.TabItem("🎰 [7] RAW DB"):
+            date_7 = gr.Textbox(label="Nhập ngày (DD/MM/YYYY)", value=latest_dt_init.strftime("%d/%m/%Y"))
+            btn_7 = gr.Button("💾 TRUY XUẤT RAW DATA", variant="primary")
+            out_7 = gr.Textbox(label="Bảng Kết Quả Thô", lines=10)
+            btn_7.click(web_phan_he_7_raw_db_lookup, inputs=date_7, outputs=out_7)
 
     btn_1.click(web_phan_he_1_sync, outputs=[out_1, title_2])
 
