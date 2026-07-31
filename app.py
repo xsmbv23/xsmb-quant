@@ -8,13 +8,14 @@ import gradio as gr
 import numpy as np
 import pandas as pd
 
-VERSION = "V36.1.0 PRO ALGO (BẢN THƯƠNG MẠI CAO CẤP - TÍCH HỢP TOÀN DIỆN)"
+VERSION = "V36.1.1 PRO ALGO (ĐÃ NÂNG CẤP BỘ LỌC ĐỘNG LƯỢNG KHÁNG ÂM EV)"
 DATA_FILE = "Ket_Qua_Loto27.xlsx"
 COST_PER_POINT = 21700
 WIN_PER_NHAY = 80000
 
 MODES = [
-    "Giao Dịch Toàn Bộ T-7",
+    "🚀 Giao Dịch T-7 ĐỘNG LƯỢNG TỐI ƯU (Cải Tiến Quant V36.1.1)",
+    "Giao Dịch Toàn Bộ T-7 (Chuẩn Gốc)",
     "Chỉ Giao Dịch TINH HOA (Lọc Số Khuyết)",
     "Chỉ Giao Dịch SỐ KHUYẾT (Không Rơi/Đảo)",
 ]
@@ -118,16 +119,26 @@ def lay_ngay_chot_tu_excel(db):
 
 def get_signal_v36(target_dt, db, mode):
   t_minus_7 = target_dt - timedelta(days=7)
-  t_minus_1 = target_dt - timedelta(days=1)
   str_t7 = t_minus_7.strftime("%d/%m/%Y")
-  str_t1 = t_minus_1.strftime("%d/%m/%Y")
   if str_t7 not in db:
     return None, f"[THIẾU DỮ LIỆU T-7 ({str_t7})]"
-  dan_t7 = set(db[str_t7]["prizes_int"])
-  if mode in [
+  prizes_t7 = db[str_t7]["prizes_int"]
+  dan_t7 = set(prizes_t7)
+
+  if mode == "🚀 Giao Dịch T-7 ĐỘNG LƯỢNG TỐI ƯU (Cải Tiến Quant V36.1.1)":
+    recent_3d = set()
+    for d in range(1, 4):
+      str_p = (target_dt - timedelta(days=d)).strftime("%d/%m/%Y")
+      if str_p in db:
+        recent_3d.update(db[str_p]["prizes_int"])
+    dan_opt = [x for x in dan_t7 if prizes_t7.count(x) >= 2 or x in recent_3d]
+    return sorted(list(dan_opt)), "OK"
+  elif mode in [
       "Chỉ Giao Dịch TINH HOA (Lọc Số Khuyết)",
       "Chỉ Giao Dịch SỐ KHUYẾT (Không Rơi/Đảo)",
   ]:
+    t_minus_1 = target_dt - timedelta(days=1)
+    str_t1 = t_minus_1.strftime("%d/%m/%Y")
     if str_t1 not in db:
       return None, f"[THIẾU DỮ LIỆU T-1 ({str_t1})]"
     kq_t1 = set(db[str_t1]["prizes_int"])
@@ -357,8 +368,7 @@ def web_phan_he_4_single_day_backtest(ngay_raw, pts_per_code_base):
     )
     if sl_t == 0:
       lines.append(
-          " 👉 KẾT QUẢ: KHÔNG CÓ MÃ ĐẠT CHUẨN (Toàn bộ danh mục mất động"
-          " lượng)\n"
+          " 👉 KHÔNG CÓ MÃ ĐẠT CHUẨN (Toàn bộ danh mục mất động lượng)\n"
       )
     else:
       lines.append(
@@ -680,9 +690,9 @@ MENU_OPTIONS = [
     "🎰 7. DỮ LIỆU THÔ",
 ]
 
-with gr.Blocks(title="XSMB QUANT V36.1.0 PRO") as demo:
+with gr.Blocks(title="XSMB QUANT V36.1.1 PRO") as demo:
   gr.Markdown(
-      "# 🚀 XSMB QUANT V36.1.0 — PHIÊN BẢN THƯƠNG MẠI (TÍCH HỢP HOÀN CHỈNH)"
+      "# 🚀 XSMB QUANT V36.1.1 — PHIÊN BẢN THƯƠNG MẠI (TÍCH HỢP HOÀN CHỈNH)"
   )
   gr.Markdown(
       "*(Hệ thống Phân tích Định lượng & Quản trị Rủi ro. Đã tối ưu hóa và sửa"
@@ -708,11 +718,11 @@ with gr.Blocks(title="XSMB QUANT V36.1.0 PRO") as demo:
       pts_2 = gr.Number(label="Khối lượng Vốn Cơ sở (Điểm / Mã)", value=10)
       mode_2 = gr.Radio(
           choices=MODES,
-          value="Chỉ Giao Dịch TINH HOA (Lọc Số Khuyết)",
+          value="🚀 Giao Dịch T-7 ĐỘNG LƯỢNG TỐI ƯU (Cải Tiến Quant V36.1.1)",
           label="Chiến lược Áp dụng",
       )
     btn_2 = gr.Button("🔍 XUẤT KHUYẾN NGHỊ GIAO DỊCH", variant="primary")
-    out_2 = gr.Textbox(label="Hồ sơ Giao dịch V36.1.0", lines=16)
+    out_2 = gr.Textbox(label="Hồ sơ Giao dịch V36.1.1", lines=16)
     btn_2.click(web_phan_he_2_predict, inputs=[pts_2, mode_2], outputs=out_2)
   with gr.Column(visible=False) as col_3:
     with gr.Row():
@@ -742,7 +752,7 @@ with gr.Blocks(title="XSMB QUANT V36.1.0 PRO") as demo:
       pts_5 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
       mode_5 = gr.Radio(
           choices=MODES,
-          value="Chỉ Giao Dịch TINH HOA (Lọc Số Khuyết)",
+          value="🚀 Giao Dịch T-7 ĐỘNG LƯỢNG TỐI ƯU (Cải Tiến Quant V36.1.1)",
           label="Chiến lược Áp dụng",
       )
     btn_5 = gr.Button("📊 TRUY XUẤT BÁO CÁO THÁNG", variant="primary")
@@ -762,7 +772,7 @@ with gr.Blocks(title="XSMB QUANT V36.1.0 PRO") as demo:
       pts_6 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
       mode_6 = gr.Radio(
           choices=MODES,
-          value="Chỉ Giao Dịch TINH HOA (Lọc Số Khuyết)",
+          value="🚀 Giao Dịch T-7 ĐỘNG LƯỢNG TỐI ƯU (Cải Tiến Quant V36.1.1)",
           label="Chiến lược Áp dụng",
       )
     btn_6 = gr.Button(
