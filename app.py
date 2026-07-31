@@ -155,15 +155,16 @@ def get_signal_v36(target_dt, db, mode):
 def web_phan_he_1_sync():
   db, msg = doc_database_tu_excel()
   _, latest_dt, next_predict_dt = lay_ngay_chot_tu_excel(db)
-  res = f"📑 [PHÂN HỆ 1] BÁO CÁO: ĐỒNG BỘ CƠ SỞ DỮ LIỆU\n"
-  res += f"=================================================================================\n"
-  res += f"• Phiên bản hệ thống : {VERSION}\n"
-  res += f"• Trạng thái Dữ liệu : {msg}\n"
-  res += f"• Phiên cập nhật cuối: 📅 [{latest_dt.strftime('%d/%m/%Y')}]\n"
-  res += f"• Lịch phân tích tới : 🚀 [{next_predict_dt.strftime('%d/%m/%Y')}]\n"
-  return (
-      res,
-      f"#### KHUYẾN NGHỊ GIAO DỊCH KỲ: {next_predict_dt.strftime('%d/%m/%Y')}",
+  lines = [
+      "📑 [PHÂN HỆ 1] BÁO CÁO: ĐỒNG BỘ CƠ SỞ DỮ LIỆU",
+      "=================================================================================",
+      f"• Phiên bản hệ thống : {VERSION}",
+      f"• Trạng thái Dữ liệu : {msg}",
+      f"• Phiên cập nhật cuối: 📅 [{latest_dt.strftime('%d/%m/%Y')}]",
+      f"• Lịch phân tích tới : 🚀 [{next_predict_dt.strftime('%d/%m/%Y')}]",
+  ]
+  return "\n".join(lines), (
+      f"#### KHUYẾN NGHỊ GIAO DỊCH KỲ: {next_predict_dt.strftime('%d/%m/%Y')}"
   )
 
 
@@ -176,35 +177,41 @@ def web_phan_he_2_predict(pts_per_code_base, mode):
       return err_msg
     base_pts = safe_int(pts_per_code_base)
     dan, msg = get_signal_v36(next_predict_dt, db, mode)
-    res = f"📑 [PHÂN HỆ 2] BÁO CÁO: KHUYẾN NGHỊ GIAO DỊCH KẾ TIẾP\n"
-    res += f"=======================================================\n"
-    res += f"🎯 PHIÊN GIAO DỊCH MỤC TIÊU: {next_predict_dt.strftime('%d/%m/%Y')}\n"
-    res += f"🎚️ CHIẾN LƯỢC ÁP DỤNG: {mode}\n\n"
+    lines = [
+        "📑 [PHÂN HỆ 2] BÁO CÁO: KHUYẾN NGHỊ GIAO DỊCH KẾ TIẾP",
+        "=======================================================\n",
+        f"🎯 PHIÊN GIAO DỊCH MỤC TIÊU: {next_predict_dt.strftime('%d/%m/%Y')}",
+        f"🎚️ CHIẾN LƯỢC ÁP DỤNG: {mode}\n",
+    ]
     if dan is None:
-      res += f"🛑 CẢNH BÁO RỦI RO: Dữ liệu tham chiếu {msg}.\n"
-      res += f"HỆ THỐNG TỰ ĐỘNG TẠM NGỪNG CẤP TÍN HIỆU ĐỂ BẢO TOÀN VỐN.\n"
-      return res
+      lines.append(f"🛑 CẢNH BÁO RỦI RO: Dữ liệu tham chiếu {msg}.")
+      lines.append(
+          "HỆ THỐNG TỰ ĐỘNG TẠM NGỪNG CẤP TÍN HIỆU ĐỂ BẢO TOÀN VỐN."
+      )
+      return "\n".join(lines)
     so_luong_lo = len(dan)
     von_ngay = so_luong_lo * base_pts * COST_PER_POINT
     if so_luong_lo > 0:
       dan_str = " ".join([f"{x:02d}" for x in dan])
-      res += f"📋 DANH MỤC MÃ SỐ ĐẠT CHUẨN ({so_luong_lo} MÃ):\n"
-      res += f" [ {dan_str} ]\n"
-      res += f"-------------------------------------------------------\n"
-      res += f" • Khối lượng phân bổ : {base_pts} điểm / 1 mã\n"
-      res += f"💰 TỔNG VỐN YÊU CẦU   : {von_ngay:,.0f} VND\n"
+      lines.append(f"📋 DANH MỤC MÃ SỐ ĐẠT CHUẨN ({so_luong_lo} MÃ):")
+      lines.append(f" [ {dan_str} ]")
+      lines.append("-------------------------------------------------------")
+      lines.append(f" • Khối lượng phân bổ : {base_pts} điểm / 1 mã")
+      lines.append(f"💰 TỔNG VỐN YÊU CẦU   : {von_ngay:,.0f} VND")
       diem_hoa_von_nhay = math.ceil(von_ngay / (base_pts * WIN_PER_NHAY))
-      res += (
+      lines.append(
           f"💡 MỤC TIÊU HÒA VỐN   : Cần tối thiểu {diem_hoa_von_nhay} lượt"
-          " trúng.\n"
+          " trúng."
       )
     else:
-      res += f"📋 DANH MỤC MÃ SỐ ĐẠT CHUẨN:\n"
-      res += f" 👉 🚫 [KHÔNG CÓ TÍN HIỆU KHẢ THI]\n"
-      res += f"-------------------------------------------------------\n"
-      res += f"💰 TỔNG VỐN YÊU CẦU: 0 VND\n"
-      res += f"💡 HỆ THỐNG KHUYẾN NGHỊ ĐỨNG NGOÀI THỊ TRƯỜNG TRONG PHIÊN NÀY.\n"
-    return res
+      lines.append("📋 DANH MỤC MÃ SỐ ĐẠT CHUẨN:")
+      lines.append(" 👉 🚫 [KHÔNG CÓ TÍN HIỆU KHẢ THI]")
+      lines.append("-------------------------------------------------------")
+      lines.append("💰 TỔNG VỐN YÊU CẦU: 0 VND")
+      lines.append(
+          "💡 HỆ THỐNG KHUYẾN NGHỊ ĐỨNG NGOÀI THỊ TRƯỜNG TRONG PHIÊN NÀY."
+      )
+    return "\n".join(lines)
   except Exception as e:
     return f"🛑 LỖI PHÂN HỆ 2: {e}"
 
@@ -220,15 +227,17 @@ def web_phan_he_3_risk_audit(base_pts, sim_size):
     base_pts = safe_int(base_pts)
     so_luong_lo = safe_int(sim_size)
     von_ngay = so_luong_lo * base_pts * COST_PER_POINT
-    res = f"📑 [PHÂN HỆ 3] BÁO CÁO: QUẢN TRỊ RỦI RO & MÔ PHỎNG LỢI NHUẬN\n"
-    res += f"====================================================================\n"
-    res += (
-        f"📊 KỊCH BẢN PHÂN BỔ {so_luong_lo} MÃ - TỔNG VỐN ĐẦU TƯ:"
-        f" {von_ngay:,.0f} VNĐ\n"
-    )
-    res += f"--------------------------------------------------------------------\n"
-    res += f" LƯỢT TRÚNG   | DOANH THU KỲ VỌNG | LỢI NHUẬN RÒNG | TRẠNG THÁI\n"
-    res += f"--------------------------------------------------------------------\n"
+    lines = [
+        "📑 [PHÂN HỆ 3] BÁO CÁO: QUẢN TRỊ RỦI RO & MÔ PHỎNG LỢI NHUẬN",
+        "====================================================================",
+        (
+            f"📊 KỊCH BẢN PHÂN BỔ {so_luong_lo} MÃ - TỔNG VỐN ĐẦU TƯ:"
+            f" {von_ngay:,.0f} VNĐ"
+        ),
+        "--------------------------------------------------------------------",
+        " LƯỢT TRÚNG   | DOANH THU KỲ VỌNG | LỢI NHUẬN RÒNG | TRẠNG THÁI",
+        "--------------------------------------------------------------------",
+    ]
     for nhay in range(0, int(so_luong_lo * 0.7) + 2):
       thuong = nhay * base_pts * WIN_PER_NHAY
       lai = thuong - von_ngay
@@ -236,12 +245,14 @@ def web_phan_he_3_risk_audit(base_pts, sim_size):
       if nhay == 0:
         status += " (MẤT VỐN)"
       lai_str = f"{lai:+,.0f}" if lai != 0 else "0"
-      res += (
+      lines.append(
           f" Đạt {nhay:>2} lượt  | {thuong:>17,.0f} | {lai_str:>14} |"
-          f" {status}\n"
+          f" {status}"
       )
-    res += f"====================================================================\n"
-    return res
+    lines.append(
+        "===================================================================="
+    )
+    return "\n".join(lines)
   except Exception as e:
     return f"🛑 LỖI PHÂN HỆ 3: {e}"
 
@@ -267,15 +278,17 @@ def web_phan_he_4_single_day_backtest(ngay_raw, pts_per_code_base):
     t_minus_1 = d_obj - timedelta(days=1)
     ngay_str_t7 = t_minus_7.strftime("%d/%m/%Y")
     ngay_str_t1 = t_minus_1.strftime("%d/%m/%Y")
-    report = f"📑 [PHÂN HỆ 4] BÁO CÁO: KIỂM TOÁN HIỆU SUẤT ĐƠN PHIÊN\n"
-    report += f"========================================================================\n\n"
+    lines = [
+        "📑 [PHÂN HỆ 4] BÁO CÁO: KIỂM TOÁN HIỆU SUẤT ĐƠN PHIÊN",
+        "========================================================================\n",
+    ]
     if ngay_str_t7 not in db:
-      report += f"📡 THÔNG TIN PHIÊN: {ngay_str}\n"
-      report += (
+      lines.append(f"📡 THÔNG TIN PHIÊN: {ngay_str}")
+      lines.append(
           f"🔭 LỖI CHU KỲ: Thiếu dữ liệu mốc T-7 ({ngay_str_t7}). Không thể phân"
-          " tích!\n"
+          " tích!"
       )
-      return report
+      return "\n".join(lines)
     dan_t7 = set(db[ngay_str_t7]["prizes_int"])
 
     def cal_pnl(danh_sach):
@@ -292,28 +305,27 @@ def web_phan_he_4_single_day_backtest(ngay_raw, pts_per_code_base):
     list_full = sorted(list(dan_t7))
     sl_f, chi_f, nhay_f, thu_f, lai_f, st_f = cal_pnl(list_full)
     lai_f_str = f"{lai_f:+,.0f}" if lai_f != 0 else "0"
-    report += (
-        f"📡 KẾT QUẢ GIAO DỊCH PHIÊN: {ngay_str} (Phân bổ: {base_pts}đ/mã)\n\n"
+    lines.append(
+        f"📡 KẾT QUẢ GIAO DỊCH PHIÊN: {ngay_str} (Phân bổ: {base_pts}đ/mã)\n"
     )
-    report += (
-        f"🛑 [KỊCH BẢN 1] - GIAO DỊCH TOÀN BỘ T-7 (Tinh hoa + Khuyết nhịp)\n"
+    lines.append(
+        "🛑 [KỊCH BẢN 1] - GIAO DỊCH TOÀN BỘ T-7 (Tinh hoa + Khuyết nhịp)"
     )
-    report += (
+    lines.append(
         f" • Danh mục {sl_f} mã: "
         + " ".join([f"{x:02d}" for x in list_full])
-        + "\n"
     )
-    report += (
+    lines.append(
         f" • Đạt {nhay_f} lượt.  Vốn đầu tư: {chi_f:,.0f}đ  | Doanh thu:"
-        f" {thu_f:,.0f}đ\n"
+        f" {thu_f:,.0f}đ"
     )
-    report += f" 👉 LỢI NHUẬN RÒNG: {lai_f_str} VNĐ ({st_f})\n\n"
+    lines.append(f" 👉 LỢI NHUẬN RÒNG: {lai_f_str} VNĐ ({st_f})\n")
     if ngay_str_t1 not in db:
-      report += (
+      lines.append(
           f"⚠️ LƯU Ý: Thiếu dữ liệu mốc T-1 ({ngay_str_t1}).\nKhông thể phân"
-          " tách rủi ro cho Kịch bản 2 và 3.\n"
+          " tách rủi ro cho Kịch bản 2 và 3."
       )
-      return report
+      return "\n".join(lines)
     kq_t1 = set(db[ngay_str_t1]["prizes_int"])
     tinh_hoa = set()
     for x in dan_t7:
@@ -327,61 +339,63 @@ def web_phan_he_4_single_day_backtest(ngay_raw, pts_per_code_base):
     sl_t, chi_t, nhay_t, thu_t, lai_t, st_t = cal_pnl(list_tinh_hoa)
     lai_r_str = f"{lai_r:+,.0f}" if lai_r != 0 else "0"
     lai_t_str = f"{lai_t:+,.0f}" if lai_t != 0 else "0"
-    report += f"📉 [KỊCH BẢN 2] - BÓC TÁCH: SỐ KHUYẾT NHỊP (Không Rơi/Đảo từ T-1)\n"
+    lines.append(
+        "📉 [KỊCH BẢN 2] - BÓC TÁCH: SỐ KHUYẾT NHỊP (Không Rơi/Đảo từ T-1)"
+    )
     if sl_r == 0:
-      report += (
-          f" 👉 KẾT QUẢ: 100% Danh mục duy trì động lượng tốt (Không có mã"
-          " khuyết nhịp)\n\n"
+      lines.append(
+          " 👉 KẾT QUẢ: 100% Danh mục duy trì động lượng tốt (Không có mã"
+          " khuyết nhịp)\n"
       )
     else:
-      report += (
-          f" • Danh mục {sl_r} mã: "
-          + " ".join([f"{x:02d}" for x in list_rac])
-          + "\n"
+      lines.append(
+          f" • Danh mục {sl_r} mã: " + " ".join([f"{x:02d}" for x in list_rac])
       )
-      report += (
+      lines.append(
           f" • Đạt {nhay_r} lượt.  Vốn đầu tư: {chi_r:,.0f}đ  | Doanh thu:"
-          f" {thu_r:,.0f}đ\n"
+          f" {thu_r:,.0f}đ"
       )
-      report += f" 👉 HIỆU QUẢ CỦA MÃ KHUYẾT: {lai_r_str} VNĐ ({st_r})\n\n"
-    report += (
-        f"💎 [KỊCH BẢN 3] - BÓC TÁCH: SỐ TINH HOA (Động lượng Rơi/Đảo từ T-1)\n"
+      lines.append(
+          f" 👉 HIỆU QUẢ CỦA MÃ KHUYẾT: {lai_r_str} VNĐ ({st_r})\n"
+      )
+    lines.append(
+        "💎 [KỊCH BẢN 3] - BÓC TÁCH: SỐ TINH HOA (Động lượng Rơi/Đảo từ T-1)"
     )
     if sl_t == 0:
-      report += (
-          f" 👉 KẾT QUẢ: KHÔNG CÓ MÃ ĐẠT CHUẨN (Toàn bộ danh mục mất động"
-          " lượng)\n\n"
+      lines.append(
+          " 👉 KẾT QUẢ: KHÔNG CÓ MÃ ĐẠT CHUẨN (Toàn bộ danh mục mất động"
+          " lượng)\n"
       )
     else:
-      report += (
+      lines.append(
           f" • Danh mục {sl_t} mã: "
           + " ".join([f"{x:02d}" for x in list_tinh_hoa])
-          + "\n"
       )
-      report += (
+      lines.append(
           f" • Đạt {nhay_t} lượt.  Vốn đầu tư: {chi_t:,.0f}đ  | Doanh thu:"
-          f" {thu_t:,.0f}đ\n"
+          f" {thu_t:,.0f}đ"
       )
-      report += f" 👉 LỢI NHUẬN RÒNG: {lai_t_str} VNĐ ({st_t})\n\n"
-    report += f"========================================================================\n"
-    report += f"💡 KẾT LUẬN KIỂM TOÁN CHUYÊN SÂU:\n"
+      lines.append(f" 👉 LỢI NHUẬN RÒNG: {lai_t_str} VNĐ ({st_t})\n")
+    lines.append(
+        "========================================================================"
+    )
+    lines.append("💡 KẾT LUẬN KIỂM TOÁN CHUYÊN SÂU:")
     if sl_r == 0:
-      report += (
-          f" -> Đánh giá: Danh mục cấu trúc vững chắc, 100% các mã số duy trì"
-          " xu hướng tích cực.\n"
+      lines.append(
+          " -> Đánh giá: Danh mục cấu trúc vững chắc, 100% các mã số duy trì"
+          " xu hướng tích cực."
       )
     elif lai_r < 0:
-      report += (
+      lines.append(
           f" -> Phân tích: Các mã khuyết nhịp đã làm suy giảm {-lai_r:,.0f} VNĐ"
-          " lợi nhuận. Chiến lược TINH HOA là phương án bảo toàn vốn tối"
-          " ưu.\n"
+          " lợi nhuận. Chiến lược TINH HOA là phương án bảo toàn vốn tối ưu."
       )
     elif lai_r > 0:
-      report += (
-          f" -> Lưu ý rủi ro: Nhóm số khuyết nhịp tạo ra lợi nhuận bất thường"
-          f" {lai_r:,.0f} VNĐ. Thị trường đang có biến động ngoài dự kiến.\n"
+      lines.append(
+          " -> Lưu ý rủi ro: Nhóm số khuyết nhịp tạo ra lợi nhuận bất thường"
+          f" {lai_r:,.0f} VNĐ. Thị trường đang có biến động ngoài dự kiến."
       )
-    return report
+    return "\n".join(lines)
   except Exception as e:
     return f"🛑 LỖI PHÂN HỆ 4: {e}"
 
@@ -402,7 +416,7 @@ def web_phan_he_5_monthly_audit(month, year, pts_per_code_base, mode):
     nam = safe_int(year)
     base_pts = safe_int(pts_per_code_base)
     if not (1 <= thang <= 12):
-      return "🛑 LỖI THÔNG SỐ: Giá trị 'Tháng' phải nằm trong khoảng từ 1 đến 12."
+      return '🛑 LỖI THÔNG SỐ: Giá trị "Tháng" phải nằm trong khoảng từ 1 đến 12.'
     min_dt, max_dt, _ = lay_ngay_chot_tu_excel(db)
     start_dt = datetime(nam, thang, 1)
     end_dt = datetime(nam, thang, lay_max_days(thang, nam))
@@ -412,18 +426,18 @@ def web_phan_he_5_monthly_audit(month, year, pts_per_code_base, mode):
       end_dt = max_dt
     if start_dt > end_dt:
       return f"🛑 BÁO CÁO: Kỳ kế toán {thang:02d}/{nam} hoàn toàn trống dữ liệu."
-    report = f"📑 [PHÂN HỆ 5] BÁO CÁO: TỔNG HỢP HIỆU SUẤT THEO THÁNG\n"
-    report += f"===================================================================================================================\n"
-    report += (
-        f"📊 KỲ BÁO CÁO: {thang:02d}/{nam} - CHIẾN LƯỢC ĐẦU TƯ: {mode}\n"
-    )
-    report += f"-------------------------------------------------------------------------------------------------------------------\n"
-    report += (
-        f"{'NGÀY G.DỊCH':<12} | {'TRẠNG THÁI':<15} | {'SỐ MÃ':<7} |"
-        f" {'VỐN ĐẦU TƯ':<14} | {'LƯỢT':<5} | {'DOANH THU':<14} |"
-        f" {'LỢI NHUẬN':<15} | {'LŨY KẾ':<12}\n"
-    )
-    report += f"-------------------------------------------------------------------------------------------------------------------\n"
+    lines = [
+        "📑 [PHÂN HỆ 5] BÁO CÁO: TỔNG HỢP HIỆU SUẤT THEO THÁNG",
+        "===================================================================================================================",
+        f"📊 KỲ BÁO CÁO: {thang:02d}/{nam} - CHIẾN LƯỢC ĐẦU TƯ: {mode}",
+        "-------------------------------------------------------------------------------------------------------------------",
+        (
+            f"{'NGÀY G.DỊCH':<12} | {'TRẠNG THÁI':<15} | {'SỐ MÃ':<7} |"
+            f" {'VỐN ĐẦU TƯ':<14} | {'LƯỢT':<5} | {'DOANH THU':<14} |"
+            f" {'LỢI NHUẬN':<15} | {'LŨY KẾ':<12}"
+        ),
+        "-------------------------------------------------------------------------------------------------------------------",
+    ]
     luy_ke_thang = 0
     cash_thu = 0
     cash_chi = 0
@@ -432,25 +446,25 @@ def web_phan_he_5_monthly_audit(month, year, pts_per_code_base, mode):
     while curr <= end_dt:
       ngay_str = curr.strftime("%d/%m/%Y")
       if ngay_str not in db:
-        report += (
+        lines.append(
             f"{ngay_str:<12} | {'⚠️ THIẾU DATA':<15} | {'-':<7} | {'-':<14} |"
-            f" {'-':<5} | {'-':<14} | {'-':<15} | {luy_ke_thang:>+12,.0f}\n"
+            f" {'-':<5} | {'-':<14} | {'-':<15} | {luy_ke_thang:>+12,.0f}"
         )
         curr += timedelta(days=1)
         continue
       dan, msg = get_signal_v36(curr, db, mode)
       if dan is None:
-        report += (
+        lines.append(
             f"{ngay_str:<12} | {'🔭 THEO DÕI':<15} | {'0':<7} | {'-':<14} |"
-            f" {'-':<5} | {'-':<14} | {msg:<15} | {luy_ke_thang:>+12,.0f}\n"
+            f" {'-':<5} | {'-':<14} | {msg:<15} | {luy_ke_thang:>+12,.0f}"
         )
         curr += timedelta(days=1)
         continue
       if len(dan) == 0:
-        report += (
+        lines.append(
             f"{ngay_str:<12} | {'🔭 THEO DÕI':<15} | {'0':<7} | {'-':<14} |"
             f" {'-':<5} | {'-':<14} | {'[KHÔNG TÍN HIỆU]':<15} |"
-            f" {luy_ke_thang:>+12,.0f}\n"
+            f" {luy_ke_thang:>+12,.0f}"
         )
         curr += timedelta(days=1)
         continue
@@ -465,24 +479,25 @@ def web_phan_he_5_monthly_audit(month, year, pts_per_code_base, mode):
       cash_chi += von_1_phien
       cash_thu += thuong
       status_str = "🟢 WIN" if lai > 0 else "🔴 LOSS"
-      report += (
+      lines.append(
           f"{ngay_str:<12} | {status_str:<15} | {so_luong_lo:<7} |"
           f" {von_1_phien:<14,.0f} | {nhay:<5} | {thuong:<14,.0f} |"
-          f" {lai:>+15,.0f} | {luy_ke_thang:>+12,.0f}\n"
+          f" {lai:>+15,.0f} | {luy_ke_thang:>+12,.0f}"
       )
       curr += timedelta(days=1)
     roi = (luy_ke_thang / cash_chi * 100) if cash_chi > 0 else 0
-    report += f"===================================================================================================================\n"
-    report += f"📝 ĐỐI SOÁT KẾ TOÁN: {total_phien_danh} PHIÊN CÓ XUẤT LỆNH\n"
-    report += (
+    lines.append(
+        "==================================================================================================================="
+    )
+    lines.append(f"📝 ĐỐI SOÁT KẾ TOÁN: {total_phien_danh} PHIÊN CÓ XUẤT LỆNH")
+    lines.append(
         f"• TỔNG DÒNG TIỀN (CASH FLOW): Giải ngân {cash_chi:,.0f} đ | Thu về"
-        f" {cash_thu:,.0f} đ\n"
+        f" {cash_thu:,.0f} đ"
     )
-    report += (
-        f"• LỢI NHUẬN RÒNG & BIÊN R.O.I: {luy_ke_thang:+,.0f} VND ({roi:+.2f}"
-        " %)\n"
+    lines.append(
+        f"• LỢI NHUẬN RÒNG & BIÊN R.O.I: {luy_ke_thang:+,.0f} VND ({roi:+.2f} %)"
     )
-    return report
+    return "\n".join(lines)
   except Exception as e:
     return f"🛑 LỖI PHÂN HỆ 5: {e}"
 
@@ -510,13 +525,15 @@ def web_phan_he_6_range_performance(
           "🛑 LỖI TRUY XUẤT: Khoảng thời gian tra cứu nằm ngoài Phạm vi Dữ liệu"
           " hệ thống."
       )
-    report = f"📑 [PHÂN HỆ 6] BÁO CÁO: ĐẠI KẾ TOÁN QUÉT CHU KỲ & DIỄN BIẾN LỢI NHUẬN\n"
-    report += f"===================================================================================================================\n"
-    report += (
-        f"📈 KẾT QUẢ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN"
-        f" {end_dt.strftime('%d/%m/%Y')} (CHIẾN LƯỢC: {mode})\n"
-    )
-    report += f"===================================================================================================================\n\n"
+    lines = [
+        "📑 [PHÂN HỆ 6] BÁO CÁO: ĐẠI KẾ TOÁN QUÉT CHU KỲ & DIỄN BIẾN LỢI NHUẬN",
+        "===================================================================================================================",
+        (
+            f"📈 KẾT QUẢ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN"
+            f" {end_dt.strftime('%d/%m/%Y')} (CHIẾN LƯỢC: {mode})"
+        ),
+        "===================================================================================================================\n",
+    ]
     curr = start_dt
     daily_records = []
     while curr <= end_dt:
@@ -546,35 +563,47 @@ def web_phan_he_6_range_performance(
       curr += timedelta(days=1)
     if not daily_records:
       return (
-          report
+          "\n".join(lines)
           + "🛑 KHÔNG CÓ PHIÊN GIAO DỊCH NÀO ĐẠT ĐIỀU KIỆN XUẤT LỆNH THỰC TẾ."
       )
     df_rec = pd.DataFrame(daily_records)
-    report += f"📊 1. BẢNG TỔNG HỢP DIỄN BIẾN THEO NĂM (YEARLY PNL BREAKDOWN)\n"
-    report += f"-------------------------------------------------------------------------------------------------------------------\n"
-    report += (
-        f"{'NĂM':<10} | {'PHIÊN':<7} | {'SỐ MÃ':<8} | {'VỐN ĐẦU TƯ':<14} |"
-        f" {'DOANH THU':<14} | {'LỢI NHUẬN RÒNG':<16} | {'ROI (%)':<8}\n"
+    lines.append(
+        "📊 1. BẢNG TỔNG HỢP DIỄN BIẾN THEO NĂM (YEARLY PNL BREAKDOWN)"
     )
-    report += f"-------------------------------------------------------------------------------------------------------------------\n"
+    lines.append(
+        "-------------------------------------------------------------------------------------------------------------------"
+    )
+    lines.append(
+        f"{'NĂM':<10} | {'PHIÊN':<7} | {'SỐ MÃ':<8} | {'VỐN ĐẦU TƯ':<14} |"
+        f" {'DOANH THU':<14} | {'LỢI NHUẬN RÒNG':<16} | {'ROI (%)':<8}"
+    )
+    lines.append(
+        "-------------------------------------------------------------------------------------------------------------------"
+    )
     for year, g_y in df_rec.groupby("year"):
       p_chi = g_y["chi"].sum()
       p_thu = g_y["thu"].sum()
       p_lai = g_y["lai"].sum()
       p_roi = (p_lai / p_chi * 100) if p_chi > 0 else 0
-      report += (
+      lines.append(
           f"Năm {year:<6} | {len(g_y):<7} | {g_y['codes'].sum():<8} |"
           f" {p_chi:<14,.0f} | {p_thu:<14,.0f} | {p_lai:>+16,.0f} |"
-          f" {p_roi:>+7.2f}%\n"
+          f" {p_roi:>+7.2f}%"
       )
-    report += f"\n📊 2. BẢNG TỔNG HỢP DIỄN BIẾN THEO THÁNG (MONTHLY PNL BREAKDOWN)\n"
-    report += f"-------------------------------------------------------------------------------------------------------------------\n"
-    report += (
+    lines.append(
+        "\n📊 2. BẢNG TỔNG HỢP DIỄN BIẾN THEO THÁNG (MONTHLY PNL BREAKDOWN)"
+    )
+    lines.append(
+        "-------------------------------------------------------------------------------------------------------------------"
+    )
+    lines.append(
         f"{'THÁNG/NĂM':<10} | {'PHIÊN':<7} | {'WIN/LOSS':<10} | {'VỐN"
         f" ĐẦU TƯ':<14} | {'DOANH THU':<14} | {'LỢI NHUẬN RÒNG':<16} | {'ROI"
-        f" (%)':<8}\n"
+        f" (%)':<8}"
     )
-    report += f"-------------------------------------------------------------------------------------------------------------------\n"
+    lines.append(
+        "-------------------------------------------------------------------------------------------------------------------"
+    )
     for m_str, g_m in df_rec.groupby("month_str", sort=False):
       m_chi = g_m["chi"].sum()
       m_thu = g_m["thu"].sum()
@@ -583,9 +612,9 @@ def web_phan_he_6_range_performance(
       w_cnt = g_m["win"].sum()
       l_cnt = g_m["loss"].sum()
       wl_str = f"{w_cnt}W/{l_cnt}L"
-      report += (
+      lines.append(
           f"Tháng {m_str:<5} | {len(g_m):<7} | {wl_str:<10} | {m_chi:<14,.0f} |"
-          f" {m_thu:<14,.0f} | {m_lai:>+16,.0f} | {m_roi:>+7.2f}%\n"
+          f" {m_thu:<14,.0f} | {m_lai:>+16,.0f} | {m_roi:>+7.2f}%"
       )
     tot_chi = df_rec["chi"].sum()
     tot_thu = df_rec["thu"].sum()
@@ -593,17 +622,21 @@ def web_phan_he_6_range_performance(
     tot_roi = (tot_lai / tot_chi * 100) if tot_chi > 0 else 0
     tot_win = df_rec["win"].sum()
     tot_loss = df_rec["loss"].sum()
-    report += f"===================================================================================================================\n"
-    report += (
-        f"📝 ĐẠI KẾ TOÁN TỔNG CỘNG ({len(df_rec)} PHIÊN CÓ XUẤT LỆNH | Win:"
-        f" {tot_win} - Loss: {tot_loss}):\n"
+    lines.append(
+        "==================================================================================================================="
     )
-    report += f"• TỔNG VỐN ĐẦU TƯ  : {tot_chi:,.0f} VNĐ\n"
-    report += f"• TỔNG DOANH THU    : {tot_thu:,.0f} VNĐ\n"
-    report += f"• LỢI NHUẬN RÒNG    : {tot_lai:+,.0f} VNĐ\n"
-    report += f"• TỶ LỆ ROI TOÀN KHUNG: {tot_roi:+.2f} %\n"
-    report += f"===================================================================================================================\n"
-    return report
+    lines.append(
+        f"📝 ĐẠI KẾ TOÁN TỔNG CỘNG ({len(df_rec)} PHIÊN CÓ XUẤT LỆNH | Win:"
+        f" {tot_win} - Loss: {tot_loss}):"
+    )
+    lines.append(f"• TỔNG VỐN ĐẦU TƯ  : {tot_chi:,.0f} VNĐ")
+    lines.append(f"• TỔNG DOANH THU    : {tot_thu:,.0f} VNĐ")
+    lines.append(f"• LỢI NHUẬN RÒNG    : {tot_lai:+,.0f} VNĐ")
+    lines.append(f"• TỶ LỆ ROI TOÀN KHUNG: {tot_roi:+.2f} %")
+    lines.append(
+        "==================================================================================================================="
+    )
+    return "\n".join(lines)
   except Exception as e:
     return f"🛑 LỖI PHÂN HỆ 6: {e}"
 
@@ -621,13 +654,21 @@ def web_phan_he_7_raw_db_lookup(ngay_raw):
       )
     lo_to_raw = db[ngay_str]["prizes_int"]
     lo_to_formatted = [f"{x:02d}" for x in lo_to_raw]
-    report = f"📑 [PHÂN HỆ 7] BÁO CÁO: TRUY XUẤT RAW DB (DỮ LIỆU THÔ THỨ TỰ LỒNG CẦU)\n"
-    report += f"=======================================================\n"
-    report += f"📅 BIÊN BẢN KẾT QUẢ PHIÊN GIAO DỊCH: {ngay_str}\n"
-    report += f"🎰 Danh sách 27 giải ma trận phẳng (Thứ tự mở thưởng):\n"
+    lines = [
+        "📑 [PHÂN HỆ 7] BÁO CÁO: TRUY XUẤT RAW DB (DỮ LIỆU THÔ THỨ TỰ LỒNG CẦU)",
+        "=======================================================\n",
+        f"📅 BIÊN BẢN KẾT QUẢ PHIÊN GIAO DỊCH: {ngay_str}",
+        "🎰 Danh sách 27 giải ma trận phẳng (Thứ tự mở thưởng):",
+    ]
+    grid_lines = []
+    row_str = ""
     for idx, lo in enumerate(lo_to_formatted):
-      report += f"[{lo}]" + ("\n" if (idx + 1) % 9 == 0 else " ")
-    return report
+      row_str += f"[{lo}] "
+      if (idx + 1) % 9 == 0:
+        grid_lines.append(row_str.strip())
+        row_str = ""
+    lines.extend(grid_lines)
+    return "\n".join(lines)
   except Exception as e:
     return f"🛑 LỖI PHÂN HỆ 7: {e}"
 
