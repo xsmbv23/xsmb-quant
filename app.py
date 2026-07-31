@@ -80,7 +80,6 @@ def doc_database_tu_excel():
           "🛑 LỖI CẤU TRÚC: File dữ liệu phải có ít nhất 2 cột (Ngày và Danh"
           " sách kết quả).",
       )
-
     col_ngay = df.columns[0]
     col_loto = df.columns[1]
     dup_count = 0
@@ -89,12 +88,10 @@ def doc_database_tu_excel():
       if not res_date:
         continue
       dt_obj, ngay_str = res_date
-
       loto_raw = re.sub(r"[^\d\s]", " ", str(row[col_loto]))
       loto_list = [
           int(x.strip()[-2:]) for x in loto_raw.split() if x.strip().isdigit()
       ]
-
       if len(loto_list) >= 27:
         if ngay_str in db:
           dup_count += 1
@@ -121,6 +118,9 @@ def lay_ngay_chot_tu_excel(db):
   return min_dt, max_dt, max_dt + timedelta(days=1)
 
 
+# ==============================================================================
+# 🎯 LÕI THUẬT TOÁN: BỘ LỌC ĐA CHẾ ĐỘ
+# ==============================================================================
 def get_signal_v36(target_dt, db, mode):
   t_minus_7 = target_dt - timedelta(days=7)
   str_t7 = t_minus_7.strftime("%d/%m/%Y")
@@ -137,7 +137,6 @@ def get_signal_v36(target_dt, db, mode):
       str_p = (target_dt - timedelta(days=d)).strftime("%d/%m/%Y")
       if str_p in db:
         recent_3d.update(db[str_p]["prizes_int"])
-
     dan_opt = [x for x in dan_t7 if prizes_t7.count(x) >= 2 or x in recent_3d]
     return sorted(list(dan_opt)), "OK"
 
@@ -164,6 +163,11 @@ def get_signal_v36(target_dt, db, mode):
       return sorted(list(rac)), "OK"
   else:
     return sorted(list(dan_t7)), "OK"
+
+
+# ==============================================================================
+# 🖥️ PHÂN HỆ XỬ LÝ DỮ LIỆU & BÁO CÁO TÀI CHÍNH
+# ==============================================================================
 
 
 def web_phan_he_1_sync():
@@ -850,4 +854,6 @@ with gr.Blocks(title="XSMB QUANT V36.1.1 PRO") as demo:
 
 if __name__ == "__main__":
   port = int(os.environ.get("PORT", 10000))
-  demo.launch(server_name="0.0.0.0", server_port=port, theme=gr.themes.Soft())
+  demo.launch(
+      server_name="0.0.0.0", server_port=port, share=False, theme=gr.themes.Soft()
+  )
