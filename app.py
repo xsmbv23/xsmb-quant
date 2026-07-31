@@ -1,6 +1,4 @@
-# Let's write the complete, bug-free, fully integrated app.py and verify it in Python!
-
-clean_v36_1_1_app = '''import os
+import os
 import sys
 import pandas as pd
 import numpy as np
