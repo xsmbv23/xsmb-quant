@@ -7,31 +7,23 @@ import calendar
 import re
 from datetime import datetime, timedelta
 import traceback
+import gradio as gr
 
-# Bọc thép chống sập Import trên Render
-try:
-    import gradio as gr
-except ImportError as e:
-    print(f"FATAL ERROR: Thiếu thư viện lõi Gradio: {e}")
-    sys.exit(1)
-
-HAS_CRAWLER = True
+# Bọc kiểm tra thư viện requests
 try:
     import requests
-    from bs4 import BeautifulSoup
+    HAS_REQUESTS = True
 except ImportError:
-    HAS_CRAWLER = False
-    print("CẢNH BÁO: Thiếu requests/bs4. Auto-Crawler vô hiệu hóa.")
+    HAS_REQUESTS = False
 
 # ==============================================================================
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V36.8 PRO ALGO (CRAWLER TỰ ĐỘNG VÁ LỖI DỮ LIỆU MẤT TRÊN CLOUD)"
+    VERSION = "V36.9 PRO ALGO (NATIVE CRAWLER - BẢO MẬT TỰ VÁ LỖI DỮ LIỆU)"
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
-    
     MODES = [
         "🚀 Giao Dịch T-7 ĐỘNG LƯỢNG TỐI ƯU (Cải Tiến Quant V36.2)",
         "Giao Dịch Toàn Bộ T-7 (Chuẩn Gốc)",
@@ -49,19 +41,17 @@ class Config:
     ]
 
 # ==============================================================================
-# 🛠️ BLOCK 2: UTILITIES & TIMEZONE
+# 🛠️ BLOCK 2: UTILITIES (XỬ LÝ NGÀY GIỜ BẢO MẬT)
 # ==============================================================================
 class Utils:
     @staticmethod
     def get_vn_time():
-        # Luôn ép múi giờ GMT+7 bất chấp server Render ở Mỹ hay Châu Âu
         return datetime.utcnow() + timedelta(hours=7)
 
     @staticmethod
     def chuan_hoa_ngay(ngay_raw):
         if pd.isna(ngay_raw) or not str(ngay_raw).strip(): return None
         try:
-            # Bắt chính xác định dạng 4 số năm để chặn rác từ crawler
             match = re.search(r'\d{1,2}[-/.]\d{1,2}[-/.]\d{4}', str(ngay_raw))
             if not match: return None
             s = match.group().replace("-", "/").replace(".", "/")
@@ -75,71 +65,85 @@ class Utils:
             
             dt_obj = datetime.strptime(str_chuan, "%d/%m/%Y")
             now_vn = Utils.get_vn_time()
-            
-            # Khóa mốc tương lai (Chặn Lookahead Bias)
-            if dt_obj.year < 2000 or dt_obj > now_vn + timedelta(days=1):
-                return None
+            # Chặn tuyệt đối lấy dữ liệu tương lai
+            if dt_obj.year < 2000 or dt_obj > now_vn + timedelta(days=1): return None
             return dt_obj, str_chuan
         except Exception: return None
 
     @staticmethod
+    def lay_max_days(thang, nam):
+        return calendar.monthrange(nam, thang)[1]
+
+    @staticmethod
+    def safe_int(val, default=0):
+        try: return int(float(val))
+        except (ValueError, TypeError): return default
+
+    @staticmethod
     def check_valid_number(val, name):
         if val is None or str(val).strip() == "":
-            return False, f"🛑 LỖI THÔNG SỐ: Vui lòng nhập thông tin cho '{name}'."
+            return False, f"🛑 LỖI: Nhập '{name}'."
         try:
-            if float(val) <= 0: return False, f"🛑 LỖI: '{name}' phải lớn hơn 0."
+            if float(val) <= 0: return False, f"🛑 LỖI: '{name}' > 0."
             return True, ""
-        except: return False, f"🛑 LỖI: '{name}' không đúng định dạng số."
+        except: return False, f"🛑 LỖI: '{name}' sai định dạng."
 
 # ==============================================================================
-# 🕸️ BLOCK 3: CỖ MÁY THỜI GIAN CRAWLER (LẤY THEO NGÀY CHỈ ĐỊNH)
+# 🕸️ BLOCK 3: CRAWLER NGUYÊN BẢN (KHÔNG DÙNG BS4)
 # ==============================================================================
 class Crawler:
     @staticmethod
     def fetch_by_date(target_dt=None):
-        if not HAS_CRAWLER:
-            return False, None, "Thiếu bs4/requests."
-        logs = []
+        if not HAS_REQUESTS: return False, None, "Thiếu thư viện 'requests'"
         
-        # Hàm hỗ trợ định dạng URL ngày
+        logs = []
         d_str_url = target_dt.strftime('%d-%m-%Y') if target_dt else ""
-
+        
         # NGUỒN 1: XOSO.COM.VN
         try:
-            url = f"https://xoso.com.vn/xsmb-{d_str_url}.html" if target_dt else "https://xoso.com.vn/xsmb.html"
-            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
-            if res.status_code == 200:
-                soup = BeautifulSoup(res.content, 'html.parser')
-                date_elem = soup.find('span', id='mb_date')
-                if date_elem:
-                    date_match = re.search(r'\d{1,2}[-/.]\d{1,2}[-/.]\d{4}', date_elem.text)
-                    if date_match:
-                        date_str = date_match.group()
-                        numbers = [p.text.strip()[-2:] for p in soup.find_all('span', class_='v-giai') if p.text.strip().isdigit()]
-                        if len(numbers) >= 27: 
+            url1 = f"https://xoso.com.vn/xsmb-{d_str_url}.html" if target_dt else "https://xoso.com.vn/xsmb.html"
+            res1 = requests.get(url1, headers={'User-Agent': 'Mozilla/5.0'}, timeout=7)
+            if res1.status_code == 200:
+                # Ép kiểu quote để tránh lỗi regex
+                html = res1.text.replace('"', "'")
+                date_match = re.search(r'id=\'mb_date\'.*?>(.*?)</span>', html)
+                if date_match:
+                    d_m = re.search(r'\d{1,2}[-/.]\d{1,2}[-/.]\d{4}', date_match.group(1))
+                    if d_m:
+                        date_str = d_m.group()
+                        prizes = re.findall(r'class=\'v-giai\'.*?>(.*?)</span>', html)
+                        numbers = [p.strip()[-2:] for p in prizes if p.strip().isdigit()]
+                        if len(numbers) >= 27:
                             return True, (date_str, " ".join(numbers[:27])), "xoso.com.vn"
-        except Exception as e: logs.append(f"Src1 Lỗi: {str(e)[:20]}")
+                logs.append("Src1: Dữ liệu trống")
+            else:
+                logs.append(f"Src1 HTTP {res1.status_code}")
+        except Exception as e: logs.append(f"Src1 Err: {str(e)[:15]}")
 
         # NGUỒN 2: KQXS.VN
         try:
-            url = f"https://kqxs.vn/mien-bac/ngay-{d_str_url}" if target_dt else "https://kqxs.vn/mien-bac"
-            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
-            if res.status_code == 200:
-                soup = BeautifulSoup(res.content, 'html.parser')
-                date_elem = soup.find(class_='tit-mien')
-                if date_elem:
-                    date_match = re.search(r'\d{1,2}[-/.]\d{1,2}[-/.]\d{4}', date_elem.text)
-                    if date_match:
-                        date_str = date_match.group()
-                        numbers = [p.text.strip()[-2:] for p in soup.find_all(class_='day-so') if p.text.strip().isdigit()]
-                        if len(numbers) >= 27: 
+            url2 = f"https://kqxs.vn/mien-bac/ngay-{d_str_url}" if target_dt else "https://kqxs.vn/mien-bac"
+            res2 = requests.get(url2, headers={'User-Agent': 'Mozilla/5.0'}, timeout=7)
+            if res2.status_code == 200:
+                html = res2.text.replace('"', "'")
+                date_match = re.search(r'class=\'tit-mien\'.*?>(.*?)<', html)
+                if date_match:
+                    d_m = re.search(r'\d{1,2}[-/.]\d{1,2}[-/.]\d{4}', date_match.group(1))
+                    if d_m:
+                        date_str = d_m.group()
+                        prizes = re.findall(r'class=\'day-so\'.*?>(.*?)<', html)
+                        numbers = [p.strip()[-2:] for p in prizes if p.strip().isdigit()]
+                        if len(numbers) >= 27:
                             return True, (date_str, " ".join(numbers[:27])), "kqxs.vn"
-        except Exception as e: logs.append(f"Src2 Lỗi: {str(e)[:20]}")
+                logs.append("Src2: Dữ liệu trống")
+            else:
+                logs.append(f"Src2 HTTP {res2.status_code}")
+        except Exception as e: logs.append(f"Src2 Err: {str(e)[:15]}")
 
         return False, None, " | ".join(logs)
 
 # ==============================================================================
-# 💾 BLOCK 4: QUẢN TRỊ CƠ SỞ DỮ LIỆU & TỰ CHỮA LÀNH (SELF-HEALING)
+# 💾 BLOCK 4: QUẢN TRỊ DỮ LIỆU & TỰ ĐỘNG CHỮA LÀNH (AUTO-HEAL)
 # ==============================================================================
 class DatabaseManager:
     @staticmethod
@@ -147,7 +151,7 @@ class DatabaseManager:
         db = {}
         if not os.path.exists(Config.DATA_FILE):
             pd.DataFrame(columns=["Ngày", "Kết Quả Loto"]).to_excel(Config.DATA_FILE, index=False)
-            return db, f"⚠️ Tệp dữ liệu mới được tạo trên Server."
+            return db, f"⚠️ Tệp dữ liệu mới khởi tạo trên Server."
         try:
             df = pd.read_excel(Config.DATA_FILE, dtype=str)
             dup_count = 0
@@ -159,52 +163,50 @@ class DatabaseManager:
                 loto_list = [int(x.strip()[-2:]) for x in loto_raw.split() if x.strip().isdigit()]
                 if len(loto_list) >= 27:
                     if ngay_str in db: dup_count += 1
-                    db[ngay_str] = {
-                        "date_obj": dt_obj, "prizes_int": loto_list[:27]
-                    }
-            msg = f"🟢 ĐỒNG BỘ HIỆN CÓ: {len(db)} PHIÊN."
+                    db[ngay_str] = {"date_obj": dt_obj, "prizes_int": loto_list[:27]}
+            msg = f"🟢 ĐỒNG BỘ: {len(db)} PHIÊN."
             return db, msg
         except Exception as e: return db, f"🛑 LỖI ĐỌC FILE: {e}"
 
     @staticmethod
     def auto_heal_history():
-        # Thuật toán vá lỗ hổng Render: Quét 10 ngày qua, thiếu ngày nào cào bù ngày đó
         db, _ = DatabaseManager.load_db()
         now_vn = Utils.get_vn_time()
-        
         new_rows = []
         healed_count = 0
+        error_logs = []
         
-        # Quét lùi 10 ngày
-        for i in range(11):
+        # Chạy máy cỗ máy thời gian lùi về 15 ngày
+        for i in range(15):
             check_dt = now_vn - timedelta(days=i)
             str_check = check_dt.strftime("%d/%m/%Y")
-            
-            # Nếu phát hiện mất dữ liệu trong quá khứ -> Kích hoạt máy thời gian cào bù
             if str_check not in db:
-                success, res, src = Crawler.fetch_by_date(check_dt)
+                success, res, src_msg = Crawler.fetch_by_date(check_dt)
                 if success:
                     d_str, loto_27 = res
                     res_date = Utils.chuan_hoa_ngay(d_str)
                     if res_date:
                         _, std_str = res_date
-                        if std_str not in db: # Chống trùng lặp
+                        if std_str not in db:
                             new_rows.append({"Ngày": std_str, "Kết Quả Loto": loto_27})
                             db[std_str] = True
                             healed_count += 1
+                else:
+                    error_logs.append(f"[{str_check}] {src_msg}")
 
-        # Nối dữ liệu vá vào tệp Excel
         if new_rows:
             df_new = pd.DataFrame(new_rows)
             try:
                 df_old = pd.read_excel(Config.DATA_FILE, dtype=str)
                 df_final = pd.concat([df_new, df_old], ignore_index=True)
-            except:
-                df_final = df_new
+            except: df_final = df_new
             df_final.to_excel(Config.DATA_FILE, index=False)
-            return f"🛠️ AUTO-HEAL: Đã phát hiện và tự động cào vá {healed_count} phiên bị mất trên Server!"
+            return f"🛠️ AUTO-HEAL: Đã cào bù {healed_count} phiên bị mất! (Có {len(error_logs)} ngày chưa mở thưởng)"
         
-        return "✅ AUTO-HEAL: Cấu trúc dữ liệu 10 ngày gần nhất liền mạch."
+        if error_logs and len(db) == 0:
+            return f"🛑 AUTO-HEAL THẤT BẠI TẤT CẢ. Lỗi mới nhất: {error_logs[0]}"
+            
+        return "✅ AUTO-HEAL: Dữ liệu 15 ngày qua liền mạch."
 
     @staticmethod
     def get_boundaries(db):
@@ -222,9 +224,7 @@ class QuantEngine:
     def get_signal(target_dt, db, mode):
         t_minus_7 = target_dt - timedelta(days=7)
         str_t7 = t_minus_7.strftime("%d/%m/%Y")
-        
-        if str_t7 not in db: return None, f"[THIẾU DỮ LIỆU T-7 ({str_t7}) - Hãy bấm Đồng Bộ]"
-        
+        if str_t7 not in db: return None, f"[THIẾU DỮ LIỆU T-7 ({str_t7})]"
         prizes_t7 = db[str_t7]["prizes_int"]
         dan_t7 = set(prizes_t7)
 
@@ -235,7 +235,6 @@ class QuantEngine:
                 if str_p in db: recent_3d.update(db[str_p]["prizes_int"])
             dan_opt = [x for x in dan_t7 if prizes_t7.count(x) >= 2 or x in recent_3d]
             return sorted(list(dan_opt)), "OK"
-            
         elif mode in [Config.MODES[2], Config.MODES[3]]: 
             t_minus_1 = target_dt - timedelta(days=1)
             str_t1 = t_minus_1.strftime("%d/%m/%Y")
@@ -247,20 +246,16 @@ class QuantEngine:
                 if x in kq_t1 or lon in kq_t1: tinh_hoa.add(x)
             if mode == Config.MODES[2]: return sorted(list(tinh_hoa)), "OK"
             else: return sorted(list(dan_t7 - tinh_hoa)), "OK"
-        else:
-            return sorted(list(dan_t7)), "OK"
+        else: return sorted(list(dan_t7)), "OK"
 
 # ==============================================================================
-# 📊 BLOCK 6: PHÂN HỆ KIỂM TOÁN TÀI CHÍNH (AUDIT & REPORTING)
+# 📊 BLOCK 6: KIỂM TOÁN TÀI CHÍNH
 # ==============================================================================
 class Auditor:
     @staticmethod
     def phan_he_1_sync(auto_crawl=False):
-        crawl_msg = "ℹ️ Chế độ Offline. Đang dùng dữ liệu lưu trữ cục bộ."
-        if auto_crawl:
-            # Tự động vá lỗ hổng dữ liệu quá khứ 10 ngày
-            crawl_msg = DatabaseManager.auto_heal_history()
-            
+        crawl_msg = "ℹ️ Chế độ Offline."
+        if auto_crawl: crawl_msg = DatabaseManager.auto_heal_history()
         db, msg = DatabaseManager.load_db()
         _, latest_dt, next_predict_dt = DatabaseManager.get_boundaries(db)
         
@@ -280,7 +275,7 @@ class Auditor:
         try:
             db, _ = DatabaseManager.load_db()
             _, _, next_dt = DatabaseManager.get_boundaries(db)
-            is_valid, err_msg = Utils.check_valid_number(pts_per_code_base, "Khối lượng vốn")
+            is_valid, err_msg = Utils.check_valid_number(pts_per_code_base, "Vốn")
             if not is_valid: return err_msg
             base_pts = int(float(pts_per_code_base))
             dan, msg = QuantEngine.get_signal(next_dt, db, mode)
@@ -289,11 +284,10 @@ class Auditor:
                 "📑 [PHÂN HỆ 2] BÁO CÁO: KHUYẾN NGHỊ GIAO DỊCH KẾ TIẾP",
                 "=======================================================",
                 f"🎯 PHIÊN GIAO DỊCH MỤC TIÊU: {next_dt.strftime('%d/%m/%Y')}",
-                f"🎚️ CHIẾN LƯỢC ÁP DỤNG: {mode}",
-                ""
+                f"🎚️ CHIẾN LƯỢC ÁP DỤNG: {mode}", ""
             ]
             if dan is None:
-                lines.extend([f"🛑 CẢNH BÁO: {msg}.", "👉 LỜI KHUYÊN: Hãy sang Menu số 1, bấm [CẬP NHẬT KẾT QUẢ MỚI] để Bot tự động vá lỗi rỗng dữ liệu T-7!"])
+                lines.extend([f"🛑 CẢNH BÁO: {msg}.", "👉 LỜI KHUYÊN: Sang Menu số 1, bấm [CẬP NHẬT KẾT QUẢ MỚI] để Bot tự động vá lỗi rỗng dữ liệu T-7!"])
                 return "\n".join(lines)
                 
             so_luong_lo = len(dan)
@@ -301,11 +295,9 @@ class Auditor:
             if so_luong_lo > 0:
                 dan_str = " ".join([f"{x:02d}" for x in dan])
                 lines.extend([
-                    f"📋 DANH MỤC MÃ SỐ ĐẠT CHUẨN ({so_luong_lo} MÃ):",
-                    f" [ {dan_str} ]",
+                    f"📋 DANH MỤC MÃ SỐ ĐẠT CHUẨN ({so_luong_lo} MÃ):", f" [ {dan_str} ]",
                     "-------------------------------------------------------",
-                    f" • Khối lượng phân bổ : {base_pts} điểm / 1 mã",
-                    f"💰 TỔNG VỐN YÊU CẦU   : {von_ngay:,.0f} VND"
+                    f" • Phân bổ : {base_pts} điểm/mã | 💰 TỔNG VỐN: {von_ngay:,.0f} VND"
                 ])
                 diem_hoa_von = math.ceil(von_ngay / (base_pts * Config.WIN_PER_NHAY)) if base_pts > 0 else 0
                 lines.append(f"💡 MỤC TIÊU HÒA VỐN   : Cần tối thiểu {diem_hoa_von} lượt trúng.")
@@ -317,7 +309,7 @@ class Auditor:
                     "💡 HỆ THỐNG KHUYẾN NGHỊ ĐỨNG NGOÀI THỊ TRƯỜNG PHIÊN NÀY."
                 ])
             return "\n".join(lines)
-        except Exception as e: return f"🛑 LỖI PHÂN HỆ 2: {e}"
+        except Exception as e: return f"🛑 LỖI: {e}"
 
     @staticmethod
     def phan_he_3_risk(base_pts, sim_size):
@@ -346,7 +338,7 @@ class Auditor:
                 lines.append(f" Đạt {nhay:>2} lượt  | {thuong:>17,.0f} | {lai_str:>14} | {status}")
             lines.append("====================================================================")
             return "\n".join(lines)
-        except Exception as e: return f"🛑 LỖI PHÂN HỆ 3: {e}"
+        except Exception as e: return f"🛑 LỖI: {e}"
 
     @staticmethod
     def phan_he_4_single(ngay_raw, pts_per_code_base):
@@ -355,13 +347,13 @@ class Auditor:
             res = Utils.chuan_hoa_ngay(ngay_raw)
             if not res: return "🛑 LỖI DỮ LIỆU: Định dạng ngày không hợp lệ."
             d_obj, ngay_str = res
-            if ngay_str not in db: return f"🛑 KHÔNG TÌM THẤY DỮ LIỆU: Phiên giao dịch {ngay_str} chưa được cập nhật."
+            if ngay_str not in db: return f"🛑 KHÔNG TÌM THẤY DỮ LIỆU: Phiên {ngay_str} chưa cập nhật."
             valid, err = Utils.check_valid_number(pts_per_code_base, "Vốn")
             if not valid: return err
             base_pts = int(float(pts_per_code_base))
             
             lines = [
-                "📑 [PHÂN HỆ 4] BÁO CÁO: KIỂM TOÁN HIỆU SUẤT ĐƠN PHIÊN CHUYÊN SÂU",
+                "📑 [PHÂN HỆ 4] BÁO CÁO: KIỂM TOÁN HIỆU SUẤT ĐƠN PHIÊN",
                 "========================================================================",
                 f"📡 KẾT QUẢ GIAO DỊCH PHIÊN: {ngay_str} (Phân bổ: {base_pts}đ/mã)",
                 "========================================================================"
@@ -388,7 +380,7 @@ class Auditor:
                 else: lines.extend(calc_str(dan, mode))
                 lines.append("------------------------------------------------------------------------")
             return "\n".join(lines)
-        except Exception as e: return f"🛑 LỖI PHÂN HỆ 4: {e}"
+        except Exception as e: return f"🛑 LỖI: {e}"
 
     @staticmethod
     def phan_he_6_range(tu_ngay_raw, den_ngay_raw, pts_per_code_base, mode):
@@ -408,7 +400,7 @@ class Auditor:
             if start_dt > end_dt: return "🛑 LỖI: Khoảng thời gian tra cứu nằm ngoài Phạm vi Dữ liệu."
             
             lines = [
-                "📑 [PHÂN HỆ 6] BÁO CÁO: ĐẠI KẾ TOÁN QUÉT CHU KỲ (BẢN MINH BẠCH - KHÔNG TÔ HỒNG SỐ LIỆU)",
+                "📑 [PHÂN HỆ 6] BÁO CÁO: ĐẠI KẾ TOÁN QUÉT CHU KỲ (BẢN MINH BẠCH - KHÔNG TÔ HỒNG)",
                 "===================================================================================================================",
                 f"📈 KẾT QUẢ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')} (CHIẾN LƯỢC: {mode})",
                 "==================================================================================================================="
@@ -433,10 +425,9 @@ class Auditor:
                         })
                 curr += timedelta(days=1)
                 
-            if not daily_records: return "\n".join(lines) + "\n🛑 KHÔNG CÓ PHIÊN NÀO ĐẠT ĐIỀU KIỆN XUẤT LỆNH."
+            if not daily_records: return "\n".join(lines) + "\n🛑 KHÔNG CÓ PHIÊN NÀO ĐẠT ĐIỀU KIỆN XUẤT LỆNH TRONG KHOẢNG NÀY."
             
             df_rec = pd.DataFrame(daily_records)
-            
             lines.extend([
                 "", "📊 1. BẢNG TỔNG HỢP DIỄN BIẾN THEO THÁNG",
                 "-------------------------------------------------------------------------------------------------------------------",
@@ -466,8 +457,7 @@ class Auditor:
                 "==================================================================================================================="
             ])
             return "\n".join(lines)
-        except Exception as e:
-            return f"🛑 LỖI PHÂN HỆ 6: {traceback.format_exc()}"
+        except Exception as e: return f"🛑 LỖI PHÂN HỆ 6: {traceback.format_exc()}"
 
     @staticmethod
     def phan_he_7_raw(ngay_raw):
@@ -491,7 +481,7 @@ class Auditor:
                     lines.append(row_str.strip())
                     row_str = ""
             return "\n".join(lines)
-        except Exception as e: return f"🛑 LỖI PHÂN HỆ 7: {e}"
+        except Exception as e: return f"🛑 LỖI: {e}"
 
 # ==============================================================================
 # 🎮 BLOCK 7: GIAO DIỆN NGƯỜI DÙNG (UI LAYER)
@@ -500,9 +490,9 @@ def create_ui():
     db_init, _ = DatabaseManager.load_db()
     _, latest_dt_init, next_predict_dt_init = DatabaseManager.get_boundaries(db_init)
 
-    with gr.Blocks(title="XSMB QUANT V36.8 PRO") as demo:
-        gr.Markdown("# 🚀 XSMB QUANT V36.8 PRO — BẢN TỰ PHỤC HỒI DỮ LIỆU (SELF-HEALING)")
-        gr.Markdown("*(Giải quyết 100% lỗi THIẾU DỮ LIỆU do Render xóa bộ nhớ. Bot tự lùi về quá khứ 10 ngày để vá lấp lỗ hổng dữ liệu!)*")
+    with gr.Blocks(title="XSMB QUANT V36.9 PRO") as demo:
+        gr.Markdown("# 🚀 XSMB QUANT V36.9 PRO — BẢN TỰ PHỤC HỒI DỮ LIỆU (NATIVE CRAWLER)")
+        gr.Markdown("*(Đã gỡ bỏ thư viện dư thừa. Hệ thống tự động lùi về 15 ngày quá khứ để vá lấp lỗ hổng dữ liệu 100% khi Cloud bị reset!)*")
         
         with gr.Row():
             nav_menu = gr.Radio(choices=Config.MENU_OPTIONS, value=Config.MENU_OPTIONS[0], label="🎛️ BẢNG ĐIỀU KHIỂN CHÍNH")
@@ -539,11 +529,11 @@ def create_ui():
             btn_4.click(Auditor.phan_he_4_single, inputs=[date_4, pts_4], outputs=out_4)
 
         with gr.Column(visible=False) as col_5:
-            gr.Markdown("*(Tính năng đã gộp chung vào Phân hệ 6)*")
+            gr.Markdown("*(Báo cáo tháng đã được gộp chuyên sâu vào Phân hệ 6)*")
 
         with gr.Column(visible=False) as col_6:
             with gr.Row():
-                t1_6 = gr.Textbox(label="Từ ngày (DD/MM/YYYY)", value="01/01/2026")
+                t1_6 = gr.Textbox(label="Từ ngày (DD/MM/YYYY)", value="25/07/2026") # Thay đổi mốc an toàn
                 t2_6 = gr.Textbox(label="Đến ngày (DD/MM/YYYY)", value=latest_dt_init.strftime('%d/%m/%Y'))
                 pts_6 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
                 mode_6 = gr.Radio(choices=Config.MODES, value=Config.MODES[0], label="Chiến lược Áp dụng")
