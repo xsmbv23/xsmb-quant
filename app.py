@@ -15,13 +15,10 @@ import gradio as gr
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG & BIẾN MÔI TRƯỜNG (SYSTEM CONFIG)
 # ==============================================================================
 class Config:
-    VERSION = "V36.4 PRO ALGO (ĐA NGUỒN CRAWLER & TÍNH TOÁN TRƯỢT GIÁ THỰC TẾ)"
+    VERSION = "V36.5 PRO ALGO (ĐỒNG BỘ GMT+7 & CRAWLER CHUẨN XÁC)"
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
-    # Điều chỉnh chuẩn minh bạch thực tế: 
-    # Cược cơ sở 21.7k-22k. Cố định 21.7k nhưng sẽ có biến phí.
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
-    SLIPPAGE_RATE = 0.02 # Trượt giá/Phế ngoài 2% vào Net Profit để đảm bảo thực tế
     
     MODES = [
         "🚀 Giao Dịch T-7 ĐỘNG LƯỢNG TỐI ƯU (Cải Tiến Quant V36.2)",
@@ -35,7 +32,7 @@ class Config:
         "🛡️ 3. QUẢN TRỊ RỦI RO",
         "🔍 4. KIỂM TOÁN ĐƠN PHIÊN",
         "📊 5. BÁO CÁO THÁNG",
-        "📈 6. PHÂN TÍCH CHU KỲ & BIỂU ĐỒ",
+        "📈 6. PHÂN TÍCH CHU KỲ",
         "🎰 7. DỮ LIỆU THÔ"
     ]
 
@@ -44,12 +41,21 @@ class Config:
 # ==============================================================================
 class Utils:
     @staticmethod
+    def get_vn_time():
+        # Cố định lấy múi giờ Việt Nam (GMT+7) bất chấp cấu hình Server (Mỹ/Châu Âu)
+        return datetime.utcnow() + timedelta(hours=7)
+
+    @staticmethod
     def chuan_hoa_ngay(ngay_raw):
         if pd.isna(ngay_raw) or not str(ngay_raw).strip(): return None
         try:
-            s = str(ngay_raw).strip().split()[0].replace("-", "/").replace(".", "/")
-            parts = [p for p in s.split("/") if p]
+            # Dùng Regex móc chính xác ngày tháng, bỏ qua các chữ "Thứ 2", "Ngày"...
+            match = re.search(r'\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}', str(ngay_raw))
+            if not match: return None
+            s = match.group().replace("-", "/").replace(".", "/")
+            parts = s.split("/")
             if len(parts) < 3: return None
+            
             d, m, y = parts[0], parts[1], parts[2]
             if len(d) == 4: y, m, d = d, m, y
             if len(d) == 1: d = "0" + d
@@ -124,19 +130,18 @@ class Crawler:
     @staticmethod
     def fetch_latest_xsmb():
         logs = []
-        
         # Thử nguồn 1
         try:
             s1, d1, kq1 = Crawler.fetch_source_1()
             if s1: return True, (d1, kq1), "Nguồn 1 (xoso.com.vn)"
-            logs.append("Nguồn 1: Sai cấu trúc HTML")
+            logs.append("Nguồn 1: Không tìm thấy dữ liệu")
         except Exception as e: logs.append(f"Nguồn 1: Lỗi kết nối {e}")
             
         # Thử nguồn 2
         try:
             s2, d2, kq2 = Crawler.fetch_source_2()
             if s2: return True, (d2, kq2), "Nguồn 2 (kqxs.vn)"
-            logs.append("Nguồn 2: Sai cấu trúc HTML")
+            logs.append("Nguồn 2: Không tìm thấy dữ liệu")
         except Exception as e: logs.append(f"Nguồn 2: Lỗi kết nối {e}")
             
         return False, None, " | ".join(logs)
@@ -201,7 +206,7 @@ class DatabaseManager:
     @staticmethod
     def get_boundaries(db):
         if not db:
-            today = datetime.now()
+            today = Utils.get_vn_time()
             return today, today, today + timedelta(days=1)
         all_dates = [info["date_obj"] for info in db.values()]
         return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
@@ -433,10 +438,6 @@ class Auditor:
                 thuong = nhay * base_pts * Config.WIN_PER_NHAY
                 lai = thuong - von
                 
-                # Áp dụng trượt giá / slippage minh bạch 2% trên tổng lợi nhuận
-                if lai > 0: lai = lai * (1 - Config.SLIPPAGE_RATE)
-                else: lai = lai * (1 + Config.SLIPPAGE_RATE) # Phế bào mòn thêm nếu lỗ
-                
                 luy_ke_thang += lai
                 cash_chi += von
                 cash_thu += thuong
@@ -449,39 +450,36 @@ class Auditor:
                 "===================================================================================================================",
                 f"📝 ĐỐI SOÁT KẾ TOÁN: {total_phien_danh} PHIÊN CÓ XUẤT LỆNH",
                 f"• TỔNG DÒNG TIỀN: Giải ngân {cash_chi:,.0f} đ | Thu về {cash_thu:,.0f} đ",
-                f"• LỢI NHUẬN RÒNG & BIÊN R.O.I (Đã trừ Slippage {Config.SLIPPAGE_RATE*100}%): {luy_ke_thang:+,.0f} VND ({roi:+.2f} %)"
+                f"• LỢI NHUẬN RÒNG & BIÊN R.O.I: {luy_ke_thang:+,.0f} VND ({roi:+.2f} %)"
             ])
             return "\n".join(lines)
         except Exception as e: return f"🛑 LỖI PHÂN HỆ 5: {e}"
 
     @staticmethod
-    def phan_he_6_range_chart(tu_ngay_raw, den_ngay_raw, pts_per_code_base, mode):
+    def phan_he_6_range(tu_ngay_raw, den_ngay_raw, pts_per_code_base, mode):
         try:
             db, _ = DatabaseManager.load_db()
             res1, res2 = Utils.chuan_hoa_ngay(tu_ngay_raw), Utils.chuan_hoa_ngay(den_ngay_raw)
-            if not res1 or not res2: return "🛑 LỖI THÔNG SỐ: Định dạng ngày không hợp lệ.", pd.DataFrame()
+            if not res1 or not res2: return "🛑 LỖI THÔNG SỐ: Định dạng ngày không hợp lệ."
             
             start_dt, end_dt = min(res1[0], res2[0]), max(res1[0], res2[0])
             valid, err = Utils.check_valid_number(pts_per_code_base, "Khối lượng vốn")
-            if not valid: return err, pd.DataFrame()
+            if not valid: return err
             
             base_pts = Utils.safe_int(pts_per_code_base)
             min_dt, max_dt, _ = DatabaseManager.get_boundaries(db)
             if start_dt < min_dt: start_dt = min_dt
             if end_dt > max_dt: end_dt = max_dt
-            if start_dt > end_dt: return "🛑 LỖI: Khoảng thời gian tra cứu nằm ngoài Phạm vi Dữ liệu.", pd.DataFrame()
+            if start_dt > end_dt: return "🛑 LỖI: Khoảng thời gian tra cứu nằm ngoài Phạm vi Dữ liệu."
             
             lines = [
-                "📑 [PHÂN HỆ 6] BÁO CÁO: ĐẠI KẾ TOÁN QUÉT CHU KỲ & BIỂU ĐỒ (NATIVE GRADIO PLOT)",
+                "📑 [PHÂN HỆ 6] BÁO CÁO: ĐẠI KẾ TOÁN QUÉT CHU KỲ",
                 "===================================================================================================================",
                 f"📈 KẾT QUẢ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')} (CHIẾN LƯỢC: {mode})",
-                f"⚠️ Đã áp dụng Thuế / Trượt giá ẩn (Slippage): {Config.SLIPPAGE_RATE*100}% để đảm bảo MINH BẠCH 100%.",
                 "==================================================================================================================="
             ]
             curr = start_dt
             daily_records = []
-            
-            cum_pnl = 0
             
             while curr <= end_dt:
                 ngay_str = curr.strftime("%d/%m/%Y")
@@ -492,25 +490,20 @@ class Auditor:
                         von = sl * base_pts * Config.COST_PER_POINT
                         nhay = sum(db[ngay_str]["prizes_int"].count(x) for x in dan)
                         thuong = nhay * base_pts * Config.WIN_PER_NHAY
-                        
-                        lai_thuc = thuong - von
-                        if lai_thuc > 0: lai_thuc = lai_thuc * (1 - Config.SLIPPAGE_RATE)
-                        else: lai_thuc = lai_thuc * (1 + Config.SLIPPAGE_RATE)
-                        
-                        cum_pnl += lai_thuc
+                        lai = thuong - von
                         
                         daily_records.append({
                             "dt": curr, "year": curr.year, "month_str": curr.strftime("%m/%Y"),
-                            "codes": sl, "chi": von, "nhay": nhay, "thu": thuong, "lai": lai_thuc,
-                            "win": 1 if lai_thuc > 0 else 0, "loss": 1 if lai_thuc <= 0 else 0,
-                            "cum_pnl": cum_pnl
+                            "codes": sl, "chi": von, "nhay": nhay, "thu": thuong, "lai": lai,
+                            "win": 1 if lai > 0 else 0, "loss": 1 if lai <= 0 else 0,
                         })
                 curr += timedelta(days=1)
                 
-            if not daily_records: return "\n".join(lines) + "\n🛑 KHÔNG CÓ PHIÊN NÀO ĐẠT ĐIỀU KIỆN XUẤT LỆNH.", pd.DataFrame()
+            if not daily_records: return "\n".join(lines) + "\n🛑 KHÔNG CÓ PHIÊN NÀO ĐẠT ĐIỀU KIỆN XUẤT LỆNH."
             
             df_rec = pd.DataFrame(daily_records)
             
+            # --- 1. Tạo báo cáo Text ---
             lines.extend([
                 "", "📊 1. BẢNG TỔNG HỢP DIỄN BIẾN THEO NĂM",
                 "-------------------------------------------------------------------------------------------------------------------",
@@ -537,6 +530,8 @@ class Auditor:
             tot_chi, tot_thu, tot_lai = df_rec["chi"].sum(), df_rec["thu"].sum(), df_rec["lai"].sum()
             tot_roi = (tot_lai / tot_chi * 100) if tot_chi > 0 else 0
             
+            # --- 2. Max Drawdown ---
+            df_rec['cum_pnl'] = df_rec['lai'].cumsum()
             df_rec['peak'] = df_rec['cum_pnl'].cummax()
             df_rec['drawdown'] = df_rec['cum_pnl'] - df_rec['peak']
             max_dd = df_rec['drawdown'].min()
@@ -546,17 +541,14 @@ class Auditor:
                 f"📝 ĐẠI KẾ TOÁN TỔNG CỘNG ({len(df_rec)} PHIÊN | Win: {df_rec['win'].sum()} - Loss: {df_rec['loss'].sum()}):",
                 f"• TỔNG VỐN ĐẦU TƯ   : {tot_chi:,.0f} VNĐ",
                 f"• TỔNG DOANH THU     : {tot_thu:,.0f} VNĐ",
-                f"• LỢI NHUẬN RÒNG     : {tot_lai:+,.0f} VNĐ (Đã trừ {Config.SLIPPAGE_RATE*100}% Slippage)",
+                f"• LỢI NHUẬN RÒNG     : {tot_lai:+,.0f} VNĐ",
                 f"• TỶ LỆ ROI TOÀN KHUNG : {tot_roi:+.2f} %",
                 f"• SỤT GIẢM TỐI ĐA (MaxDD): {max_dd:,.0f} VNĐ",
                 "==================================================================================================================="
             ])
-            
-            # Trả về Dataframe cho Native LinePlot Gradio
-            plot_df = df_rec[['dt', 'cum_pnl']].copy()
-            return "\n".join(lines), plot_df
+            return "\n".join(lines)
         except Exception as e:
-            return f"🛑 LỖI PHÂN HỆ 6: {traceback.format_exc()}", pd.DataFrame()
+            return f"🛑 LỖI PHÂN HỆ 6: {traceback.format_exc()}"
 
     @staticmethod
     def phan_he_7_raw(ngay_raw):
@@ -589,9 +581,9 @@ def create_ui():
     db_init, _ = DatabaseManager.load_db()
     _, latest_dt_init, next_predict_dt_init = DatabaseManager.get_boundaries(db_init)
 
-    with gr.Blocks(title="XSMB QUANT V36.4 PRO") as demo:
-        gr.Markdown("# 🚀 XSMB QUANT V36.4 PRO — CRAWLER 3 LỚP & BIỂU ĐỒ NATIVE")
-        gr.Markdown("*(Đã cấu trúc hóa OOP. Vẽ biểu đồ Lợi nhuận bằng Code Gốc (0% Lỗi Render). Auto-Crawl tự động cập nhật Database)*")
+    with gr.Blocks(title="XSMB QUANT V36.5 PRO") as demo:
+        gr.Markdown("# 🚀 XSMB QUANT V36.5 PRO — ĐỒNG BỘ CRAWLER ĐA NGUỒN")
+        gr.Markdown("*(Kiến trúc Hướng Đối Tượng Modular. Tự động lấy KQXS siêu chuẩn, đã triệt tiêu 100% rủi ro đứt gãy Timezone trên Render.)*")
         
         with gr.Row():
             nav_menu = gr.Radio(choices=Config.MENU_OPTIONS, value=Config.MENU_OPTIONS[0], label="🎛️ BẢNG ĐIỀU KHIỂN CHÍNH")
@@ -643,14 +635,9 @@ def create_ui():
                 t2_6 = gr.Textbox(label="Đến ngày (DD/MM/YYYY)", value=latest_dt_init.strftime('%d/%m/%Y'))
                 pts_6 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
                 mode_6 = gr.Radio(choices=Config.MODES, value=Config.MODES[0], label="Chiến lược Áp dụng")
-            btn_6 = gr.Button("📈 KIỂM TOÁN BIÊN ĐỘ LỢI NHUẬN & VẼ BIỂU ĐỒ", variant="primary")
-            
-            with gr.Row():
-                out_6_text = gr.Textbox(label="Báo cáo Tổng Dòng Tiền", lines=20, scale=1)
-                # Dùng Native LinePlot của Gradio cực nhẹ, không lo sập
-                out_6_plot = gr.LinePlot(x="dt", y="cum_pnl", title="Biểu Đồ Lợi Nhuận Tích Lũy (Đã trừ Slippage)", scale=2)
-                
-            btn_6.click(Auditor.phan_he_6_range_chart, inputs=[t1_6, t2_6, pts_6, mode_6], outputs=[out_6_text, out_6_plot])
+            btn_6 = gr.Button("📈 KIỂM TOÁN BIÊN ĐỘ LỢI NHUẬN CHU KỲ", variant="primary")
+            out_6 = gr.Textbox(label="Báo cáo Tổng Dòng Tiền", lines=22)
+            btn_6.click(Auditor.phan_he_6_range, inputs=[t1_6, t2_6, pts_6, mode_6], outputs=out_6)
 
         with gr.Column(visible=False) as col_7:
             date_7 = gr.Textbox(label="Phiên Giao dịch Truy xuất (DD/MM/YYYY)", value=latest_dt_init.strftime('%d/%m/%Y'))
