@@ -4,4 +4,3 @@ openpyxl
 numpy
 requests
 beautifulsoup4
-plotly
