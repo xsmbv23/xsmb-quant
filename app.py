@@ -20,7 +20,7 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V36.11 PRO ALGO (VÁ LỖI THỜI GIAN & DIỆT TẬN GỐC CRAWLER)"
+    VERSION = "V36.13 PRO ALGO (CRAWLER BẤT TỬ & NHẬP LIỆU BẰNG TAY TEXTBOX)"
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
@@ -40,12 +40,11 @@ class Config:
     ]
 
 # ==============================================================================
-# 🛠️ BLOCK 2: XỬ LÝ LÕI & ĐỒNG BỘ MÚI GIỜ
+# 🛠️ BLOCK 2: UTILITIES (XỬ LÝ NGÀY GIỜ BẢO MẬT)
 # ==============================================================================
 class Utils:
     @staticmethod
     def get_vn_time():
-        # Chuẩn GMT+7 Việt Nam
         return datetime.utcnow() + timedelta(hours=7)
 
     @staticmethod
@@ -61,22 +60,11 @@ class Utils:
             if len(d) == 1: d = "0" + d
             if len(m) == 1: m = "0" + m
             str_chuan = f"{d}/{m}/{y}"
-            
             dt_obj = datetime.strptime(str_chuan, "%d/%m/%Y")
             now_vn = Utils.get_vn_time()
-            # Chặn triệt để nhìn trước tương lai
             if dt_obj.year < 2000 or dt_obj > now_vn + timedelta(days=1): return None
             return dt_obj, str_chuan
         except Exception: return None
-
-    @staticmethod
-    def lay_max_days(thang, nam):
-        return calendar.monthrange(nam, thang)[1]
-
-    @staticmethod
-    def safe_int(val, default=0):
-        try: return int(float(val))
-        except: return default
 
     @staticmethod
     def check_valid_number(val, name):
@@ -91,25 +79,21 @@ class Utils:
 # ==============================================================================
 class Crawler:
     @staticmethod
-    def extract_date(html_text, identifier):
-        html_text = html_text.replace('"', "'")
-        raw_blocks = re.findall(identifier + r'[^>]*>(.*?)</', html_text, flags=re.IGNORECASE|re.DOTALL)
-        for block in raw_blocks:
-            clean_block = html.unescape(block)
-            clean_block = re.sub(r'<[^>]+>', ' ', clean_block)
-            d_m = re.search(r'\d{1,2}[-/.]\d{1,2}[-/.]\d{4}', clean_block)
-            if d_m: return d_m.group().replace("-", "/").replace(".", "/")
+    def extract_date(html_text):
+        d_m = re.search(r'\b(?:mb_date|tit-mien)\b[^>]*>(.*?)</', html_text, re.IGNORECASE | re.DOTALL)
+        if d_m:
+            clean = re.sub(r'<[^>]+>', ' ', html.unescape(d_m.group(1)))
+            m = re.search(r'\d{1,2}[-/.]\d{1,2}[-/.]\d{4}', clean)
+            if m: return m.group().replace('-', '/').replace('.', '/')
         return None
 
     @staticmethod
-    def extract_numbers(html_text, class_name):
-        html_text = html_text.replace('"', "'")
-        raw_blocks = re.findall(r'class=\'' + class_name + r'\'[^>]*>(.*?)</[a-zA-Z]+>', html_text, flags=re.IGNORECASE|re.DOTALL)
+    def extract_numbers(html_text):
+        blocks = re.findall(r'\b(?:v-giai|day-so)\b[^>]*>(.*?)</', html_text, re.IGNORECASE | re.DOTALL)
         numbers = []
-        for block in raw_blocks:
-            clean_block = html.unescape(block)
-            clean_block = re.sub(r'<[^>]+>', ' ', clean_block)
-            digits = re.findall(r'\d+', clean_block)
+        for b in blocks:
+            clean = re.sub(r'<[^>]+>', ' ', html.unescape(b))
+            digits = re.findall(r'\d+', clean)
             for d in digits:
                 if len(d) >= 2: numbers.append(d[-2:])
         return numbers
@@ -120,9 +104,9 @@ class Crawler:
         url = f"https://xoso.com.vn/xsmb-{d_str_url}.html" if target_dt else "https://xoso.com.vn/xsmb.html"
         res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=7)
         if res.status_code == 200:
-            date_str = Crawler.extract_date(res.text, "id='mb_date'")
+            date_str = Crawler.extract_date(res.text)
             if not date_str: return False, None, "Thiếu thẻ Ngày"
-            numbers = Crawler.extract_numbers(res.text, "v-giai")
+            numbers = Crawler.extract_numbers(res.text)
             if len(numbers) >= 27: return True, (date_str, " ".join(numbers[:27])), "xoso.com.vn"
             return False, None, f"Thiếu giải ({len(numbers)})"
         return False, None, f"HTTP {res.status_code}"
@@ -133,9 +117,9 @@ class Crawler:
         url = f"https://kqxs.vn/mien-bac/ngay-{d_str_url}" if target_dt else "https://kqxs.vn/mien-bac"
         res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=7)
         if res.status_code == 200:
-            date_str = Crawler.extract_date(res.text, "class='tit-mien'")
+            date_str = Crawler.extract_date(res.text)
             if not date_str: return False, None, "Thiếu thẻ Ngày"
-            numbers = Crawler.extract_numbers(res.text, "day-so")
+            numbers = Crawler.extract_numbers(res.text)
             if len(numbers) >= 27: return True, (date_str, " ".join(numbers[:27])), "kqxs.vn"
             return False, None, f"Thiếu giải ({len(numbers)})"
         return False, None, f"HTTP {res.status_code}"
@@ -159,7 +143,7 @@ class Crawler:
         return False, None, " | ".join(logs)
 
 # ==============================================================================
-# 💾 BLOCK 4: AUTO-HEAL DATABASE
+# 💾 BLOCK 4: AUTO-HEAL & MANUAL DATABASE
 # ==============================================================================
 class DatabaseManager:
     @staticmethod
@@ -222,12 +206,10 @@ class DatabaseManager:
     @staticmethod
     def get_boundaries(db):
         now_vn = Utils.get_vn_time()
-        # Nếu DB trống, xác định mục tiêu dựa trên giờ hệ thống
         if not db:
             today = datetime(now_vn.year, now_vn.month, now_vn.day)
             if now_vn.hour >= 19: return today, today, today + timedelta(days=1)
             else: return today - timedelta(days=1), today - timedelta(days=1), today
-            
         all_dates = [info["date_obj"] for info in db.values()]
         max_dt = max(all_dates)
         return min(all_dates), max_dt, max_dt + timedelta(days=1)
@@ -240,7 +222,7 @@ class QuantEngine:
     def get_signal(target_dt, db, mode):
         t_minus_7 = target_dt - timedelta(days=7)
         str_t7 = t_minus_7.strftime("%d/%m/%Y")
-        if str_t7 not in db: return None, f"[THIẾU DỮ LIỆU T-7 ({str_t7}) - Hãy bấm CẬP NHẬT]"
+        if str_t7 not in db: return None, f"[THIẾU DỮ LIỆU T-7 ({str_t7})]"
         prizes_t7 = db[str_t7]["prizes_int"]
         dan_t7 = set(prizes_t7)
 
@@ -287,6 +269,56 @@ class Auditor:
         return "\n".join(lines), f"#### KHUYẾN NGHỊ GIAO DỊCH KỲ TỚI: {next_predict_dt.strftime('%d/%m/%Y')}"
 
     @staticmethod
+    def phan_he_1_manual_input(ngay_raw, chuoi_so):
+        try:
+            # 1. Kiểm tra ngày
+            res_date = Utils.chuan_hoa_ngay(ngay_raw)
+            if not res_date:
+                return "🛑 LỖI: Ngày không hợp lệ. Vui lòng nhập đúng định dạng DD/MM/YYYY.", "#### LỖI DỮ LIỆU"
+            dt_obj, std_date = res_date
+
+            # 2. Xử lý chuỗi 27 số
+            chuoi_so = re.sub(r'\D', '', str(chuoi_so)) # Loại bỏ toàn bộ dấu cách/chữ, chỉ giữ lại số
+            if len(chuoi_so) < 54:
+                return f"🛑 LỖI: Chuỗi số quá ngắn ({len(chuoi_so)} ký tự). Yêu cầu nhập đủ 27 giải = 54 chữ số liền nhau.", "#### LỖI DỮ LIỆU"
+            
+            # Cắt thành các cặp 2 số và lấy đúng 27 cặp đầu tiên
+            loto_list = [chuoi_so[i:i+2] for i in range(0, 54, 2)]
+            loto_str = " ".join(loto_list)
+
+            # 3. Ghi vào Database
+            db, _ = DatabaseManager.load_db()
+            if std_date in db:
+                return f"⚠️ CẢNH BÁO: Dữ liệu phiên {std_date} đã tồn tại trong Hệ thống. Không ghi đè.", f"#### TRẠNG THÁI: BỎ QUA TRÙNG LẶP"
+
+            df_new_row = pd.DataFrame([{"Ngày": std_date, "Kết Quả Loto": loto_str}])
+            if os.path.exists(Config.DATA_FILE):
+                df_old = pd.read_excel(Config.DATA_FILE, dtype=str)
+                df_final = pd.concat([df_new_row, df_old], ignore_index=True)
+            else:
+                df_final = df_new_row
+            df_final.to_excel(Config.DATA_FILE, index=False)
+            
+            # 4. Trả về báo cáo
+            db_new, msg = DatabaseManager.load_db()
+            _, latest_dt, next_predict_dt = DatabaseManager.get_boundaries(db_new)
+            
+            lines = [
+                "📑 [PHÂN HỆ 1] BÁO CÁO: NẠP DỮ LIỆU TỪ TEXTBOX BẰNG TAY",
+                "=================================================================================",
+                f"• Phiên bản hệ thống : {Config.VERSION}",
+                f"• Trạng thái Dữ liệu : {msg}",
+                f"• Kết quả Nạp tay    : 📥 Đã chèn thành công phiên {std_date}",
+                f"   [ {loto_str} ]",
+                f"• Phiên cập nhật cuối: 📅 [{latest_dt.strftime('%d/%m/%Y')}]",
+                f"• Lịch phân tích tới : 🚀 [{next_predict_dt.strftime('%d/%m/%Y')}]",
+            ]
+            return "\n".join(lines), f"#### KHUYẾN NGHỊ GIAO DỊCH KỲ TỚI: {next_predict_dt.strftime('%d/%m/%Y')}"
+            
+        except Exception as e:
+            return f"🛑 LỖI HỆ THỐNG: {traceback.format_exc()}", "#### LỖI"
+
+    @staticmethod
     def phan_he_2_predict(pts_per_code_base, mode):
         try:
             db, _ = DatabaseManager.load_db()
@@ -303,7 +335,7 @@ class Auditor:
                 f"🎚️ CHIẾN LƯỢC ÁP DỤNG: {mode}", ""
             ]
             if dan is None:
-                lines.extend([f"🛑 CẢNH BÁO: {msg}.", "👉 LỜI KHUYÊN: Hãy sang Menu số 1, bấm [CẬP NHẬT KẾT QUẢ MỚI] để Bot tự động vá lỗi rỗng dữ liệu T-7!"])
+                lines.extend([f"🛑 CẢNH BÁO: {msg}.", "👉 LỜI KHUYÊN: Hãy bấm nút [CẬP NHẬT KẾT QUẢ MỚI] ở Bảng 1 để tự động cào bù dữ liệu T-7!"])
                 return "\n".join(lines)
                 
             so_luong_lo = len(dan)
@@ -507,9 +539,9 @@ def create_ui():
     db_init, _ = DatabaseManager.load_db()
     _, latest_dt_init, next_predict_dt_init = DatabaseManager.get_boundaries(db_init)
 
-    with gr.Blocks(title="XSMB QUANT V36.11 PRO") as demo:
-        gr.Markdown("# 🚀 XSMB QUANT V36.11 PRO — VÁ LỖI THỜI GIAN & DIỆT LỖI CRAWLER TẬN GỐC")
-        gr.Markdown("*(Đã gỡ Menu 5. Đồng bộ thuật toán đoán trước Thời gian mở thưởng. Tự động lùi về quá khứ vá lỗi rỗng 100%.)*")
+    with gr.Blocks(title="XSMB QUANT V36.13 PRO") as demo:
+        gr.Markdown("# 🚀 XSMB QUANT V36.13 PRO — NHẬP LIỆU TEXTBOX THẦN TỐC")
+        gr.Markdown("*(Đã cấu trúc lại bộ quét Regex siêu đẳng. Bổ sung tính năng Paste thẳng chuỗi 54 ký tự xổ số vào ô văn bản để nạp DB nhanh nhất!)*")
         
         with gr.Row():
             nav_menu = gr.Radio(choices=Config.MENU_OPTIONS, value=Config.MENU_OPTIONS[0], label="🎛️ BẢNG ĐIỀU KHIỂN CHÍNH")
@@ -517,8 +549,15 @@ def create_ui():
         with gr.Column(visible=True) as col_1:
             with gr.Row():
                 btn_1_sync = gr.Button("⚡ KIỂM TOÁN LẠI DB HIỆN TẠI", variant="secondary")
-                btn_1_crawl = gr.Button("🌐 CẬP NHẬT KẾT QUẢ MỚI (TỰ ĐỘNG CÀO & VÁ LỖI)", variant="primary")
-            out_1 = gr.Textbox(label="Biên bản Hệ thống", lines=7)
+                btn_1_crawl = gr.Button("🌐 CẬP NHẬT KẾT QUẢ MỚI (TỰ ĐỘNG CÀO)", variant="primary")
+            
+            gr.Markdown("### ✍️ HOẶC NHẬP KẾT QUẢ BẰNG TAY (MANUAL ENTRY)")
+            with gr.Row():
+                txt_1_date = gr.Textbox(label="Ngày (DD/MM/YYYY)", placeholder="Ví dụ: 01/08/2026", scale=1)
+                txt_1_numbers = gr.Textbox(label="Chuỗi 27 số (54 ký tự liền nhau)", placeholder="Copy/Paste thẳng chuỗi số vào đây (VD: 1223273034...)", scale=3)
+            btn_1_manual = gr.Button("📥 LƯU DỮ LIỆU VÀO MÁY CHỦ", variant="primary")
+
+            out_1 = gr.Textbox(label="Biên bản Hệ thống", lines=9)
             title_2 = gr.Markdown(f"#### Dự phóng Tín hiệu cho phiên: {next_predict_dt_init.strftime('%d/%m/%Y')}")
             
         with gr.Column(visible=False) as col_2:
@@ -547,7 +586,7 @@ def create_ui():
 
         with gr.Column(visible=False) as col_5:
             with gr.Row():
-                t1_5 = gr.Textbox(label="Từ ngày (DD/MM/YYYY)", value="25/07/2026")
+                t1_5 = gr.Textbox(label="Từ ngày (DD/MM/YYYY)", value="01/01/2026")
                 t2_5 = gr.Textbox(label="Đến ngày (DD/MM/YYYY)", value=latest_dt_init.strftime('%d/%m/%Y'))
                 pts_5 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
                 mode_5 = gr.Radio(choices=Config.MODES, value=Config.MODES[0], label="Chiến lược Áp dụng")
@@ -561,8 +600,10 @@ def create_ui():
             out_6 = gr.Textbox(label="Log Dữ Liệu Máy Chủ", lines=10)
             btn_6.click(Auditor.phan_he_6_raw, inputs=date_6, outputs=out_6)
 
+        # Triggers
         btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2])
         btn_1_crawl.click(lambda: Auditor.phan_he_1_sync(auto_crawl=True), outputs=[out_1, title_2])
+        btn_1_manual.click(Auditor.phan_he_1_manual_input, inputs=[txt_1_date, txt_1_numbers], outputs=[out_1, title_2])
 
         def update_visibility(choice):
             return [
