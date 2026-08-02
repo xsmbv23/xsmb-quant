@@ -20,7 +20,7 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V36.18 PRO"
+    VERSION = "V36.19 PRO ALGO"
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
@@ -39,7 +39,7 @@ class Config:
     ]
 
 # ==============================================================================
-# 🛠️ BLOCK 2: UTILITIES (XỬ LÝ THỜI GIAN)
+# 🛠️ BLOCK 2: UTILITIES (XỬ LÝ THỜI GIAN ĐA ĐỊA HÌNH)
 # ==============================================================================
 class Utils:
     @staticmethod
@@ -48,18 +48,26 @@ class Utils:
 
     @staticmethod
     def chuan_hoa_ngay(ngay_raw):
-        if pd.isna(ngay_raw) or not str(ngay_raw).strip(): return None
-        try:
-            match = re.search(r'\d{1,2}[-/.]\d{1,2}[-/.]\d{4}', str(ngay_raw))
-            if not match: return None
-            s = match.group().replace("-", "/").replace(".", "/")
-            parts = s.split("/")
-            if len(parts) < 3: return None
-            d, m, y = parts[0], parts[1], parts[2]
-            if len(d) == 1: d = "0" + d
-            if len(m) == 1: m = "0" + m
-            str_chuan = f"{d}/{m}/{y}"
+        if pd.isna(ngay_raw) or not str(ngay_raw).strip() or str(ngay_raw).lower() == 'nan': return None
+        # Xử lý các định dạng kèm giờ YYYY-MM-DD HH:MM:SS của Excel
+        ngay_str = str(ngay_raw).split(" ")[0] 
+        
+        # Bắt định dạng YYYY-MM-DD
+        match_ymd = re.search(r'(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})', ngay_str)
+        if match_ymd:
+            y, m, d = match_ymd.groups()
+        else:
+            # Bắt định dạng DD-MM-YYYY
+            match_dmy = re.search(r'(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})', ngay_str)
+            if match_dmy:
+                d, m, y = match_dmy.groups()
+            else: return None
             
+        if len(d) == 1: d = "0" + d
+        if len(m) == 1: m = "0" + m
+        str_chuan = f"{d}/{m}/{y}"
+        
+        try:
             dt_obj = datetime.strptime(str_chuan, "%d/%m/%Y")
             now_vn = Utils.get_vn_time()
             if dt_obj.year < 2000 or dt_obj > now_vn + timedelta(days=1): return None
@@ -94,16 +102,11 @@ class Crawler:
                 date_str_raw = parts[i]
                 chunk = parts[i+1]
                 
-                d_m = re.search(r'(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})', date_str_raw)
-                if d_m:
-                    d, m, y = d_m.groups()
-                    if len(d) == 1: d = '0' + d
-                    if len(m) == 1: m = '0' + m
-                    std_date = f"{d}/{m}/{y}"
-                    
+                res_date = Utils.chuan_hoa_ngay(date_str_raw)
+                if res_date:
+                    _, std_date = res_date
                     clean_text = re.sub(r'<[^>]+>', ' ', html.unescape(chunk))
                     nums = re.findall(r'\b\d{2,}\b', clean_text)
-                    
                     if len(nums) >= 27:
                         prizes = [x[-2:] for x in nums[:27]]
                         if std_date not in parsed_data:
@@ -127,15 +130,31 @@ class DatabaseManager:
         try:
             df = pd.read_excel(Config.DATA_FILE, dtype=str)
             for _, row in df.iterrows():
+                # Bất chấp cột tên là Ngay hay Ngày, cứ lấy cột số 0 và cột số 1
                 res_date = Utils.chuan_hoa_ngay(row.iloc[0])
                 if not res_date: continue
                 dt_obj, ngay_str = res_date
                 loto_raw = re.sub(r"[^\d\s]", " ", str(row.iloc[1]))
                 loto_list = [int(x.strip()[-2:]) for x in loto_raw.split() if x.strip().isdigit()]
                 if len(loto_list) >= 27:
-                    db[ngay_str] = {"date_obj": dt_obj, "prizes_int": loto_list[:27]}
+                    # Lưu lại định dạng chuẩn để thanh tẩy file
+                    db[ngay_str] = {
+                        "date_obj": dt_obj, 
+                        "prizes_int": loto_list[:27], 
+                        "raw_str": " ".join([f"{x:02d}" for x in loto_list[:27]])
+                    }
             return db, f"🟢 ĐỒNG BỘ: {len(db)} PHIÊN."
         except Exception as e: return db, f"🛑 LỖI ĐỌC:\n{traceback.format_exc()}"
+
+    @staticmethod
+    def rewrite_clean_db(db):
+        all_rows = []
+        for d_str, info in db.items():
+            all_rows.append({"Ngày": d_str, "Kết Quả Loto": info["raw_str"], "date_parse": info["date_obj"]})
+        if all_rows:
+            df_final = pd.DataFrame(all_rows)
+            df_final = df_final.sort_values(by='date_parse', ascending=False).drop(columns=['date_parse'])
+            df_final.to_excel(Config.DATA_FILE, index=False)
 
     @staticmethod
     def save_manual_data(date_str, numbers_str):
@@ -148,16 +167,16 @@ class DatabaseManager:
         nums = nums[:27]
         
         try:
-            df = pd.read_excel(Config.DATA_FILE, dtype=str) if os.path.exists(Config.DATA_FILE) else pd.DataFrame(columns=["Ngày", "Kết Quả Loto"])
-            df = df[df['Ngày'] != std_date]
-            new_row = pd.DataFrame({"Ngày": [std_date], "Kết Quả Loto": [" ".join(nums)]})
-            df = pd.concat([new_row, df], ignore_index=True)
-            df['date_parse'] = pd.to_datetime(df['Ngày'], format="%d/%m/%Y", errors='coerce')
-            df = df.sort_values(by='date_parse', ascending=False).drop(columns=['date_parse'])
-            df.to_excel(Config.DATA_FILE, index=False)
+            db, _ = DatabaseManager.load_db()
+            db[std_date] = {
+                "date_obj": dt_obj, 
+                "prizes_int": [int(x) for x in nums], 
+                "raw_str": " ".join(nums)
+            }
+            DatabaseManager.rewrite_clean_db(db)
             return f"✅ NHẬP TAY THÀNH CÔNG: Đã lưu kết quả ngày {std_date} vào Hệ thống!"
         except Exception as e:
-            return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
+            return f"🛑 LỖI TRUY VẾT (TRACEBACK):\n{traceback.format_exc()}"
 
     @staticmethod
     def auto_heal_history():
@@ -168,7 +187,6 @@ class DatabaseManager:
         if not success:
             return f"🛑 LỖI CRAWLER:\n{msg}\n👉 Vui lòng dùng chức năng Nhập Tay bên dưới!"
             
-        new_rows = []
         healed_count = 0
         for date_str, prizes_str in parsed_data.items():
             res_date = Utils.chuan_hoa_ngay(date_str)
@@ -178,20 +196,22 @@ class DatabaseManager:
                 if dt_obj.date() == now_vn.date() and now_vn.hour < 19: continue
                 
                 if std_str not in db:
-                    new_rows.append({"Ngày": std_str, "Kết Quả Loto": prizes_str})
-                    db[std_str] = True
-                    healed_count += 1
+                    nums = re.findall(r'\d{2}', prizes_str)
+                    if len(nums) >= 27:
+                        db[std_str] = {
+                            "date_obj": dt_obj, 
+                            "prizes_int": [int(x) for x in nums[:27]], 
+                            "raw_str": " ".join(nums[:27])
+                        }
+                        healed_count += 1
 
-        if new_rows:
+        if healed_count > 0 or len(db) > 0:
             try:
-                df_new = pd.DataFrame(new_rows)
-                df_old = pd.read_excel(Config.DATA_FILE, dtype=str) if os.path.exists(Config.DATA_FILE) else pd.DataFrame()
-                df_final = pd.concat([df_new, df_old], ignore_index=True)
-                df_final = df_final.drop_duplicates(subset=['Ngày'], keep='first')
-                df_final['date_parse'] = pd.to_datetime(df_final['Ngày'], format="%d/%m/%Y", errors='coerce')
-                df_final = df_final.sort_values(by='date_parse', ascending=False).drop(columns=['date_parse'])
-                df_final.to_excel(Config.DATA_FILE, index=False)
-                return f"✅ AUTO-HEAL: Đã cào và nạp thành công {healed_count} phiên bị mất."
+                DatabaseManager.rewrite_clean_db(db)
+                if healed_count > 0:
+                    return f"✅ AUTO-HEAL: Đã nạp thành công {healed_count} phiên bị mất & Chuẩn hóa Format File."
+                else:
+                    return "✅ AUTO-HEAL: Dữ liệu liền mạch. Đã chuẩn hóa Format File thành công."
             except Exception as e:
                 return f"🛑 LỖI GHI FILE TRUY VẾT:\n{traceback.format_exc()}"
         
