@@ -20,7 +20,7 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V36.1.15 PRO ALGO (CHUẨN GIAO DIỆN CŨ - LÕI CRAWLER 300 NGÀY)"
+    VERSION = "V36.18 PRO ALGO"
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
@@ -34,7 +34,7 @@ class Config:
         "🔄 1. ĐỒNG BỘ & CẬP NHẬT DỮ LIỆU",
         "🎯 2. KHUYẾN NGHỊ LỆNH",
         "🛡️ 3. QUẢN TRỊ RỦI RO",
-        "🔍 4. KIỂM TOÁN ĐƠN PHIÊN",
+        "🔍 4. KIỂM TOÁN CHUYÊN SÂU",
         "📈 5. PHÂN TÍCH CHU KỲ TỔNG HỢP",
         "🎰 6. DỮ LIỆU THÔ"
     ]
@@ -76,7 +76,7 @@ class Utils:
         except: return False, f"🛑 LỖI: '{name}' sai định dạng."
 
 # ==============================================================================
-# 🕸️ BLOCK 3: CRAWLER XUYÊN THẤU KETQUA16.NET
+# 🕸️ BLOCK 3: CRAWLER KETQUA16.NET
 # ==============================================================================
 class Crawler:
     @staticmethod
@@ -88,7 +88,6 @@ class Crawler:
             if res.status_code != 200: return False, {}, f"HTTP {res.status_code}"
             
             html_text = res.text
-            # Thuật toán cắt mảnh HTML bằng Ngày tháng (Bypass mọi cấu trúc Table/Div)
             parts = re.split(r'(\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b)', html_text)
             parsed_data = {}
             
@@ -103,7 +102,6 @@ class Crawler:
                     if len(m) == 1: m = '0' + m
                     std_date = f"{d}/{m}/{y}"
                     
-                    # Rửa sạch thẻ HTML, lấy số trần
                     clean_text = re.sub(r'<[^>]+>', ' ', html.unescape(chunk))
                     nums = re.findall(r'\b\d{2,}\b', clean_text)
                     
@@ -112,11 +110,10 @@ class Crawler:
                         if std_date not in parsed_data:
                             parsed_data[std_date] = " ".join(prizes)
             
-            if parsed_data:
-                return True, parsed_data, "Truy xuất thành công 300 ngày từ ketqua16.net"
+            if parsed_data: return True, parsed_data, "Truy xuất thành công 300 ngày từ ketqua16.net"
             return False, {}, "Không tìm thấy cấu trúc 27 giải"
         except Exception as e:
-            return False, {}, f"Lỗi Crawler: {str(e)[:30]}"
+            return False, {}, f"Lỗi Crawler: {traceback.format_exc()}"
 
 # ==============================================================================
 # 💾 BLOCK 4: QUẢN TRỊ DỮ LIỆU & AUTO-HEAL
@@ -139,7 +136,7 @@ class DatabaseManager:
                 if len(loto_list) >= 27:
                     db[ngay_str] = {"date_obj": dt_obj, "prizes_int": loto_list[:27]}
             return db, f"🟢 ĐỒNG BỘ: {len(db)} PHIÊN."
-        except Exception as e: return db, f"🛑 LỖI ĐỌC: {e}"
+        except Exception as e: return db, f"🛑 LỖI ĐỌC: {traceback.format_exc()}"
 
     @staticmethod
     def save_manual_data(date_str, numbers_str):
@@ -156,13 +153,12 @@ class DatabaseManager:
             df = df[df['Ngày'] != std_date]
             new_row = pd.DataFrame({"Ngày": [std_date], "Kết Quả Loto": [" ".join(nums)]})
             df = pd.concat([new_row, df], ignore_index=True)
-            # Sắp xếp giảm dần
             df['date_parse'] = pd.to_datetime(df['Ngày'], format="%d/%m/%Y", errors='coerce')
             df = df.sort_values(by='date_parse', ascending=False).drop(columns=['date_parse'])
             df.to_excel(Config.DATA_FILE, index=False)
             return f"✅ NHẬP TAY THÀNH CÔNG: Đã lưu kết quả ngày {std_date} vào Hệ thống!"
         except Exception as e:
-            return f"🛑 LỖI LƯU FILE: {e}"
+            return f"🛑 LỖI TRUY VẾT (TRACEBACK):\n{traceback.format_exc()}"
 
     @staticmethod
     def auto_heal_history():
@@ -171,7 +167,7 @@ class DatabaseManager:
         
         success, parsed_data, msg = Crawler.fetch_ketqua16()
         if not success:
-            return f"🛑 CRAWLER LỖI: {msg}. 👉 Vui lòng dùng chức năng Nhập Tay bên dưới!"
+            return f"🛑 LỖI CRAWLER:\n{msg}\n👉 Vui lòng dùng chức năng Nhập Tay bên dưới!"
             
         new_rows = []
         healed_count = 0
@@ -179,7 +175,6 @@ class DatabaseManager:
             res_date = Utils.chuan_hoa_ngay(date_str)
             if res_date:
                 dt_obj, std_str = res_date
-                # Khóa an toàn: Nếu chưa qua 19h, không nạp kết quả ảo của ngày hôm nay
                 if dt_obj.date() > now_vn.date(): continue
                 if dt_obj.date() == now_vn.date() and now_vn.hour < 19: continue
                 
@@ -189,18 +184,17 @@ class DatabaseManager:
                     healed_count += 1
 
         if new_rows:
-            df_new = pd.DataFrame(new_rows)
             try:
-                df_old = pd.read_excel(Config.DATA_FILE, dtype=str)
+                df_new = pd.DataFrame(new_rows)
+                df_old = pd.read_excel(Config.DATA_FILE, dtype=str) if os.path.exists(Config.DATA_FILE) else pd.DataFrame()
                 df_final = pd.concat([df_new, df_old], ignore_index=True)
-            except: 
-                df_final = df_new
-                
-            df_final = df_final.drop_duplicates(subset=['Ngày'], keep='first')
-            df_final['date_parse'] = pd.to_datetime(df_final['Ngày'], format="%d/%m/%Y", errors='coerce')
-            df_final = df_final.sort_values(by='date_parse', ascending=False).drop(columns=['date_parse'])
-            df_final.to_excel(Config.DATA_FILE, index=False)
-            return f"✅ AUTO-HEAL: Đã cào và nạp thành công {healed_count} phiên bị mất từ ketqua16."
+                df_final = df_final.drop_duplicates(subset=['Ngày'], keep='first')
+                df_final['date_parse'] = pd.to_datetime(df_final['Ngày'], format="%d/%m/%Y", errors='coerce')
+                df_final = df_final.sort_values(by='date_parse', ascending=False).drop(columns=['date_parse'])
+                df_final.to_excel(Config.DATA_FILE, index=False)
+                return f"✅ AUTO-HEAL: Đã cào và nạp thành công {healed_count} phiên bị mất."
+            except Exception as e:
+                return f"🛑 LỖI GHI FILE TRUY VẾT:\n{traceback.format_exc()}"
         
         return "✅ AUTO-HEAL: Dữ liệu đã liền mạch, không có lỗ hổng."
 
@@ -210,8 +204,7 @@ class DatabaseManager:
         today = datetime(now_vn.year, now_vn.month, now_vn.day)
         default_next = today + timedelta(days=1) if now_vn.hour >= 19 else today
         
-        if not db:
-            return None, None, default_next
+        if not db: return None, None, default_next
             
         all_dates = [info["date_obj"] for info in db.values()]
         max_dt = max(all_dates)
@@ -225,7 +218,7 @@ class QuantEngine:
     def get_signal(target_dt, db, mode):
         t_minus_7 = target_dt - timedelta(days=7)
         str_t7 = t_minus_7.strftime("%d/%m/%Y")
-        if str_t7 not in db: return None, f"[THIẾU DỮ LIỆU T-7 ({str_t7})] - Bấm CẬP NHẬT hoặc NHẬP TAY!"
+        if str_t7 not in db: return None, f"[THIẾU DỮ LIỆU T-7 ({str_t7})] - Hãy Cập nhật/Nhập tay!"
         prizes_t7 = db[str_t7]["prizes_int"]
         dan_t7 = set(prizes_t7)
 
@@ -299,7 +292,7 @@ class Auditor:
                 f"🎚️ CHIẾN LƯỢC ÁP DỤNG: {mode}", ""
             ]
             if dan is None:
-                lines.extend([f"🛑 CẢNH BÁO: {msg}.", "👉 LỜI KHUYÊN: Hãy Đồng bộ bằng nút màu Xanh hoặc Nhập tay dữ liệu để tiếp tục!"])
+                lines.extend([f"🛑 CẢNH BÁO: {msg}.", "👉 LỜI KHUYÊN: Hãy Đồng bộ bằng nút màu Cam hoặc Nhập tay dữ liệu để tiếp tục!"])
                 return "\n".join(lines)
                 
             so_luong_lo = len(dan)
@@ -321,7 +314,7 @@ class Auditor:
                     "💡 HỆ THỐNG KHUYẾN NGHỊ ĐỨNG NGOÀI THỊ TRƯỜNG PHIÊN NÀY."
                 ])
             return "\n".join(lines)
-        except Exception as e: return f"🛑 LỖI: {e}"
+        except Exception as e: return f"🛑 LỖI TRUY VẾT (TRACEBACK):\n{traceback.format_exc()}"
 
     @staticmethod
     def phan_he_3_risk(base_pts, sim_size):
@@ -350,7 +343,14 @@ class Auditor:
                 lines.append(f" Đạt {nhay:>2} lượt  | {thuong:>17,.0f} | {lai_str:>14} | {status}")
             lines.append("====================================================================")
             return "\n".join(lines)
-        except Exception as e: return f"🛑 LỖI: {e}"
+        except Exception as e: return f"🛑 LỖI TRUY VẾT (TRACEBACK):\n{traceback.format_exc()}"
+
+    @staticmethod
+    def phan_he_4_router(audit_type, date_raw, month_raw, mode, pts_per_code_base):
+        if audit_type == "Kiểm toán 1 Ngày (Đơn Phiên)":
+            return Auditor.phan_he_4_single(date_raw, pts_per_code_base)
+        else:
+            return Auditor.phan_he_4_monthly_detail(month_raw, mode, pts_per_code_base)
 
     @staticmethod
     def phan_he_4_single(ngay_raw, pts_per_code_base):
@@ -381,7 +381,7 @@ class Auditor:
                 return [
                     f"📌 [{name}]",
                     f" • Danh mục {sl} mã: " + " ".join([f"{x:02d}" for x in danh_sach]),
-                    f" • Đạt {nhay} lượt. Vốn: {chi:,.0f}đ | Thu: {thu:,.0f}đ",
+                    f" • Đạt {nhay} lượt. Vốn: {chi/1000:,.0f}k | Thu: {thu/1000:,.0f}k",
                     f" 👉 PnL RÒNG: {lai:+,.0f} VNĐ ({st})"
                 ]
 
@@ -392,7 +392,78 @@ class Auditor:
                 else: lines.extend(calc_str(dan, mode))
                 lines.append("------------------------------------------------------------------------")
             return "\n".join(lines)
-        except Exception as e: return f"🛑 LỖI: {e}"
+        except Exception as e: return f"🛑 LỖI TRUY VẾT (TRACEBACK):\n{traceback.format_exc()}"
+
+    @staticmethod
+    def phan_he_4_monthly_detail(month_raw, mode, pts_per_code_base):
+        try:
+            db, _ = DatabaseManager.load_db()
+            m = re.match(r'^(\d{1,2})[-/.](\d{4})$', str(month_raw).strip())
+            if not m: return "🛑 LỖI ĐỊNH DẠNG: Vui lòng nhập tháng dạng MM/YYYY (VD: 08/2026)."
+            thang, nam = int(m.group(1)), int(m.group(2))
+            
+            valid, err = Utils.check_valid_number(pts_per_code_base, "Vốn")
+            if not valid: return err
+            base_pts = int(float(pts_per_code_base))
+            
+            start_dt = datetime(nam, thang, 1)
+            max_day = calendar.monthrange(nam, thang)[1]
+            end_dt = datetime(nam, thang, max_day)
+            
+            lines = [
+                f"📑 BÁO CÁO CHI TIẾT TỪNG NGÀY: THÁNG {thang:02d}/{nam}",
+                f"🎚️ CHIẾN LƯỢC: {mode}",
+                "===================================================================================================================",
+                f"{'NGÀY':<6} | {'SỐ LƯỢNG & DANH SÁCH MÃ ĐÁNH':<40} | {'VỐN (k)':<9} | {'THU (k)':<9} | {'LÃI/LỖ (k)':<12} | {'ROI':<8}",
+                "-------------------------------------------------------------------------------------------------------------------"
+            ]
+            
+            curr = start_dt
+            tot_von, tot_thu, tot_lai = 0, 0, 0
+            
+            while curr <= end_dt:
+                ngay_str = curr.strftime("%d/%m/%Y")
+                short_date = curr.strftime("%d/%m")
+                if ngay_str in db:
+                    dan, msg = QuantEngine.get_signal(curr, db, mode)
+                    if dan is not None:
+                        sl = len(dan)
+                        if sl > 0:
+                            von = sl * base_pts * Config.COST_PER_POINT
+                            nhay = sum(db[ngay_str]["prizes_int"].count(x) for x in dan)
+                            thu = nhay * base_pts * Config.WIN_PER_NHAY
+                            lai = thu - von
+                            roi = (lai / von * 100) if von > 0 else 0
+                            
+                            tot_von += von
+                            tot_thu += thu
+                            tot_lai += lai
+                            
+                            dan_str = " ".join([f"{x:02d}" for x in dan])
+                            if len(dan_str) > 30: dan_str = dan_str[:27] + "..."
+                            
+                            lines.append(f"{short_date:<6} | {sl:>2} mã: {dan_str:<31} | {von/1000:>9,.0f} | {thu/1000:>9,.0f} | {lai/1000:>+12,.0f} | {roi:>+6.1f}%")
+                        else:
+                            lines.append(f"{short_date:<6} | {'🚫 KHÔNG CÓ TÍN HIỆU ĐẠT CHUẨN':<40} | {'-':<9} | {'-':<9} | {'-':<12} | {'-':<8}")
+                    else:
+                        lines.append(f"{short_date:<6} | ⚠️ Thiếu dữ liệu T-7/T-1{'':<17} | {'-':<9} | {'-':<9} | {'-':<12} | {'-':<8}")
+                else:
+                    lines.append(f"{short_date:<6} | ⚪ Chưa có dữ liệu thực tế trên DB{'':<6} | {'-':<9} | {'-':<9} | {'-':<12} | {'-':<8}")
+                
+                curr += timedelta(days=1)
+                
+            tot_roi = (tot_lai / tot_von * 100) if tot_von > 0 else 0
+            lines.extend([
+                "===================================================================================================================",
+                f"📝 TỔNG KẾT THÁNG {thang:02d}/{nam}:",
+                f"💰 TỔNG VỐN ĐÃ ĐÁNH : {tot_von:,.0f} VNĐ",
+                f"💵 TỔNG DOANH THU   : {tot_thu:,.0f} VNĐ",
+                f"🚀 LỢI NHUẬN RÒNG   : {tot_lai:+,.0f} VNĐ",
+                f"📈 TỶ SUẤT R.O.I    : {tot_roi:+.2f} %"
+            ])
+            return "\n".join(lines)
+        except Exception as e:
+            return f"🛑 LỖI TRUY VẾT (TRACEBACK):\n{traceback.format_exc()}"
 
     @staticmethod
     def phan_he_5_range(tu_ngay_raw, den_ngay_raw, pts_per_code_base, mode):
@@ -408,7 +479,7 @@ class Auditor:
             base_pts = int(float(pts_per_code_base))
             
             lines = [
-                "📑 [PHÂN HỆ 5] BÁO CÁO: ĐẠI KẾ TOÁN QUÉT CHU KỲ",
+                "📑 [PHÂN HỆ 5] BÁO CÁO: ĐẠI KẾ TOÁN QUÉT CHU KỲ TỔNG HỢP",
                 "===================================================================================================================",
                 f"📈 KẾT QUẢ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')} (CHIẾN LƯỢC: {mode})",
                 "==================================================================================================================="
@@ -466,7 +537,7 @@ class Auditor:
             ])
             return "\n".join(lines)
         except Exception as e:
-            return f"🛑 LỖI PHÂN HỆ 5: {traceback.format_exc()}"
+            return f"🛑 LỖI TRUY VẾT (TRACEBACK):\n{traceback.format_exc()}"
 
     @staticmethod
     def phan_he_6_raw(ngay_raw):
@@ -490,33 +561,18 @@ class Auditor:
                     lines.append(row_str.strip())
                     row_str = ""
             return "\n".join(lines)
-        except Exception as e: return f"🛑 LỖI PHÂN HỆ 6: {e}"
+        except Exception as e: return f"🛑 LỖI TRUY VẾT (TRACEBACK):\n{traceback.format_exc()}"
 
 # ==============================================================================
-# 🎮 BLOCK 7: GIAO DIỆN NGƯỜI DÙNG CHUẨN V36.1.15 (THEME TÍM/INDIGO)
+# 🎮 BLOCK 7: GIAO DIỆN NGƯỜI DÙNG (UI LAYER)
 # ==============================================================================
 def create_ui():
     db_init, _ = DatabaseManager.load_db()
     _, latest_dt_init, next_predict_dt_init = DatabaseManager.get_boundaries(db_init)
 
-    # Phục hồi đúng chuẩn Theme Tím (Indigo/Violet) như hình ảnh sếp cung cấp
-    custom_theme = gr.themes.Soft(
-        primary_hue="indigo",
-        secondary_hue="violet",
-        font=[gr.themes.GoogleFont("Inter"), "ui-sans-serif", "system-ui", "sans-serif"],
-    ).set(
-        button_primary_background_fill="*primary_600",
-        button_primary_background_fill_hover="*primary_700",
-        button_primary_text_color="white",
-        block_title_text_color="white",
-        block_title_background_fill="*primary_600",
-        block_label_background_fill="*primary_600",
-        block_label_text_color="white",
-    )
-
-    with gr.Blocks(title="XSMB QUANT V36.1.15 PRO", theme=custom_theme) as demo:
-        gr.Markdown("# 🚀 XSMB QUANT V36.1.15 PRO — BỌC THÉP BLOCK & KETQUA16.NET")
-        gr.Markdown("*(Đã khôi phục Giao diện Tím gốc của V36.1.15. Trị dứt điểm mọi lỗi Crawler rác, 1 giây húp trọn 300 ngày lịch sử!)*")
+    with gr.Blocks(title="XSMB QUANT V36.18 PRO ALGO", theme=gr.themes.Default(primary_hue="orange")) as demo:
+        gr.Markdown("# 🚀 XSMB QUANT V36.18 PRO ALGO")
+        gr.Markdown("*(Hệ thống Phân tích Định lượng XSMB Chuyên sâu - Tích hợp Kiểm toán Đơn phiên & Chu kỳ)*")
         
         with gr.Row():
             nav_menu = gr.Radio(choices=Config.MENU_OPTIONS, value=Config.MENU_OPTIONS[0], label="🎛️ BẢNG ĐIỀU KHIỂN CHÍNH")
@@ -554,12 +610,25 @@ def create_ui():
             btn_3.click(Auditor.phan_he_3_risk, inputs=[pts_3, sim_size], outputs=out_3)
             
         with gr.Column(visible=False) as col_4:
-            with gr.Row():
-                date_4 = gr.Textbox(label="Phiên Giao dịch Truy xuất (DD/MM/YYYY)", value=latest_dt_init.strftime('%d/%m/%Y') if latest_dt_init else "")
-                pts_4 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
-            btn_4 = gr.Button("📡 KIỂM TOÁN HIỆU SUẤT ĐƠN PHIÊN", variant="primary")
-            out_4 = gr.Textbox(label="Báo cáo Bóc tách Động lượng (Gồm cả 4 kịch bản)", lines=24)
-            btn_4.click(Auditor.phan_he_4_single, inputs=[date_4, pts_4], outputs=out_4)
+            gr.Markdown("### 🔍 MODULE KIỂM TOÁN CHUYÊN SÂU")
+            audit_type = gr.Radio(choices=["Kiểm toán 1 Ngày (Đơn Phiên)", "Kiểm toán Cả Tháng (Chi tiết)"], value="Kiểm toán 1 Ngày (Đơn Phiên)", label="Loại Kiểm toán")
+            
+            with gr.Row(visible=True) as row_audit_day:
+                date_4 = gr.Textbox(label="Ngày Truy xuất (DD/MM/YYYY)", value=latest_dt_init.strftime('%d/%m/%Y') if latest_dt_init else "")
+            
+            with gr.Row(visible=False) as row_audit_month:
+                month_4 = gr.Textbox(label="Tháng Truy xuất (MM/YYYY)", value=latest_dt_init.strftime('%m/%Y') if latest_dt_init else "")
+                mode_4 = gr.Radio(choices=Config.MODES, value=Config.MODES[0], label="Chiến lược Áp dụng")
+                
+            pts_4 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
+            btn_4 = gr.Button("📡 THỰC THI KIỂM TOÁN", variant="primary")
+            out_4 = gr.Textbox(label="Báo cáo Kiểm toán", lines=24)
+            
+            def toggle_audit(choice):
+                return gr.update(visible=choice=="Kiểm toán 1 Ngày (Đơn Phiên)"), gr.update(visible=choice=="Kiểm toán Cả Tháng (Chi tiết)")
+            
+            audit_type.change(fn=toggle_audit, inputs=audit_type, outputs=[row_audit_day, row_audit_month])
+            btn_4.click(Auditor.phan_he_4_router, inputs=[audit_type, date_4, month_4, mode_4, pts_4], outputs=out_4)
 
         with gr.Column(visible=False) as col_5:
             with gr.Row():
@@ -577,7 +646,7 @@ def create_ui():
             out_6 = gr.Textbox(label="Log Dữ Liệu Máy Chủ", lines=10)
             btn_6.click(Auditor.phan_he_6_raw, inputs=date_6, outputs=out_6)
 
-        # Kết nối các nút bấm
+        # Kết nối các nút bấm Menu 1
         btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2])
         btn_1_crawl.click(lambda: Auditor.phan_he_1_sync(auto_crawl=True), outputs=[out_1, title_2])
         btn_manual_save.click(Auditor.process_manual_input, inputs=[manual_date, manual_numbers], outputs=[out_1, title_2])
