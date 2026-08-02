@@ -20,7 +20,7 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V36.13 PRO ALGO (CRAWLER BẤT TỬ & NHẬP LIỆU BẰNG TAY TEXTBOX)"
+    VERSION = "V36.14 PRO ALGO (BỌC THÉP DATABASE & NHẬP LIỆU TEXTBOX)"
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
@@ -40,7 +40,7 @@ class Config:
     ]
 
 # ==============================================================================
-# 🛠️ BLOCK 2: UTILITIES (XỬ LÝ NGÀY GIỜ BẢO MẬT)
+# 🛠️ BLOCK 2: UTILITIES
 # ==============================================================================
 class Utils:
     @staticmethod
@@ -61,8 +61,6 @@ class Utils:
             if len(m) == 1: m = "0" + m
             str_chuan = f"{d}/{m}/{y}"
             dt_obj = datetime.strptime(str_chuan, "%d/%m/%Y")
-            now_vn = Utils.get_vn_time()
-            if dt_obj.year < 2000 or dt_obj > now_vn + timedelta(days=1): return None
             return dt_obj, str_chuan
         except Exception: return None
 
@@ -75,7 +73,7 @@ class Utils:
         except: return False, f"🛑 LỖI: '{name}' sai định dạng."
 
 # ==============================================================================
-# 🕸️ BLOCK 3: CRAWLER XUYÊN THẤU ĐA TẦNG
+# 🕸️ BLOCK 3: CRAWLER
 # ==============================================================================
 class Crawler:
     @staticmethod
@@ -105,10 +103,10 @@ class Crawler:
         res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=7)
         if res.status_code == 200:
             date_str = Crawler.extract_date(res.text)
-            if not date_str: return False, None, "Thiếu thẻ Ngày"
+            if not date_str: return False, None, "Dữ liệu trống (Không có ngày)"
             numbers = Crawler.extract_numbers(res.text)
             if len(numbers) >= 27: return True, (date_str, " ".join(numbers[:27])), "xoso.com.vn"
-            return False, None, f"Thiếu giải ({len(numbers)})"
+            return False, None, f"Dữ liệu trống (Thiếu giải, chỉ có {len(numbers)})"
         return False, None, f"HTTP {res.status_code}"
 
     @staticmethod
@@ -118,10 +116,10 @@ class Crawler:
         res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=7)
         if res.status_code == 200:
             date_str = Crawler.extract_date(res.text)
-            if not date_str: return False, None, "Thiếu thẻ Ngày"
+            if not date_str: return False, None, "Dữ liệu trống (Không có ngày)"
             numbers = Crawler.extract_numbers(res.text)
             if len(numbers) >= 27: return True, (date_str, " ".join(numbers[:27])), "kqxs.vn"
-            return False, None, f"Thiếu giải ({len(numbers)})"
+            return False, None, f"Dữ liệu trống (Thiếu giải, chỉ có {len(numbers)})"
         return False, None, f"HTTP {res.status_code}"
 
     @staticmethod
@@ -149,7 +147,8 @@ class DatabaseManager:
     @staticmethod
     def load_db():
         db = {}
-        if not os.path.exists(Config.DATA_FILE):
+        # Bảo vệ lỗi file rỗng 0 bytes
+        if not os.path.exists(Config.DATA_FILE) or os.path.getsize(Config.DATA_FILE) == 0:
             pd.DataFrame(columns=["Ngày", "Kết Quả Loto"]).to_excel(Config.DATA_FILE, index=False)
             return db, "⚠️ Tệp dữ liệu rỗng."
         try:
@@ -169,8 +168,6 @@ class DatabaseManager:
     def auto_heal_history():
         db, _ = DatabaseManager.load_db()
         now_vn = Utils.get_vn_time()
-        
-        # Sửa lỗi GMT: Nếu chưa qua 19h00, KQXS hôm nay chưa quay -> Lùi 1 ngày
         if now_vn.hour < 19: max_check_dt = now_vn - timedelta(days=1)
         else: max_check_dt = now_vn
             
@@ -194,8 +191,10 @@ class DatabaseManager:
         if new_rows:
             df_new = pd.DataFrame(new_rows)
             try:
-                df_old = pd.read_excel(Config.DATA_FILE, dtype=str)
-                df_final = pd.concat([df_new, df_old], ignore_index=True)
+                if os.path.exists(Config.DATA_FILE) and os.path.getsize(Config.DATA_FILE) > 0:
+                    df_old = pd.read_excel(Config.DATA_FILE, dtype=str)
+                    df_final = pd.concat([df_new, df_old], ignore_index=True)
+                else: df_final = df_new
             except: df_final = df_new
             df_final.to_excel(Config.DATA_FILE, index=False)
             return f"🛠️ AUTO-HEAL: Vá thành công {healed_count} phiên bị mất."
@@ -274,37 +273,39 @@ class Auditor:
             # 1. Kiểm tra ngày
             res_date = Utils.chuan_hoa_ngay(ngay_raw)
             if not res_date:
-                return "🛑 LỖI: Ngày không hợp lệ. Vui lòng nhập đúng định dạng DD/MM/YYYY.", "#### LỖI DỮ LIỆU"
+                return "🛑 LỖI: Ngày không hợp lệ. Vui lòng nhập định dạng DD/MM/YYYY.", "#### LỖI DỮ LIỆU"
             dt_obj, std_date = res_date
 
-            # 2. Xử lý chuỗi 27 số
-            chuoi_so = re.sub(r'\D', '', str(chuoi_so)) # Loại bỏ toàn bộ dấu cách/chữ, chỉ giữ lại số
+            # 2. Xử lý chuỗi số (Lọc sạch chỉ lấy chữ số)
+            chuoi_so = re.sub(r'\D', '', str(chuoi_so))
             if len(chuoi_so) < 54:
-                return f"🛑 LỖI: Chuỗi số quá ngắn ({len(chuoi_so)} ký tự). Yêu cầu nhập đủ 27 giải = 54 chữ số liền nhau.", "#### LỖI DỮ LIỆU"
+                return f"🛑 LỖI: Chuỗi số quá ngắn ({len(chuoi_so)} ký tự). Yêu cầu nhập đúng 54 số liền nhau.", "#### LỖI DỮ LIỆU"
             
-            # Cắt thành các cặp 2 số và lấy đúng 27 cặp đầu tiên
+            # Cắt thành cặp 2 số, lấy đúng 27 giải
             loto_list = [chuoi_so[i:i+2] for i in range(0, 54, 2)]
             loto_str = " ".join(loto_list)
 
-            # 3. Ghi vào Database
+            # 3. Ép ghi vào Database bất chấp file lỗi
             db, _ = DatabaseManager.load_db()
             if std_date in db:
-                return f"⚠️ CẢNH BÁO: Dữ liệu phiên {std_date} đã tồn tại trong Hệ thống. Không ghi đè.", f"#### TRẠNG THÁI: BỎ QUA TRÙNG LẶP"
+                return f"⚠️ CẢNH BÁO: Phiên {std_date} đã tồn tại trong Hệ thống. Không ghi đè.", "#### BỎ QUA"
 
             df_new_row = pd.DataFrame([{"Ngày": std_date, "Kết Quả Loto": loto_str}])
-            if os.path.exists(Config.DATA_FILE):
-                df_old = pd.read_excel(Config.DATA_FILE, dtype=str)
-                df_final = pd.concat([df_new_row, df_old], ignore_index=True)
-            else:
-                df_final = df_new_row
+            try:
+                if os.path.exists(Config.DATA_FILE) and os.path.getsize(Config.DATA_FILE) > 0:
+                    df_old = pd.read_excel(Config.DATA_FILE, dtype=str)
+                    df_final = pd.concat([df_new_row, df_old], ignore_index=True)
+                else: df_final = df_new_row
+            except: df_final = df_new_row
+            
             df_final.to_excel(Config.DATA_FILE, index=False)
             
-            # 4. Trả về báo cáo
+            # 4. Báo cáo
             db_new, msg = DatabaseManager.load_db()
             _, latest_dt, next_predict_dt = DatabaseManager.get_boundaries(db_new)
             
             lines = [
-                "📑 [PHÂN HỆ 1] BÁO CÁO: NẠP DỮ LIỆU TỪ TEXTBOX BẰNG TAY",
+                "📑 [PHÂN HỆ 1] BÁO CÁO: NẠP DỮ LIỆU BẰNG TAY (TEXTBOX)",
                 "=================================================================================",
                 f"• Phiên bản hệ thống : {Config.VERSION}",
                 f"• Trạng thái Dữ liệu : {msg}",
@@ -539,8 +540,8 @@ def create_ui():
     db_init, _ = DatabaseManager.load_db()
     _, latest_dt_init, next_predict_dt_init = DatabaseManager.get_boundaries(db_init)
 
-    with gr.Blocks(title="XSMB QUANT V36.13 PRO") as demo:
-        gr.Markdown("# 🚀 XSMB QUANT V36.13 PRO — NHẬP LIỆU TEXTBOX THẦN TỐC")
+    with gr.Blocks(title="XSMB QUANT V36.14 PRO") as demo:
+        gr.Markdown("# 🚀 XSMB QUANT V36.14 PRO — CHỐNG LỖI DB & NHẬP LIỆU TEXTBOX")
         gr.Markdown("*(Đã cấu trúc lại bộ quét Regex siêu đẳng. Bổ sung tính năng Paste thẳng chuỗi 54 ký tự xổ số vào ô văn bản để nạp DB nhanh nhất!)*")
         
         with gr.Row():
@@ -551,7 +552,7 @@ def create_ui():
                 btn_1_sync = gr.Button("⚡ KIỂM TOÁN LẠI DB HIỆN TẠI", variant="secondary")
                 btn_1_crawl = gr.Button("🌐 CẬP NHẬT KẾT QUẢ MỚI (TỰ ĐỘNG CÀO)", variant="primary")
             
-            gr.Markdown("### ✍️ HOẶC NHẬP KẾT QUẢ BẰNG TAY (MANUAL ENTRY)")
+            gr.Markdown("### ✍️ HOẶC NHẬP KẾT QUẢ BẰNG TAY (DÀNH CHO NGÀY CRAWLER BỊ TRỐNG)")
             with gr.Row():
                 txt_1_date = gr.Textbox(label="Ngày (DD/MM/YYYY)", placeholder="Ví dụ: 01/08/2026", scale=1)
                 txt_1_numbers = gr.Textbox(label="Chuỗi 27 số (54 ký tự liền nhau)", placeholder="Copy/Paste thẳng chuỗi số vào đây (VD: 1223273034...)", scale=3)
