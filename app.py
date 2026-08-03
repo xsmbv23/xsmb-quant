@@ -23,7 +23,7 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V36.23 PRO" # (Matrix Sorted)
+    VERSION = "V36.24 PRO" # Tích hợp Hệ thống Chẩn đoán Hộp đen AI
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
@@ -39,7 +39,8 @@ class Config:
         "🎯 2. KHUYẾN NGHỊ LỆNH",
         "🔍 3. KIỂM TOÁN CHUYÊN SÂU",
         "📈 4. PHÂN TÍCH CHU KỲ TỔNG HỢP",
-        "🎰 5. KẾT QUẢ LOTO THEO NGÀY"
+        "🎰 5. KẾT QUẢ LOTO THEO NGÀY",
+        "🤖 6. CHẨN ĐOÁN AI (HỘP ĐEN PROMPT)"
     ]
 
 # ==============================================================================
@@ -309,7 +310,7 @@ class QuantEngine:
         else: return 0.0             
 
 # ==============================================================================
-# 📊 BLOCK 6: AUDIT & REPORTING
+# 📊 BLOCK 6: AUDIT, REPORTING & AI DIAGNOSTICS
 # ==============================================================================
 class Auditor:
     @staticmethod
@@ -604,7 +605,6 @@ class Auditor:
             _, ngay_str = res
             if ngay_str not in db: return f"🛑 DỮ LIỆU RỖNG: Phiên {ngay_str} chưa tồn tại trên hệ thống."
             
-            # SẮP XẾP TOÀN BỘ 27 CON SỐ TỪ BÉ ĐẾN LỚN TRƯỚC KHI HIỂN THỊ
             lo_to_raw = sorted(db[ngay_str]["prizes_int"])
             
             lines = [
@@ -620,6 +620,63 @@ class Auditor:
                     lines.append(row_str.strip())
                     row_str = ""
             return "\n".join(lines)
+        except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
+
+    @staticmethod
+    def phan_he_6_diagnostic_prompt(mode):
+        try:
+            db, msg = DatabaseManager.load_db()
+            min_dt, max_dt, _ = DatabaseManager.get_boundaries(db)
+            
+            if not min_dt or not max_dt:
+                return "🛑 HỆ THỐNG RỖNG: Không thể chạy chẩn đoán do chưa có dữ liệu."
+
+            # Tự động quét 30 ngày gần nhất
+            end_dt = max_dt
+            start_dt = end_dt - timedelta(days=30)
+            
+            curr = start_dt
+            wins, losses = 0, 0
+            total_chi, total_thu = 0, 0
+            
+            while curr <= end_dt:
+                str_dt = curr.strftime("%d/%m/%Y")
+                if str_dt in db:
+                    dan, _ = QuantEngine.get_signal(curr, db, mode)
+                    multiplier = QuantEngine.get_mm_multiplier(curr, db, mode)
+                    pts = int(10 * multiplier) # Giả lập vốn cơ sở 10đ
+                    
+                    if dan is not None and len(dan) > 0 and pts > 0:
+                        nhay = sum(db[str_dt]["prizes_int"].count(x) for x in dan)
+                        chi = len(dan) * pts * Config.COST_PER_POINT
+                        thu = nhay * pts * Config.WIN_PER_NHAY
+                        total_chi += chi
+                        total_thu += thu
+                        if thu > chi: wins += 1
+                        else: losses += 1
+                curr += timedelta(days=1)
+                
+            roi = ((total_thu - total_chi) / total_chi * 100) if total_chi > 0 else 0
+            
+            prompt = f"""[BỆNH ÁN HỆ THỐNG LÕI QUANT - VUI LÒNG COPY GỬI CHO GEMINI]
+
+Lệnh cho Gemini: Hãy đóng vai trò Kỹ sư AI & Chuyên gia Quant DevOps. Đọc báo cáo sau:
+
+1. PHIÊN BẢN HIỆN TẠI: {Config.VERSION}
+2. TRẠNG THÁI DATABASE: {msg}
+3. DỮ LIỆU TỪ: {min_dt.strftime('%d/%m/%Y')} ĐẾN {max_dt.strftime('%d/%m/%Y')}
+4. CHẨN ĐOÁN BACKTEST (30 NGÀY GẦN NHẤT):
+   - Chiến lược đang chạy: {mode}
+   - Tổng lệnh thực khớp: {wins + losses} phiên.
+   - Thắng: {wins} phiên | Thua: {losses} phiên.
+   - Tỷ suất lợi nhuận (ROI): {roi:.2f}%
+
+YÊU CẦU:
+- Phân tích các thông số trên. Nếu ROI âm hoặc tỷ lệ Thắng/Thua thấp, hãy đưa ra giả thuyết tại sao thuật toán bị thị trường bẻ gãy.
+- Đề xuất thay đổi cấu trúc Lõi QuantEngine (VD: chuyển T-7 thành T-3, đổi logic Động lượng).
+- Trả về Lõi Python đã được vá lỗi và nâng cấp."""
+
+            return prompt
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
 def create_ui():
@@ -693,6 +750,13 @@ def create_ui():
             out_5 = gr.Textbox(label="Biên Bản Kết Quả", lines=10)
             btn_5.click(Auditor.phan_he_5_raw, inputs=date_5, outputs=out_5)
 
+        with gr.Column(visible=False) as col_6:
+            gr.Markdown("### 🤖 BỘ NÃO AI - CHẨN ĐOÁN & NÂNG CẤP LÕI")
+            mode_6 = gr.Radio(choices=Config.MODES, value=Config.MODES[0], label="Chọn Chiến lược muốn Chẩn đoán")
+            btn_6 = gr.Button("🧬 TRÍCH XUẤT BỆNH ÁN (TẠO PROMPT)", variant="primary")
+            out_6 = gr.Textbox(label="Mật lệnh Prompt (Copy toàn bộ Text dưới đây gửi cho AI)", lines=15)
+            btn_6.click(Auditor.phan_he_6_diagnostic_prompt, inputs=[mode_6], outputs=out_6)
+
         btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2])
         btn_1_crawl.click(lambda: Auditor.phan_he_1_sync(auto_crawl=True), outputs=[out_1, title_2])
         btn_manual_save.click(Auditor.process_manual_input, inputs=[manual_date, manual_numbers], outputs=[out_1, title_2])
@@ -704,8 +768,9 @@ def create_ui():
                 gr.update(visible=(choice == Config.MENU_OPTIONS[2])),
                 gr.update(visible=(choice == Config.MENU_OPTIONS[3])),
                 gr.update(visible=(choice == Config.MENU_OPTIONS[4])),
+                gr.update(visible=(choice == Config.MENU_OPTIONS[5])),
             ]
-        nav_menu.change(fn=update_visibility, inputs=[nav_menu], outputs=[col_1, col_2, col_3, col_4, col_5])
+        nav_menu.change(fn=update_visibility, inputs=[nav_menu], outputs=[col_1, col_2, col_3, col_4, col_5, col_6])
     return demo
 
 if __name__ == '__main__':
