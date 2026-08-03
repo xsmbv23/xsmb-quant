@@ -23,14 +23,14 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V36.37 PRO (APEX OPTIMIZED)" 
+    VERSION = "V36.38 PRO (EXPANDED PAIRS CORE)" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
     MODES = [
-        "🚀 [QUÂN CỜ VÀNG] SỐ KHUYẾT + SIẾT VỐN BẢO THỦ (Max ROI 7.56% - Max DD 6.9M)",
-        "⚡ [TĂNG TRƯỞNG] SỐ KHUYẾT + VỐN TỰ DO (Tối Ưu Phân Bổ Chuẩn)",
+        "🚀 [MỞ RỘNG CẶP] SỐ KHUYẾN + ĐÁNH CẢ CẶP + SIẾT VỐN BẢO THỦ",
+        "⚡ [MỞ RỘNG CẶP] SỐ KHUYẾN + ĐÁNH CẢ CẶP + VỐN TỰ DO",
         "📊 Giao Dịch Toàn Bộ T-7 (Chỉ dùng để soi Benchmark)"
     ]
     MENU_OPTIONS = [
@@ -213,7 +213,7 @@ class DatabaseManager:
         return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE
+# 🧠 BLOCK 5: QUANT ENGINE (LÕI NHÂN CẶP LỘN SỐ & LỌC TRÙNG)
 # ==============================================================================
 class QuantEngine:
     @staticmethod
@@ -253,9 +253,19 @@ class QuantEngine:
             for p_dt in past_dates[1:3]: 
                 str_p = p_dt.strftime("%d/%m/%Y")
                 recent_2d_3d.update(db[str_p]["prizes_int"])
-            dan_opt = [x for x in so_khuyet_goc if x in recent_2d_3d]
-            trace_log.append(f"[Lõi Số Khuyết Tối Ưu] Lọc số khuyết T-1 + Momentum T-2, T-3. Dàn chuẩn: {len(dan_opt)} mã.")
-            return sorted(list(dan_opt)), "OK", "\n".join(trace_log)
+            
+            dan_base = [x for x in so_khuyet_goc if x in recent_2d_3d]
+            
+            # CƠ CHẾ BỔ SUNG: BẮT CẢ CẶP (LỘN SỐ) & LỌC TRÙNG BẰNG SET
+            dan_cap = set()
+            for x in dan_base:
+                dan_cap.add(x)
+                lon_x = (x % 10) * 10 + (x // 10)
+                dan_cap.add(lon_x)
+                
+            dan_opt = sorted(list(dan_cap))
+            trace_log.append(f"[Lõi Số Khuyết Mở Rộng Cặp] Lọc {len(dan_base)} mã gốc -> Nhân cặp lộn số & khử trùng ra {len(dan_opt)} mã.")
+            return dan_opt, "OK", "\n".join(trace_log)
             
         elif mode == Config.MODES[2]: 
             trace_log.append(f"[Benchmark] Lấy toàn bộ T-7 để so sánh. Dàn: {len(dan_t7)} mã.")
@@ -286,12 +296,12 @@ class QuantEngine:
                         trace_log.append("[MM Log] Max chuỗi thua. Kích hoạt Đứng Ngoài.")
                         break 
                         
-        if mode == Config.MODES[0]: # SIẾT VỐN BẢO THỦ (LÕI MẶC ĐỊNH - ROI 7.56% / Max DD 6.9M)
+        if mode == Config.MODES[0]: # SIẾT VỐN BẢO THỦ
             if streak == 0: mult = 1.0   
             elif streak == 1: mult = 0.5 
             elif streak == 2: mult = 0.2 
             else: mult = 0.0             
-        elif mode == Config.MODES[1]: # VỐN TỰ DO (ROI 6.19% / Max DD 9.5M)
+        elif mode == Config.MODES[1]: # VỐN TỰ DO
             if streak == 0: mult = 1.0   
             elif streak == 1: mult = 0.8 
             elif streak == 2: mult = 0.5 
@@ -597,7 +607,7 @@ class Auditor:
             
             prompt_lines = [
                 f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG - VUI LÒNG COPY GỬI CHO GEMINI TỰ PHẢN BIỆN]",
-                "Lệnh cho Gemini: Phân tích so sánh cả 3 chiến lược và xác nhận trạng thái tối ưu.",
+                "Lệnh cho Gemini: Phân tích so sánh cả 3 chiến lược và đề xuất cấu trúc lại toàn bộ Lõi Quant.",
                 f"1. PHIÊN BẢN: {Config.VERSION}",
                 f"2. QUÉT TRỌN VẸN LỊCH SỬ {total_days_scanned} NGÀY QUA ({start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')})\n",
                 "📊 [BẢNG SO SÁNH HIỆU SUẤT TỔNG LỰC]"
@@ -648,10 +658,10 @@ class Auditor:
                 ])
 
             prompt_lines.extend([
-                "\n⚠️ YÊU CẦU DÀNH CHO GEMINI (XÁC NHẬN TỐI ƯU TOÀN DIỆN):",
-                "1. Hệ thống đã đạt trạng thái cân bằng Nash tuyệt đối giữa ROI (7.56%) và Max DD (6.9M VNĐ).",
-                "2. Xác nhận không cần can thiệp thêm mã nguồn để tránh hiện tượng Overfitting.",
-                "3. Sẵn sàng duy trì vận hành ổn định trên dữ liệu thực tế."
+                "\n⚠️ YÊU CẦU DÀNH CHO GEMINI (MỞ RỘNG CẶP ĐỊNH LƯỢNG):",
+                "1. Tập dữ liệu đã được quét sạch toàn bộ lịch sử với tính năng mở rộng đánh cả cặp lộn số.",
+                "2. Đánh giá tác động của việc nhân cặp đến hiệu suất ROI và sụt giảm vốn.",
+                "3. Viết lại mã Python nếu cần nâng cấp thêm, hoặc xác nhận hệ thống đã tối ưu."
             ])
             return "\n".join(prompt_lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
