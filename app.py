@@ -23,15 +23,15 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V36.32 PRO (ULTIMATE SPEED & FULL HISTORY)" 
+    VERSION = "V36.33 PRO (ULTIMATE DYNAMIC HEDGE)" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
     MODES = [
-        "🚀 [ĐỘC TÔN] SỐ KHUYẾT TỐI ƯU (Momentum T-2, T-3)",
-        "🛡️ [BẢO HIỂM] SỐ KHUYẾT TỐI ƯU (Tự động Đứng ngoài Thứ 3 - Chống Rủi ro)",
-        "Giao Dịch Toàn Bộ T-7 (Chỉ dùng để soi Benchmark)"
+        "🚀 [ĐỘC TÔN] SỐ KHUYẾT TỐI ƯU (Momentum T-2, T-3 - Đã Test 611 Ngày)",
+        "🛡️ [PHÒNG VỆ] SỐ KHUYẾT + CẢM BIẾN CHU KỲ (Đóng băng khi Market nhiễu)",
+        "📊 Giao Dịch Toàn Bộ T-7 (Chỉ dùng để soi Benchmark)"
     ]
     MENU_OPTIONS = [
         "🔄 1. ĐỒNG BỘ & CẬP NHẬT DỮ LIỆU",
@@ -80,14 +80,13 @@ class Utils:
         except: return False, f"🛑 LỖI: '{name}' sai định dạng."
 
 # ==============================================================================
-# 🕸️ BLOCK 3: CRAWLER ĐA TÊN MIỀN (TỐI ƯU HÓA TỐC ĐỘ XÉ GIÓ < 3S)
+# 🕸️ BLOCK 3: CRAWLER ĐA TÊN MIỀN
 # ==============================================================================
 class Crawler:
     @staticmethod
     def _fetch_single_domain(domain):
         url = f"https://{domain}/so-ket-qua-truyen-thong/300"
         try:
-            # Ép time-out cực thấp (3 giây) để loại bỏ ngay lập tức các domain sập/chậm
             res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=3)
             if res.status_code == 200:
                 html_text = res.text
@@ -111,8 +110,6 @@ class Crawler:
         base_domains = ["ketqua.net", "ketqua.vn", "ketquaxoso.net"]
         numeric_domains = [f"ketqua{i}.net" for i in range(16, 51)] + [f"ketqua{i}.net" for i in range(1, 16)]
         domains_to_scan = numeric_domains + base_domains
-        
-        # BUNG TOÀN LỰC 60 LUỒNG SONG SONG - MỌI REQUEST ĐƯỢC GỬI TRONG CÙNG 1 TÍCH TẮC
         with concurrent.futures.ThreadPoolExecutor(max_workers=60) as executor:
             future_to_domain = {executor.submit(Crawler._fetch_single_domain, dom): dom for dom in domains_to_scan}
             for future in concurrent.futures.as_completed(future_to_domain):
@@ -216,7 +213,7 @@ class DatabaseManager:
         return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE (LÕI SỐ KHUYẾT ĐỘC TÔN)
+# 🧠 BLOCK 5: QUANT ENGINE (ĐỘC TÔN & DYNAMIC HEDGE)
 # ==============================================================================
 class QuantEngine:
     @staticmethod
@@ -225,6 +222,7 @@ class QuantEngine:
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
         if not past_dates: return None, "[THIẾU DỮ LIỆU]", "Không có lịch sử."
 
+        # BỐC T-7 ĐỒNG PHA
         target_weekday = target_dt.weekday()
         t_minus_7_dt = None
         for p_dt in past_dates:
@@ -240,6 +238,7 @@ class QuantEngine:
         dan_t7 = set(prizes_t7)
         trace_log.append(f"[T-7 Log] Ngày cần đánh: {target_dt.strftime('%d/%m/%Y')} (Thứ {target_weekday+1}). Lấy T-7 tại {str_t7}.")
 
+        # BỐC T-1
         t_minus_1 = past_dates[0]
         str_t1 = t_minus_1.strftime("%d/%m/%Y")
         trace_log.append(f"[T-1 Log] Phiên quay gần nhất (T-1): {str_t1}.")
@@ -251,28 +250,51 @@ class QuantEngine:
             if x in kq_t1 or lon in kq_t1: tinh_hoa.add(x)
         so_khuyet_goc = set(dan_t7) - tinh_hoa
 
+        # ---------------------------------------------------------
+        # CHUYỂN MẠCH CHIẾN LƯỢC MỚI (V36.33 PRO)
+        # ---------------------------------------------------------
         if mode == Config.MODES[0]: # 🚀 ĐỘC TÔN: SỐ KHUYẾT TỐI ƯU
             recent_2d_3d = set()
             for p_dt in past_dates[1:3]: 
                 str_p = p_dt.strftime("%d/%m/%Y")
                 recent_2d_3d.update(db[str_p]["prizes_int"])
+            
             dan_opt = [x for x in so_khuyet_goc if x in recent_2d_3d]
             trace_log.append(f"[Lõi Độc Tôn] Lọc số khuyết T-1 và ép điều kiện Momentum T-2, T-3. Dàn chuẩn: {len(dan_opt)} mã.")
             return sorted(list(dan_opt)), "OK", "\n".join(trace_log)
             
-        elif mode == Config.MODES[1]: # 🛡️ BẢO HIỂM: SỐ KHUYẾT TỐI ƯU + ĐỨNG NGOÀI THỨ 3
-            if target_dt.weekday() == 1: 
-                trace_log.append("[AI BẢO HIỂM RỦI RO] Kích hoạt rào chắn chu kỳ: Yêu cầu ĐỨNG NGOÀI Thứ 3 (Paper Trade).")
+        elif mode == Config.MODES[1]: # 🛡️ PHÒNG VỆ ĐỘNG (Dynamic Hedge)
+            # CẢM BIẾN CHU KỲ (Nội soi 7 ngày gần nhất)
+            recent_wins = 0
+            recent_trials = 0
+            # Giả lập đánh Mode 0 trong 7 ngày qua để test market
+            for test_dt in past_dates[:7]:
+                test_str = test_dt.strftime("%d/%m/%Y")
+                dan_test, _, _ = QuantEngine.get_signal(test_dt, db, Config.MODES[0])
+                if dan_test and len(dan_test) > 0:
+                    recent_trials += 1
+                    nhay_test = sum(db[test_str]["prizes_int"].count(x) for x in dan_test)
+                    cost_test = len(dan_test) * Config.COST_PER_POINT
+                    rev_test = nhay_test * Config.WIN_PER_NHAY
+                    if rev_test > cost_test: recent_wins += 1
+            
+            win_rate_7d = (recent_wins / recent_trials * 100) if recent_trials > 0 else 100
+            
+            if recent_trials >= 3 and win_rate_7d <= 20.0:
+                trace_log.append(f"[AI PHÒNG VỆ CHỦ ĐỘNG] Cảm biến phát hiện bão (Winrate 7 ngày = {win_rate_7d:.1f}%). Khóa tài khoản (ĐỨNG NGOÀI 0đ) chờ thị trường bình ổn.")
                 return [], "OK", "\n".join(trace_log)
+                
+            # Nếu thị trường bình ổn, đánh như Mode 0
             recent_2d_3d = set()
             for p_dt in past_dates[1:3]: 
                 str_p = p_dt.strftime("%d/%m/%Y")
                 recent_2d_3d.update(db[str_p]["prizes_int"])
+            
             dan_opt = [x for x in so_khuyet_goc if x in recent_2d_3d]
-            trace_log.append(f"[Lõi Bảo Hiểm] Không vướng rào chắn. Lọc số khuyết Momentum T-2, T-3. Dàn chuẩn: {len(dan_opt)} mã.")
+            trace_log.append(f"[Lõi Phòng Vệ] Market an toàn (Winrate 7 ngày = {win_rate_7d:.1f}%). Xuất kích Momentum T-2, T-3. Dàn chuẩn: {len(dan_opt)} mã.")
             return sorted(list(dan_opt)), "OK", "\n".join(trace_log)
             
-        elif mode == Config.MODES[2]: # Giao Dịch Toàn Bộ T-7 (Benchmark)
+        elif mode == Config.MODES[2]: # 📊 Benchmark Toàn bộ T-7
             trace_log.append(f"[Benchmark] Lấy toàn bộ T-7 để so sánh. Dàn: {len(dan_t7)} mã.")
             return sorted(list(dan_t7)), "OK", "\n".join(trace_log)
             
@@ -283,6 +305,7 @@ class QuantEngine:
         streak = 0
         trace_log = []
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
+        
         for curr_dt in past_dates[:40]: 
             str_curr = curr_dt.strftime("%d/%m/%Y")
             dan, _, _ = QuantEngine.get_signal(curr_dt, db, mode)
@@ -305,6 +328,7 @@ class QuantEngine:
         elif streak == 2: mult = 0.5 
         elif streak == 3: mult = 0.3 
         else: mult = 0.0             
+        
         trace_log.append(f"[MM Result] Chuỗi thua hiện tại = {streak} -> Hệ số = {mult}")
         return mult, "\n".join(trace_log)
 
@@ -412,7 +436,7 @@ class Auditor:
             
             for i, mode in enumerate(Config.MODES):
                 dan, msg, sig_trace = QuantEngine.get_signal(d_obj, db, mode)
-                mode_name = f"CHIẾN LƯỢC {i+1}: {mode}" # HIỂN THỊ RÕ TÊN PHƯƠNG ÁN Ở ĐÂY
+                mode_name = f"CHIẾN LƯỢC {i+1}: {mode}"
                 if dan is None: 
                     lines.extend([f"🛑 [{mode_name}]: Thiếu dữ liệu {msg}", f"   > Lý do truy vết: {sig_trace}"])
                 else: 
@@ -592,7 +616,6 @@ class Auditor:
             min_dt, max_dt, _ = DatabaseManager.get_boundaries(db)
             if not min_dt or not max_dt: return "🛑 HỆ THỐNG RỖNG: Không thể chạy chẩn đoán do chưa có dữ liệu."
             
-            # MỞ KHÓA TOÀN BỘ GIỚI HẠN QUÉT LỊCH SỬ!
             start_dt = min_dt
             end_dt = max_dt
             total_days_scanned = (end_dt - start_dt).days + 1
@@ -652,8 +675,8 @@ class Auditor:
             prompt_lines.extend([
                 "\n⚠️ YÊU CẦU DÀNH CHO GEMINI (QUY MÔ LỊCH SỬ LỚN):",
                 "1. Tập dữ liệu đã quét sạch toàn bộ lịch sử có trong DB. Hãy đánh giá độ ổn định thực tế.",
-                "2. Nếu chiến lược nào quá rác (ROI âm, Drawdown cao), hãy mạnh dạn đề xuất XÓA BỎ hoặc GỘP vào chiến lược khác.",
-                "3. Viết lại mã Python để nâng cấp toàn diện Lõi QuantEngine."
+                "2. Đánh giá tính hiệu quả của cơ chế Dynamic Hedge (Phòng vệ động) vừa được cập nhật.",
+                "3. Viết lại mã Python nếu cần nâng cấp thêm, hoặc thông báo hệ thống đã tối ưu."
             ])
             return "\n".join(prompt_lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
