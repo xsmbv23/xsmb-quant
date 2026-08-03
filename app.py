@@ -7,6 +7,8 @@ import calendar
 import re
 import html
 import shutil
+import glob
+import concurrent.futures
 from datetime import datetime, timedelta
 import traceback
 import gradio as gr
@@ -21,9 +23,9 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V36.21 PRO" # Tự động nhảy phiên bản
+    VERSION = "V36.23 PRO" # (Matrix Sorted)
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
-    BACKUP_FILE = "Ket_Qua_Loto27_Backup.bak" # Tự sinh tính năng Backup
+    BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
     MODES = [
@@ -41,7 +43,7 @@ class Config:
     ]
 
 # ==============================================================================
-# 🛠️ BLOCK 2: UTILITIES (XỬ LÝ THỜI GIAN)
+# 🛠️ BLOCK 2: UTILITIES
 # ==============================================================================
 class Utils:
     @staticmethod
@@ -82,9 +84,30 @@ class Utils:
         except: return False, f"🛑 LỖI: '{name}' sai định dạng."
 
 # ==============================================================================
-# 🕸️ BLOCK 3: CRAWLER ĐA TÊN MIỀN (DOMAIN RADAR)
+# 🕸️ BLOCK 3: CRAWLER ĐA TÊN MIỀN - BẮN TỈA ĐA LUỒNG SONG SONG
 # ==============================================================================
 class Crawler:
+    @staticmethod
+    def _fetch_single_domain(domain):
+        url = f"https://{domain}/so-ket-qua-truyen-thong/300"
+        try:
+            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
+            if res.status_code == 200:
+                html_text = res.text
+                parts = re.split(r'(\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b)', html_text)
+                parsed_data = {}
+                for i in range(1, len(parts)-1, 2):
+                    res_date = Utils.chuan_hoa_ngay(parts[i])
+                    if res_date:
+                        clean_text = re.sub(r'<[^>]+>', ' ', html.unescape(parts[i+1]))
+                        nums = re.findall(r'\b\d{2,}\b', clean_text)
+                        if len(nums) >= 27:
+                            parsed_data[res_date[1]] = " ".join([x[-2:] for x in nums[:27]])
+                if len(parsed_data) > 10: 
+                    return True, parsed_data, domain
+        except Exception: pass
+        return False, {}, domain
+
     @staticmethod
     def fetch_ketqua_radar():
         if not HAS_REQUESTS: return False, {}, "Thiếu thư viện 'requests'"
@@ -93,47 +116,26 @@ class Crawler:
         numeric_domains = [f"ketqua{i}.net" for i in range(16, 51)] + [f"ketqua{i}.net" for i in range(1, 16)]
         domains_to_scan = numeric_domains + base_domains
         
-        for domain in domains_to_scan:
-            url = f"https://{domain}/so-ket-qua-truyen-thong/300"
-            try:
-                res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=6)
-                if res.status_code != 200: continue
-                
-                html_text = res.text
-                parts = re.split(r'(\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b)', html_text)
-                parsed_data = {}
-                
-                for i in range(1, len(parts)-1, 2):
-                    date_str_raw = parts[i]
-                    chunk = parts[i+1]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+            future_to_domain = {executor.submit(Crawler._fetch_single_domain, dom): dom for dom in domains_to_scan}
+            for future in concurrent.futures.as_completed(future_to_domain):
+                success, data, domain_name = future.result()
+                if success:
+                    return True, data, f"Quét nhanh đa luồng thành công {len(data)} ngày từ [{domain_name}]"
                     
-                    res_date = Utils.chuan_hoa_ngay(date_str_raw)
-                    if res_date:
-                        _, std_date = res_date
-                        clean_text = re.sub(r'<[^>]+>', ' ', html.unescape(chunk))
-                        nums = re.findall(r'\b\d{2,}\b', clean_text)
-                        if len(nums) >= 27:
-                            prizes = [x[-2:] for x in nums[:27]]
-                            if std_date not in parsed_data:
-                                parsed_data[std_date] = " ".join(prizes)
-                
-                if parsed_data and len(parsed_data) > 10: 
-                    return True, parsed_data, f"Truy xuất thành công {len(parsed_data)} ngày từ {domain}"
-            except Exception:
-                continue 
         return False, {}, "Toàn bộ mạng lưới Ketqua.net đã sập hoặc đổi cấu trúc."
 
 # ==============================================================================
-# 💾 BLOCK 4: QUẢN TRỊ DỮ LIỆU & BẢO VỆ CHỐNG CORRUPT (AUTO-BACKUP)
+# 💾 BLOCK 4: DATABASE & AUTO-BACKUP 3 LỚP (SNAPSHOTS)
 # ==============================================================================
 class DatabaseManager:
     @staticmethod
     def load_db():
         db = {}
-        # TỰ ĐỘNG PHỤC HỒI NẾU FILE GỐC BỊ HỎNG/BIẾN MẤT
         if not os.path.exists(Config.DATA_FILE):
-            if os.path.exists(Config.BACKUP_FILE):
-                shutil.copy(Config.BACKUP_FILE, Config.DATA_FILE)
+            backups = sorted(glob.glob(Config.BACKUP_PREFIX + "*.bak"), reverse=True)
+            if backups:
+                shutil.copy(backups[0], Config.DATA_FILE)
             else:
                 pd.DataFrame(columns=["Ngày", "Kết Quả Loto"]).to_excel(Config.DATA_FILE, index=False)
                 return db, "⚠️ Tệp dữ liệu rỗng."
@@ -153,10 +155,10 @@ class DatabaseManager:
                     }
             return db, f"🟢 ĐỒNG BỘ: {len(db)} PHIÊN."
         except Exception as e: 
-            # Kích hoạt khi bị lỗi Corrupted file
-            if os.path.exists(Config.BACKUP_FILE):
-                shutil.copy(Config.BACKUP_FILE, Config.DATA_FILE)
-                return DatabaseManager.load_db() # Thử đọc lại
+            backups = sorted(glob.glob(Config.BACKUP_PREFIX + "*.bak"), reverse=True)
+            if backups:
+                shutil.copy(backups[0], Config.DATA_FILE)
+                return DatabaseManager.load_db() 
             return db, f"🛑 LỖI ĐỌC:\n{traceback.format_exc()}"
 
     @staticmethod
@@ -168,10 +170,15 @@ class DatabaseManager:
             df_final = pd.DataFrame(all_rows)
             df_final = df_final.sort_values(by='date_parse', ascending=False).drop(columns=['date_parse'])
             
-            # TỰ ĐỘNG BACKUP TRƯỚC KHI GHI ĐÈ
             if os.path.exists(Config.DATA_FILE):
-                shutil.copy(Config.DATA_FILE, Config.BACKUP_FILE)
+                timestamp = Utils.get_vn_time().strftime("%Y%m%d_%H%M%S")
+                backup_name = f"{Config.BACKUP_PREFIX}{timestamp}.bak"
+                shutil.copy(Config.DATA_FILE, backup_name)
                 
+                existing_backups = sorted(glob.glob(Config.BACKUP_PREFIX + "*.bak"), reverse=True)
+                for old_bak in existing_backups[3:]:
+                    os.remove(old_bak)
+                    
             df_final.to_excel(Config.DATA_FILE, index=False)
 
     @staticmethod
@@ -179,20 +186,16 @@ class DatabaseManager:
         res_date = Utils.chuan_hoa_ngay(date_str)
         if not res_date: return "🛑 LỖI NHẬP LIỆU: Ngày không đúng định dạng."
         dt_obj, std_date = res_date
-        
         nums = re.findall(r'\d{2}', str(numbers_str))
         if len(nums) < 27: return f"🛑 LỖI NHẬP LIỆU: Chỉ tìm thấy {len(nums)}/27 con số."
-        nums = nums[:27]
         
         try:
             db, _ = DatabaseManager.load_db()
             db[std_date] = {
-                "date_obj": dt_obj, 
-                "prizes_int": [int(x) for x in nums], 
-                "raw_str": " ".join(nums)
+                "date_obj": dt_obj, "prizes_int": [int(x) for x in nums[:27]], "raw_str": " ".join(nums[:27])
             }
             DatabaseManager.rewrite_clean_db(db)
-            return f"✅ NHẬP TAY THÀNH CÔNG: Đã lưu kết quả ngày {std_date} vào Hệ thống!"
+            return f"✅ NHẬP TAY THÀNH CÔNG: Đã lưu kết quả ngày {std_date}!"
         except Exception as e:
             return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
@@ -217,9 +220,7 @@ class DatabaseManager:
                     nums = re.findall(r'\d{2}', prizes_str)
                     if len(nums) >= 27:
                         db[std_str] = {
-                            "date_obj": dt_obj, 
-                            "prizes_int": [int(x) for x in nums[:27]], 
-                            "raw_str": " ".join(nums[:27])
+                            "date_obj": dt_obj, "prizes_int": [int(x) for x in nums[:27]], "raw_str": " ".join(nums[:27])
                         }
                         healed_count += 1
 
@@ -227,39 +228,41 @@ class DatabaseManager:
             try:
                 DatabaseManager.rewrite_clean_db(db)
                 if healed_count > 0:
-                    return f"✅ AUTO-HEAL: Đã nạp thành công {healed_count} phiên bị mất từ mạng lưới tự động."
-                else:
-                    return "✅ AUTO-HEAL: Dữ liệu liền mạch. Đã chuẩn hóa và Backup hệ thống."
-            except Exception as e:
-                return f"🛑 LỖI GHI FILE TRUY VẾT:\n{traceback.format_exc()}"
+                    return f"✅ AUTO-HEAL: {msg}. Bổ sung {healed_count} phiên bị mất."
+                else: return "✅ AUTO-HEAL: Dữ liệu liền mạch. Auto-Backup 3 lớp hoạt động tốt."
+            except Exception as e: return f"🛑 LỖI GHI FILE:\n{traceback.format_exc()}"
         
-        return "✅ AUTO-HEAL: Dữ liệu đã liền mạch, không có lỗ hổng."
+        return "✅ AUTO-HEAL: Dữ liệu đã liền mạch."
 
     @staticmethod
     def get_boundaries(db):
         now_vn = Utils.get_vn_time()
         today = datetime(now_vn.year, now_vn.month, now_vn.day)
         default_next = today + timedelta(days=1) if now_vn.hour >= 19 else today
-        
         if not db: return None, None, default_next
-            
         all_dates = [info["date_obj"] for info in db.values()]
-        max_dt = max(all_dates)
-        return min(all_dates), max_dt, max_dt + timedelta(days=1)
+        return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE (CHỐNG NHIỄU KỲ NGHỈ LỄ & QUẢN TRỊ VỐN)
+# 🧠 BLOCK 5: QUANT ENGINE (T-7 XUYÊN LỄ TẾT & QUẢN TRỊ VỐN)
 # ==============================================================================
 class QuantEngine:
     @staticmethod
     def get_signal(target_dt, db, mode):
-        t_minus_7 = target_dt - timedelta(days=7)
-        str_t7 = t_minus_7.strftime("%d/%m/%Y")
-        if str_t7 not in db: return None, f"[THIẾU DỮ LIỆU T-7 ({str_t7})]"
+        past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
+        if not past_dates: return None, f"[THIẾU DỮ LIỆU]"
+
+        target_weekday = target_dt.weekday()
+        t_minus_7_dt = None
+        for p_dt in past_dates:
+            if p_dt.weekday() == target_weekday and (target_dt - p_dt).days >= 7:
+                t_minus_7_dt = p_dt
+                break
+                
+        if t_minus_7_dt is None: return None, f"[THIẾU DỮ LIỆU T-7 ĐỒNG PHA]"
+        str_t7 = t_minus_7_dt.strftime("%d/%m/%Y")
         prizes_t7 = db[str_t7]["prizes_int"]
         dan_t7 = set(prizes_t7)
-
-        past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
 
         if mode == Config.MODES[0]:  
             recent_3d = set()
@@ -270,7 +273,6 @@ class QuantEngine:
             return sorted(list(dan_opt)), "OK"
             
         elif mode in [Config.MODES[2], Config.MODES[3]]: 
-            if not past_dates: return None, f"[THIẾU DỮ LIỆU T-1]"
             t_minus_1 = past_dates[0]
             str_t1 = t_minus_1.strftime("%d/%m/%Y")
             
@@ -443,8 +445,7 @@ class Auditor:
             for i, mode in enumerate(Config.MODES):
                 dan, msg = QuantEngine.get_signal(d_obj, db, mode)
                 mode_name = f"CHIẾN LƯỢC {i+1}"
-                if dan is None: 
-                    lines.append(f"🛑 [{mode_name}] {mode}: Thiếu dữ liệu {msg}")
+                if dan is None: lines.append(f"🛑 [{mode_name}] {mode}: Thiếu dữ liệu {msg}")
                 else: 
                     mm_mult = QuantEngine.get_mm_multiplier(d_obj, db, mode)
                     lines.extend(calc_str(dan, mode_name, mm_mult))
@@ -502,18 +503,13 @@ class Auditor:
                                 thu = nhay * adjusted_pts * Config.WIN_PER_NHAY
                                 lai = thu - von
                                 roi = (lai / von * 100) if von > 0 else 0
-                                
                                 tot_von += von
                                 tot_thu += thu
                                 tot_lai += lai
                                 lines.append(f"{short_date:<6} | {d_list:<26} | {adjusted_pts:<4} | {von/1000:>8,.0f} | {thu/1000:>8,.0f} | {lai/1000:>+11,.0f} | {roi:>+6.1f}%")
-                        else:
-                            lines.append(f"{short_date:<6} | {'🚫 KHÔNG CÓ TÍN HIỆU':<26} | {'-':<4} | {'-':<8} | {'-':<8} | {'-':<11} | {'-':<8}")
-                    else:
-                        lines.append(f"{short_date:<6} | ⚠️ Thiếu dữ liệu T-7/T-1{'':<4} | {'-':<4} | {'-':<8} | {'-':<8} | {'-':<11} | {'-':<8}")
-                else:
-                    lines.append(f"{short_date:<6} | ⚪ Chưa có dữ liệu trên DB{'':<1} | {'-':<4} | {'-':<8} | {'-':<8} | {'-':<11} | {'-':<8}")
-                
+                        else: lines.append(f"{short_date:<6} | {'🚫 KHÔNG CÓ TÍN HIỆU':<26} | {'-':<4} | {'-':<8} | {'-':<8} | {'-':<11} | {'-':<8}")
+                    else: lines.append(f"{short_date:<6} | ⚠️ Thiếu dữ liệu T-7/T-1{'':<4} | {'-':<4} | {'-':<8} | {'-':<8} | {'-':<11} | {'-':<8}")
+                else: lines.append(f"{short_date:<6} | ⚪ Chưa có dữ liệu trên DB{'':<1} | {'-':<4} | {'-':<8} | {'-':<8} | {'-':<11} | {'-':<8}")
                 curr += timedelta(days=1)
                 
             tot_roi = (tot_lai / tot_von * 100) if tot_von > 0 else 0
@@ -526,8 +522,7 @@ class Auditor:
                 f"📈 TỶ SUẤT R.O.I      : {tot_roi:+.2f} %"
             ])
             return "\n".join(lines)
-        except Exception as e:
-            return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
+        except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
     @staticmethod
     def phan_he_4_range(tu_ngay_raw, den_ngay_raw, pts_per_code_base, mode):
@@ -535,11 +530,9 @@ class Auditor:
             db, _ = DatabaseManager.load_db()
             res1, res2 = Utils.chuan_hoa_ngay(tu_ngay_raw), Utils.chuan_hoa_ngay(den_ngay_raw)
             if not res1 or not res2: return "🛑 LỖI THÔNG SỐ: Định dạng ngày không hợp lệ."
-            
             start_dt, end_dt = min(res1[0], res2[0]), max(res1[0], res2[0])
             valid, err = Utils.check_valid_number(pts_per_code_base, "Vốn")
             if not valid: return err
-            
             base_pts = float(pts_per_code_base)
             
             lines = [
@@ -557,7 +550,6 @@ class Auditor:
                     dan, msg = QuantEngine.get_signal(curr, db, mode)
                     multiplier = QuantEngine.get_mm_multiplier(curr, db, mode)
                     adjusted_pts = int(base_pts * multiplier)
-                    
                     if dan is not None and len(dan) > 0 and adjusted_pts > 0:
                         sl = len(dan)
                         von = sl * adjusted_pts * Config.COST_PER_POINT
@@ -571,7 +563,7 @@ class Auditor:
                         })
                 curr += timedelta(days=1)
                 
-            if not daily_records: return "\n".join(lines) + "\n🛑 KHÔNG CÓ PHIÊN NÀO XUẤT LỆNH THỰC TẾ (LỌC BỎ PAPER TRADES)."
+            if not daily_records: return "\n".join(lines) + "\n🛑 KHÔNG CÓ PHIÊN NÀO XUẤT LỆNH THỰC TẾ."
             
             df_rec = pd.DataFrame(daily_records)
             lines.extend([
@@ -587,11 +579,9 @@ class Auditor:
                 
             tot_chi, tot_lai = df_rec["chi"].sum(), df_rec["lai"].sum()
             tot_roi = (tot_lai / tot_chi * 100) if tot_chi > 0 else 0
-            
             df_rec['cum_pnl'] = df_rec['lai'].cumsum()
             df_rec['peak'] = df_rec['cum_pnl'].cummax()
-            df_rec['drawdown'] = df_rec['cum_pnl'] - df_rec['peak']
-            max_dd = df_rec['drawdown'].min()
+            max_dd = (df_rec['cum_pnl'] - df_rec['peak']).min()
             
             lines.extend([
                 "===================================================================================================================",
@@ -603,8 +593,7 @@ class Auditor:
                 "==================================================================================================================="
             ])
             return "\n".join(lines)
-        except Exception as e:
-            return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
+        except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
     @staticmethod
     def phan_he_5_raw(ngay_raw):
@@ -614,12 +603,15 @@ class Auditor:
             if not res: return "🛑 LỖI THÔNG SỐ: Định dạng ngày không hợp lệ."
             _, ngay_str = res
             if ngay_str not in db: return f"🛑 DỮ LIỆU RỖNG: Phiên {ngay_str} chưa tồn tại trên hệ thống."
-            lo_to_raw = db[ngay_str]["prizes_int"]
+            
+            # SẮP XẾP TOÀN BỘ 27 CON SỐ TỪ BÉ ĐẾN LỚN TRƯỚC KHI HIỂN THỊ
+            lo_to_raw = sorted(db[ngay_str]["prizes_int"])
+            
             lines = [
                 "📑 KẾT QUẢ LOTO THEO NGÀY",
                 "=======================================================",
                 f"📅 BIÊN BẢN KẾT QUẢ PHIÊN GIAO DỊCH: {ngay_str}",
-                "🎰 Danh sách 27 giải ma trận phẳng:"
+                "🎰 Danh sách 27 giải ma trận phẳng (Đã sắp xếp tăng dần):"
             ]
             row_str = ""
             for idx, lo in enumerate(lo_to_raw):
@@ -643,7 +635,7 @@ def create_ui():
         with gr.Column(visible=True) as col_1:
             with gr.Row():
                 btn_1_sync = gr.Button("⚡ KIỂM TOÁN LẠI DB HIỆN TẠI", variant="secondary")
-                btn_1_crawl = gr.Button("🌐 CẬP NHẬT KẾT QUẢ MỚI (TỰ ĐỘNG CÀO 300 NGÀY)", variant="primary")
+                btn_1_crawl = gr.Button("🌐 CẬP NHẬT KẾT QUẢ MỚI (QUÉT NHANH ĐA LUỒNG)", variant="primary")
             
             gr.Markdown("---")
             gr.Markdown("✍️ **HOẶC NHẬP KẾT QUẢ BẰNG TAY (DÀNH CHO NGÀY CRAWLER BỊ CHẶN)**")
