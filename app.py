@@ -23,16 +23,16 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V36.29 PRO (MASTER DIAGNOSTIC 300 DAYS)" 
+    VERSION = "V36.30 PRO (LÕI QUANT TIẾN HÓA)" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
+    # ĐẬP BỎ TOÀN BỘ RÁC, XOAY TRỤC SANG HỆ "SỐ KHUYẾT"
     MODES = [
-        "🚀 Giao Dịch T-7 ĐỘNG LƯỢNG TỐI ƯU (Cải Tiến Quant V36.2)",
-        "Giao Dịch Toàn Bộ T-7 (Chuẩn Gốc)",
-        "Chỉ Giao Dịch TINH HOA (Lọc Số Khuyết)",
-        "Chỉ Giao Dịch SỐ KHUYẾT (Không Rơi/Đảo)",
+        "🚀 [NEW] SỐ KHUYẾT TỐI ƯU (Kết hợp Momentum T-2, T-3)",
+        "⭐ Giao Dịch SỐ KHUYẾT (Nguyên bản - Hiệu suất cao nhất)",
+        "Giao Dịch Toàn Bộ T-7 (Benchmark So Sánh)"
     ]
     MENU_OPTIONS = [
         "🔄 1. ĐỒNG BỘ & CẬP NHẬT DỮ LIỆU",
@@ -214,7 +214,7 @@ class DatabaseManager:
         return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE
+# 🧠 BLOCK 5: QUANT ENGINE (LÕI SỐ KHUYẾT ĐỘC TÔN)
 # ==============================================================================
 class QuantEngine:
     @staticmethod
@@ -223,6 +223,7 @@ class QuantEngine:
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
         if not past_dates: return None, "[THIẾU DỮ LIỆU]", "Không có lịch sử."
 
+        # Bốc T-7
         target_weekday = target_dt.weekday()
         t_minus_7_dt = None
         for p_dt in past_dates:
@@ -238,39 +239,39 @@ class QuantEngine:
         dan_t7 = set(prizes_t7)
         trace_log.append(f"[T-7 Log] Ngày cần đánh: {target_dt.strftime('%d/%m/%Y')} (Thứ {target_weekday+1}). Lấy T-7 tại {str_t7}.")
 
+        # Bốc T-1
         t_minus_1 = past_dates[0]
         str_t1 = t_minus_1.strftime("%d/%m/%Y")
         trace_log.append(f"[T-1 Log] Phiên quay gần nhất (T-1): {str_t1}.")
 
-        if mode == Config.MODES[0]:  
-            if target_dt.weekday() == 1: 
-                trace_log.append("[Hệ thống AI] RÀO CHẮN CHU KỲ KÍCH HOẠT: ĐỨNG NGOÀI Thứ 3 để bảo toàn vốn.")
-                return [], "OK", "\n".join(trace_log)
+        # TIỀN XỬ LÝ SỐ KHUYẾT (Công thức Thượng tôn từ 300 ngày)
+        kq_t1 = set(db[str_t1]["prizes_int"])
+        tinh_hoa = set()
+        for x in dan_t7:
+            lon = (x % 10) * 10 + (x // 10)
+            if x in kq_t1 or lon in kq_t1: tinh_hoa.add(x)
+        
+        so_khuyet_goc = set(dan_t7) - tinh_hoa
 
-            recent_1d_2d = set()
-            for p_dt in past_dates[:2]: 
+        # PHÂN LUỒNG CHIẾN LƯỢC MỚI
+        if mode == Config.MODES[0]: # [NEW] SỐ KHUYẾT TỐI ƯU
+            # Chỉ lấy số khuyết T-1 mà có xuất hiện ở T-2 hoặc T-3 (Đà Momentum)
+            recent_2d_3d = set()
+            for p_dt in past_dates[1:3]: # Bỏ qua T-1 (index 0)
                 str_p = p_dt.strftime("%d/%m/%Y")
-                recent_1d_2d.update(db[str_p]["prizes_int"])
-                
-            dan_opt = [x for x in dan_t7 if prizes_t7.count(x) >= 2 or x in recent_1d_2d]
-            trace_log.append(f"[Lọc Kép 1] Dàn số sau khi soi T-1, T-2: {len(dan_opt)} mã.")
+                recent_2d_3d.update(db[str_p]["prizes_int"])
             
-            if len(dan_opt) > 10:
-                t1_prizes = set(db[str_t1]["prizes_int"])
-                dan_opt = [x for x in dan_opt if x in t1_prizes]
-                trace_log.append(f"[Lọc Kép 2] Ép khối lượng < 10 mã. Cắt tỉa còn: {len(dan_opt)} mã.")
-
+            dan_opt = [x for x in so_khuyet_goc if x in recent_2d_3d]
+            trace_log.append(f"[Ép Lượng Momentum] Lấy {len(so_khuyet_goc)} mã khuyết T-1, ép phải trùng nhịp rơi của T-2 hoặc T-3. Giữ lại: {len(dan_opt)} mã chuẩn.")
             return sorted(list(dan_opt)), "OK", "\n".join(trace_log)
             
-        elif mode in [Config.MODES[2], Config.MODES[3]]: 
-            kq_t1 = set(db[str_t1]["prizes_int"])
-            tinh_hoa = set()
-            for x in dan_t7:
-                lon = (x % 10) * 10 + (x // 10)
-                if x in kq_t1 or lon in kq_t1: tinh_hoa.add(x)
+        elif mode == Config.MODES[1]: # SỐ KHUYẾT NGUYÊN BẢN (Winner cũ)
+            trace_log.append(f"[Số Khuyết Cổ Điển] Loại bỏ {len(tinh_hoa)} mã rơi/đảo từ T-1. Lọc được {len(so_khuyet_goc)} mã Thuần.")
+            return sorted(list(so_khuyet_goc)), "OK", "\n".join(trace_log)
             
-            if mode == Config.MODES[2]: return sorted(list(tinh_hoa)), "OK", "\n".join(trace_log)
-            else: return sorted(list(dan_t7 - tinh_hoa)), "OK", "\n".join(trace_log)
+        elif mode == Config.MODES[2]: # BENCHMARK GỐC
+            return sorted(list(dan_t7)), "OK", "\n".join(trace_log)
+            
         else: return sorted(list(dan_t7)), "OK", "\n".join(trace_log)
 
     @staticmethod
@@ -378,7 +379,7 @@ class Auditor:
                 lines.extend([
                     "📋 DANH MỤC MÃ SỐ ĐẠT CHUẨN: 👉 🚫 [ĐỨNG NGOÀI]",
                     "-------------------------------------------------------",
-                    "💡 HỆ THỐNG KHUYẾN NGHỊ ĐỨNG NGOÀI THỊ TRƯỜNG PHIÊN NÀY DO BỘ LỌC CẮT RỦI RO."
+                    "💡 HỆ THỐNG KHUYẾN NGHỊ ĐỨNG NGOÀI THỊ TRƯỜNG PHIÊN NÀY."
                 ])
             lines.extend(["\n--- BẢN GHI TRUY VẾT TOÁN HỌC (TRACE LOG) ---", sig_trace, mm_trace])
             return "\n".join(lines)
@@ -590,7 +591,6 @@ class Auditor:
             if not min_dt or not max_dt: return "🛑 HỆ THỐNG RỖNG: Không thể chạy chẩn đoán do chưa có dữ liệu."
             
             end_dt = max_dt
-            # Mở khóa giới hạn: Quét trọn vẹn 300 ngày (hoặc tối đa dữ liệu có thể)
             start_dt = end_dt - timedelta(days=300)
             if start_dt < min_dt:
                 start_dt = min_dt
@@ -599,10 +599,10 @@ class Auditor:
             
             prompt_lines = [
                 f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG - VUI LÒNG COPY GỬI CHO GEMINI TỰ PHẢN BIỆN]",
-                "Lệnh cho Gemini: Phân tích so sánh cả 4 chiến lược và đề xuất cấu trúc lại toàn bộ Lõi Quant.",
+                "Lệnh cho Gemini: Phân tích so sánh cả 3 chiến lược và đề xuất cấu trúc lại toàn bộ Lõi Quant.",
                 f"1. PHIÊN BẢN: {Config.VERSION}",
                 f"2. QUÉT TRỌN VẸN LỊCH SỬ {total_days_scanned} NGÀY QUA ({start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')})\n",
-                "📊 [BẢNG SO SÁNH HIỆU SUẤT 4 CHIẾN LƯỢC TỔNG LỰC]"
+                "📊 [BẢNG SO SÁNH HIỆU SUẤT TỔNG LỰC]"
             ]
             
             for idx, current_mode in enumerate(Config.MODES):
@@ -731,7 +731,7 @@ def create_ui():
 
         with gr.Column(visible=False) as col_6:
             gr.Markdown("### 🤖 BỘ NÃO AI - QUÉT TỔNG LỰC TOÀN HỆ THỐNG (300 NGÀY)")
-            gr.Markdown("Hệ thống sẽ tự động quét cả 4 chiến lược trong toàn bộ 300 ngày lịch sử, so sánh hiệu suất và sinh ra Mật lệnh Tự tiến hóa.")
+            gr.Markdown("Hệ thống sẽ tự động quét cả 3 chiến lược trong toàn bộ 300 ngày lịch sử, so sánh hiệu suất và sinh ra Mật lệnh Tự tiến hóa.")
             btn_6 = gr.Button("🧬 CHẠY QUÉT TỔNG LỰC (TẠO PROMPT)", variant="primary")
             out_6 = gr.Textbox(label="Mật lệnh Prompt (Copy toàn bộ Text dưới đây gửi cho AI để Tự Phản Biện)", lines=25)
             btn_6.click(Auditor.phan_he_6_master_diagnostic_prompt, inputs=[], outputs=out_6)
