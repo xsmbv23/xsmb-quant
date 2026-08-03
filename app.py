@@ -23,14 +23,14 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V36.34 PRO (PURE QUANT CORE)" 
+    VERSION = "V36.36 PRO (CHUYỂN TRỤC BẢO THỦ TỐI ƯU)" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
     MODES = [
-        "🚀 [ĐỘC TÔN] SỐ KHUYẾT TỐI ƯU (Lợi Nhuận Tối Đa - Tối Ưu 611 Ngày)",
-        "🛡️ [SIẾT VỐN BẢO THỦ] SỐ KHUYẾT TỐI ƯU (Hạ Vốn Nhanh - Khóa Rủi Ro)",
+        "🚀 [QUÂN CỜ VÀNG] SỐ KHUYẾT + SIẾT VỐN BẢO THỦ (Max ROI - Max DD 6.9M)",
+        "⚡ [TĂNG TRƯỞNG] SỐ KHUYẾT + VỐN TỰ DO (Tối Ưu Phân Bổ Chuẩn)",
         "📊 Giao Dịch Toàn Bộ T-7 (Chỉ dùng để soi Benchmark)"
     ]
     MENU_OPTIONS = [
@@ -80,7 +80,7 @@ class Utils:
         except: return False, f"🛑 LỖI: '{name}' sai định dạng."
 
 # ==============================================================================
-# 🕸️ BLOCK 3: CRAWLER ĐA TÊN MIỀN (TỐI ƯU TỐC ĐỘ < 3S)
+# 🕸️ BLOCK 3: CRAWLER ĐA TÊN MIỀN
 # ==============================================================================
 class Crawler:
     @staticmethod
@@ -222,7 +222,6 @@ class QuantEngine:
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
         if not past_dates: return None, "[THIẾU DỮ LIỆU]", "Không có lịch sử."
 
-        # BỐC T-7 ĐỒNG PHA
         target_weekday = target_dt.weekday()
         t_minus_7_dt = None
         for p_dt in past_dates:
@@ -238,7 +237,6 @@ class QuantEngine:
         dan_t7 = set(prizes_t7)
         trace_log.append(f"[T-7 Log] Ngày cần đánh: {target_dt.strftime('%d/%m/%Y')} (Thứ {target_weekday+1}). Lấy T-7 tại {str_t7}.")
 
-        # BỐC T-1
         t_minus_1 = past_dates[0]
         str_t1 = t_minus_1.strftime("%d/%m/%Y")
         trace_log.append(f"[T-1 Log] Phiên quay gần nhất (T-1): {str_t1}.")
@@ -250,7 +248,7 @@ class QuantEngine:
             if x in kq_t1 or lon in kq_t1: tinh_hoa.add(x)
         so_khuyet_goc = set(dan_t7) - tinh_hoa
 
-        if mode in [Config.MODES[0], Config.MODES[1]]: # ĐỘC TÔN VÀ SIẾT VỐN DÙNG CHUNG CỐT LÕI MẠNH NHẤT
+        if mode in [Config.MODES[0], Config.MODES[1]]: 
             recent_2d_3d = set()
             for p_dt in past_dates[1:3]: 
                 str_p = p_dt.strftime("%d/%m/%Y")
@@ -259,7 +257,7 @@ class QuantEngine:
             trace_log.append(f"[Lõi Số Khuyết Tối Ưu] Lọc số khuyết T-1 + Momentum T-2, T-3. Dàn chuẩn: {len(dan_opt)} mã.")
             return sorted(list(dan_opt)), "OK", "\n".join(trace_log)
             
-        elif mode == Config.MODES[2]: # 📊 Benchmark Toàn bộ T-7
+        elif mode == Config.MODES[2]: 
             trace_log.append(f"[Benchmark] Lấy toàn bộ T-7 để so sánh. Dàn: {len(dan_t7)} mã.")
             return sorted(list(dan_t7)), "OK", "\n".join(trace_log)
             
@@ -288,17 +286,16 @@ class QuantEngine:
                         trace_log.append("[MM Log] Max chuỗi thua. Kích hoạt Đứng Ngoài.")
                         break 
                         
-        # ĐƯỜNG CONG QUẢN TRỊ VỐN PHÂN HÓA
-        if mode == Config.MODES[0]: # Chuẩn 6.19% ROI
+        if mode == Config.MODES[0]: # SIẾT VỐN BẢO THỦ (LÕI 1 MẶC ĐỊNH - ROI 7.56% / Max DD 6.9M)
+            if streak == 0: mult = 1.0   
+            elif streak == 1: mult = 0.5 
+            elif streak == 2: mult = 0.2 
+            else: mult = 0.0             
+        elif mode == Config.MODES[1]: # VỐN TỰ DO (ROI 6.19% / Max DD 9.5M)
             if streak == 0: mult = 1.0   
             elif streak == 1: mult = 0.8 
             elif streak == 2: mult = 0.5 
             elif streak == 3: mult = 0.3 
-            else: mult = 0.0             
-        elif mode == Config.MODES[1]: # Siết vốn dốc đứng (Bảo thủ - Hạ Max DD)
-            if streak == 0: mult = 1.0   
-            elif streak == 1: mult = 0.5 
-            elif streak == 2: mult = 0.2 
             else: mult = 0.0             
         else:
             if streak == 0: mult = 1.0   
