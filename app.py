@@ -23,14 +23,14 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V36.33 PRO (ULTIMATE DYNAMIC HEDGE)" 
+    VERSION = "V36.34 PRO (PURE QUANT CORE)" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
     MODES = [
-        "🚀 [ĐỘC TÔN] SỐ KHUYẾT TỐI ƯU (Momentum T-2, T-3 - Đã Test 611 Ngày)",
-        "🛡️ [PHÒNG VỆ] SỐ KHUYẾT + CẢM BIẾN CHU KỲ (Đóng băng khi Market nhiễu)",
+        "🚀 [ĐỘC TÔN] SỐ KHUYẾT TỐI ƯU (Lợi Nhuận Tối Đa - Tối Ưu 611 Ngày)",
+        "🛡️ [SIẾT VỐN BẢO THỦ] SỐ KHUYẾT TỐI ƯU (Hạ Vốn Nhanh - Khóa Rủi Ro)",
         "📊 Giao Dịch Toàn Bộ T-7 (Chỉ dùng để soi Benchmark)"
     ]
     MENU_OPTIONS = [
@@ -80,7 +80,7 @@ class Utils:
         except: return False, f"🛑 LỖI: '{name}' sai định dạng."
 
 # ==============================================================================
-# 🕸️ BLOCK 3: CRAWLER ĐA TÊN MIỀN
+# 🕸️ BLOCK 3: CRAWLER ĐA TÊN MIỀN (TỐI ƯU TỐC ĐỘ < 3S)
 # ==============================================================================
 class Crawler:
     @staticmethod
@@ -213,7 +213,7 @@ class DatabaseManager:
         return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE (ĐỘC TÔN & DYNAMIC HEDGE)
+# 🧠 BLOCK 5: QUANT ENGINE
 # ==============================================================================
 class QuantEngine:
     @staticmethod
@@ -250,48 +250,13 @@ class QuantEngine:
             if x in kq_t1 or lon in kq_t1: tinh_hoa.add(x)
         so_khuyet_goc = set(dan_t7) - tinh_hoa
 
-        # ---------------------------------------------------------
-        # CHUYỂN MẠCH CHIẾN LƯỢC MỚI (V36.33 PRO)
-        # ---------------------------------------------------------
-        if mode == Config.MODES[0]: # 🚀 ĐỘC TÔN: SỐ KHUYẾT TỐI ƯU
+        if mode in [Config.MODES[0], Config.MODES[1]]: # ĐỘC TÔN VÀ SIẾT VỐN DÙNG CHUNG CỐT LÕI MẠNH NHẤT
             recent_2d_3d = set()
             for p_dt in past_dates[1:3]: 
                 str_p = p_dt.strftime("%d/%m/%Y")
                 recent_2d_3d.update(db[str_p]["prizes_int"])
-            
             dan_opt = [x for x in so_khuyet_goc if x in recent_2d_3d]
-            trace_log.append(f"[Lõi Độc Tôn] Lọc số khuyết T-1 và ép điều kiện Momentum T-2, T-3. Dàn chuẩn: {len(dan_opt)} mã.")
-            return sorted(list(dan_opt)), "OK", "\n".join(trace_log)
-            
-        elif mode == Config.MODES[1]: # 🛡️ PHÒNG VỆ ĐỘNG (Dynamic Hedge)
-            # CẢM BIẾN CHU KỲ (Nội soi 7 ngày gần nhất)
-            recent_wins = 0
-            recent_trials = 0
-            # Giả lập đánh Mode 0 trong 7 ngày qua để test market
-            for test_dt in past_dates[:7]:
-                test_str = test_dt.strftime("%d/%m/%Y")
-                dan_test, _, _ = QuantEngine.get_signal(test_dt, db, Config.MODES[0])
-                if dan_test and len(dan_test) > 0:
-                    recent_trials += 1
-                    nhay_test = sum(db[test_str]["prizes_int"].count(x) for x in dan_test)
-                    cost_test = len(dan_test) * Config.COST_PER_POINT
-                    rev_test = nhay_test * Config.WIN_PER_NHAY
-                    if rev_test > cost_test: recent_wins += 1
-            
-            win_rate_7d = (recent_wins / recent_trials * 100) if recent_trials > 0 else 100
-            
-            if recent_trials >= 3 and win_rate_7d <= 20.0:
-                trace_log.append(f"[AI PHÒNG VỆ CHỦ ĐỘNG] Cảm biến phát hiện bão (Winrate 7 ngày = {win_rate_7d:.1f}%). Khóa tài khoản (ĐỨNG NGOÀI 0đ) chờ thị trường bình ổn.")
-                return [], "OK", "\n".join(trace_log)
-                
-            # Nếu thị trường bình ổn, đánh như Mode 0
-            recent_2d_3d = set()
-            for p_dt in past_dates[1:3]: 
-                str_p = p_dt.strftime("%d/%m/%Y")
-                recent_2d_3d.update(db[str_p]["prizes_int"])
-            
-            dan_opt = [x for x in so_khuyet_goc if x in recent_2d_3d]
-            trace_log.append(f"[Lõi Phòng Vệ] Market an toàn (Winrate 7 ngày = {win_rate_7d:.1f}%). Xuất kích Momentum T-2, T-3. Dàn chuẩn: {len(dan_opt)} mã.")
+            trace_log.append(f"[Lõi Số Khuyết Tối Ưu] Lọc số khuyết T-1 + Momentum T-2, T-3. Dàn chuẩn: {len(dan_opt)} mã.")
             return sorted(list(dan_opt)), "OK", "\n".join(trace_log)
             
         elif mode == Config.MODES[2]: # 📊 Benchmark Toàn bộ T-7
@@ -320,16 +285,29 @@ class QuantEngine:
                     streak += 1
                     trace_log.append(f"[MM Log] Ngày {str_curr} THUA -> Chuỗi = {streak}.")
                     if streak >= 4:
-                        trace_log.append("[MM Log] Max 4 ngày thua. Kích hoạt Đứng Ngoài.")
+                        trace_log.append("[MM Log] Max chuỗi thua. Kích hoạt Đứng Ngoài.")
                         break 
                         
-        if streak == 0: mult = 1.0   
-        elif streak == 1: mult = 0.8 
-        elif streak == 2: mult = 0.5 
-        elif streak == 3: mult = 0.3 
-        else: mult = 0.0             
-        
-        trace_log.append(f"[MM Result] Chuỗi thua hiện tại = {streak} -> Hệ số = {mult}")
+        # ĐƯỜNG CONG QUẢN TRỊ VỐN PHÂN HÓA
+        if mode == Config.MODES[0]: # Chuẩn 6.19% ROI
+            if streak == 0: mult = 1.0   
+            elif streak == 1: mult = 0.8 
+            elif streak == 2: mult = 0.5 
+            elif streak == 3: mult = 0.3 
+            else: mult = 0.0             
+        elif mode == Config.MODES[1]: # Siết vốn dốc đứng (Bảo thủ - Hạ Max DD)
+            if streak == 0: mult = 1.0   
+            elif streak == 1: mult = 0.5 
+            elif streak == 2: mult = 0.2 
+            else: mult = 0.0             
+        else:
+            if streak == 0: mult = 1.0   
+            elif streak == 1: mult = 0.8 
+            elif streak == 2: mult = 0.5 
+            elif streak == 3: mult = 0.3 
+            else: mult = 0.0
+
+        trace_log.append(f"[MM Result] Chuỗi thua hiện tại = {streak} -> Hệ số vốn = {mult}")
         return mult, "\n".join(trace_log)
 
 # ==============================================================================
@@ -675,7 +653,7 @@ class Auditor:
             prompt_lines.extend([
                 "\n⚠️ YÊU CẦU DÀNH CHO GEMINI (QUY MÔ LỊCH SỬ LỚN):",
                 "1. Tập dữ liệu đã quét sạch toàn bộ lịch sử có trong DB. Hãy đánh giá độ ổn định thực tế.",
-                "2. Đánh giá tính hiệu quả của cơ chế Dynamic Hedge (Phòng vệ động) vừa được cập nhật.",
+                "2. Đánh giá tính hiệu quả của đường cong Siết vốn Bảo thủ mới.",
                 "3. Viết lại mã Python nếu cần nâng cấp thêm, hoặc thông báo hệ thống đã tối ưu."
             ])
             return "\n".join(prompt_lines)
