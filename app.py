@@ -23,7 +23,7 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V36.26 PRO (AI DIAGNOSTIC LÕI SÂU)" 
+    VERSION = "V36.29 PRO (MASTER DIAGNOSTIC 300 DAYS)" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
@@ -40,7 +40,7 @@ class Config:
         "🔍 3. KIỂM TOÁN CHUYÊN SÂU",
         "📈 4. PHÂN TÍCH CHU KỲ TỔNG HỢP",
         "🎰 5. KẾT QUẢ LOTO THEO NGÀY",
-        "🤖 6. CHẨN ĐOÁN AI (HỘP ĐEN PROMPT)"
+        "🤖 6. BỘ NÃO AI (QUÉT TỔNG LỰC 300 NGÀY)"
     ]
 
 # ==============================================================================
@@ -214,7 +214,7 @@ class DatabaseManager:
         return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE (AUTONOMOUS TRACE TRUY VẾT TOÁN HỌC)
+# 🧠 BLOCK 5: QUANT ENGINE
 # ==============================================================================
 class QuantEngine:
     @staticmethod
@@ -236,18 +236,30 @@ class QuantEngine:
         str_t7 = t_minus_7_dt.strftime("%d/%m/%Y")
         prizes_t7 = db[str_t7]["prizes_int"]
         dan_t7 = set(prizes_t7)
-        trace_log.append(f"[T-7 Log] Ngày cần đánh: {target_dt.strftime('%d/%m/%Y')} (Thứ {target_weekday+1}). Lùi quá khứ tìm thấy T-7 hợp lệ tại ngày {str_t7}.")
+        trace_log.append(f"[T-7 Log] Ngày cần đánh: {target_dt.strftime('%d/%m/%Y')} (Thứ {target_weekday+1}). Lấy T-7 tại {str_t7}.")
 
         t_minus_1 = past_dates[0]
         str_t1 = t_minus_1.strftime("%d/%m/%Y")
-        trace_log.append(f"[T-1 Log] Phiên quay thưởng gần nhất (T-1) được xác định là: {str_t1}.")
+        trace_log.append(f"[T-1 Log] Phiên quay gần nhất (T-1): {str_t1}.")
 
         if mode == Config.MODES[0]:  
-            recent_3d = set()
-            for p_dt in past_dates[:3]:
+            if target_dt.weekday() == 1: 
+                trace_log.append("[Hệ thống AI] RÀO CHẮN CHU KỲ KÍCH HOẠT: ĐỨNG NGOÀI Thứ 3 để bảo toàn vốn.")
+                return [], "OK", "\n".join(trace_log)
+
+            recent_1d_2d = set()
+            for p_dt in past_dates[:2]: 
                 str_p = p_dt.strftime("%d/%m/%Y")
-                recent_3d.update(db[str_p]["prizes_int"])
-            dan_opt = [x for x in dan_t7 if prizes_t7.count(x) >= 2 or x in recent_3d]
+                recent_1d_2d.update(db[str_p]["prizes_int"])
+                
+            dan_opt = [x for x in dan_t7 if prizes_t7.count(x) >= 2 or x in recent_1d_2d]
+            trace_log.append(f"[Lọc Kép 1] Dàn số sau khi soi T-1, T-2: {len(dan_opt)} mã.")
+            
+            if len(dan_opt) > 10:
+                t1_prizes = set(db[str_t1]["prizes_int"])
+                dan_opt = [x for x in dan_opt if x in t1_prizes]
+                trace_log.append(f"[Lọc Kép 2] Ép khối lượng < 10 mã. Cắt tỉa còn: {len(dan_opt)} mã.")
+
             return sorted(list(dan_opt)), "OK", "\n".join(trace_log)
             
         elif mode in [Config.MODES[2], Config.MODES[3]]: 
@@ -275,13 +287,13 @@ class QuantEngine:
                 cost = len(dan) * Config.COST_PER_POINT
                 rev = nhay * Config.WIN_PER_NHAY
                 if rev - cost > 0:
-                    trace_log.append(f"[MM Log] Gặp ngày WIN ({str_curr}). Cắt đứt đếm chuỗi.")
+                    trace_log.append(f"[MM Log] Cắt chuỗi tại ngày WIN ({str_curr}).")
                     break 
                 else:
                     streak += 1
                     trace_log.append(f"[MM Log] Ngày {str_curr} THUA -> Chuỗi = {streak}.")
                     if streak >= 4:
-                        trace_log.append("[MM Log] Đạt max 4 ngày thua. Kích hoạt Đứng Ngoài.")
+                        trace_log.append("[MM Log] Max 4 ngày thua. Kích hoạt Đứng Ngoài.")
                         break 
                         
         if streak == 0: mult = 1.0   
@@ -290,11 +302,11 @@ class QuantEngine:
         elif streak == 3: mult = 0.3 
         else: mult = 0.0             
         
-        trace_log.append(f"[MM Result] Tổng chuỗi thua = {streak} -> Hệ số vốn = {mult}")
+        trace_log.append(f"[MM Result] Chuỗi thua hiện tại = {streak} -> Hệ số = {mult}")
         return mult, "\n".join(trace_log)
 
 # ==============================================================================
-# 📊 BLOCK 6: AUDIT, REPORTING & AI DIAGNOSTICS (V36.26)
+# 📊 BLOCK 6: AUDIT, REPORTING & AI MASTER DIAGNOSTICS (300 DAYS)
 # ==============================================================================
 class Auditor:
     @staticmethod
@@ -362,7 +374,12 @@ class Auditor:
                         f" • Phân bổ : {adjusted_pts} điểm/mã (Hệ số x{multiplier}) | 💰 TỔNG VỐN: {von_ngay:,.0f} VND",
                         f"💡 MỤC TIÊU HÒA VỐN   : Cần tối thiểu {diem_hoa_von} lượt trúng."
                     ])
-            else: lines.append("📋 👉 🚫 [KHÔNG CÓ TÍN HIỆU KHẢ THI]")
+            else: 
+                lines.extend([
+                    "📋 DANH MỤC MÃ SỐ ĐẠT CHUẨN: 👉 🚫 [ĐỨNG NGOÀI]",
+                    "-------------------------------------------------------",
+                    "💡 HỆ THỐNG KHUYẾN NGHỊ ĐỨNG NGOÀI THỊ TRƯỜNG PHIÊN NÀY DO BỘ LỌC CẮT RỦI RO."
+                ])
             lines.extend(["\n--- BẢN GHI TRUY VẾT TOÁN HỌC (TRACE LOG) ---", sig_trace, mm_trace])
             return "\n".join(lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
@@ -399,7 +416,7 @@ class Auditor:
                     mult, mm_trace = QuantEngine.get_mm_multiplier(d_obj, db, mode)
                     sl = len(dan)
                     if sl == 0:
-                        lines.append(f"🛑 [{mode_name}] 👉 KHÔNG CÓ MÃ ĐẠT CHUẨN")
+                        lines.append(f"🛑 [{mode_name}] 👉 KHÔNG CÓ MÃ ĐẠT CHUẨN (ĐỨNG NGOÀI)")
                     else:
                         adjusted_pts = int(float(pts_per_code_base) * mult)
                         nhay = sum(db[ngay_str]["prizes_int"].count(x) for x in dan)
@@ -474,7 +491,7 @@ class Auditor:
                                 tot_thu += thu
                                 tot_lai += lai
                                 lines.append(f"{short_date:<6} | {d_list:<26} | {adjusted_pts:<4} | {von/1000:>8,.0f} | {thu/1000:>8,.0f} | {lai/1000:>+11,.0f} | {roi:>+6.1f}%")
-                        else: lines.append(f"{short_date:<6} | {'🚫 KHÔNG CÓ TÍN HIỆU':<26} | {'-':<4} | {'-':<8} | {'-':<8} | {'-':<11} | {'-':<8}")
+                        else: lines.append(f"{short_date:<6} | {'🚫 [ĐỨNG NGOÀI]':<26} | {'-':<4} | {'-':<8} | {'-':<8} | {'-':<11} | {'-':<8}")
                     else: lines.append(f"{short_date:<6} | ⚠️ Thiếu dữ liệu T-7/T-1{'':<4} | {'-':<4} | {'-':<8} | {'-':<8} | {'-':<11} | {'-':<8}")
                 else: lines.append(f"{short_date:<6} | ⚪ Chưa có dữ liệu trên DB{'':<1} | {'-':<4} | {'-':<8} | {'-':<8} | {'-':<11} | {'-':<8}")
                 curr += timedelta(days=1)
@@ -566,125 +583,79 @@ class Auditor:
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
     @staticmethod
-    def phan_he_6_diagnostic_prompt(mode):
+    def phan_he_6_master_diagnostic_prompt():
         try:
             db, msg = DatabaseManager.load_db()
             min_dt, max_dt, _ = DatabaseManager.get_boundaries(db)
             if not min_dt or not max_dt: return "🛑 HỆ THỐNG RỖNG: Không thể chạy chẩn đoán do chưa có dữ liệu."
             
             end_dt = max_dt
-            start_dt = end_dt - timedelta(days=30)
-            curr = start_dt
+            # Mở khóa giới hạn: Quét trọn vẹn 300 ngày (hoặc tối đa dữ liệu có thể)
+            start_dt = end_dt - timedelta(days=300)
+            if start_dt < min_dt:
+                start_dt = min_dt
             
-            wins, losses, total_chi, total_thu = 0, 0, 0, 0
-            daily_pnls = []
-            win_pnls = []
-            loss_pnls = []
-            total_codes = 0
-            days_with_codes = 0
+            total_days_scanned = (end_dt - start_dt).days + 1
             
-            multipliers_count = {1.0: 0, 0.8: 0, 0.5: 0, 0.3: 0, 0.0: 0}
-            weekday_stats = {i: {'wins': 0, 'total': 0} for i in range(7)}
-            current_losing_streak = 0
-            max_losing_streak = 0
+            prompt_lines = [
+                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG - VUI LÒNG COPY GỬI CHO GEMINI TỰ PHẢN BIỆN]",
+                "Lệnh cho Gemini: Phân tích so sánh cả 4 chiến lược và đề xuất cấu trúc lại toàn bộ Lõi Quant.",
+                f"1. PHIÊN BẢN: {Config.VERSION}",
+                f"2. QUÉT TRỌN VẸN LỊCH SỬ {total_days_scanned} NGÀY QUA ({start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')})\n",
+                "📊 [BẢNG SO SÁNH HIỆU SUẤT 4 CHIẾN LƯỢC TỔNG LỰC]"
+            ]
             
-            day_names = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
-            
-            while curr <= end_dt:
-                str_dt = curr.strftime("%d/%m/%Y")
-                if str_dt in db:
-                    dan, _, _ = QuantEngine.get_signal(curr, db, mode)
-                    multiplier, _ = QuantEngine.get_mm_multiplier(curr, db, mode)
-                    
-                    mult_key = round(multiplier, 1)
-                    if mult_key in multipliers_count: multipliers_count[mult_key] += 1
-                    
-                    pts = int(10 * multiplier)
-                    wd = curr.weekday()
-                    
-                    if dan is not None and len(dan) > 0:
-                        total_codes += len(dan)
-                        days_with_codes += 1
-                        
-                        if pts > 0:
-                            nhay = sum(db[str_dt]["prizes_int"].count(x) for x in dan)
-                            chi = len(dan) * pts * Config.COST_PER_POINT
-                            thu = nhay * pts * Config.WIN_PER_NHAY
-                            lai = thu - chi
-                            
-                            total_chi += chi
-                            total_thu += thu
-                            daily_pnls.append(lai)
-                            weekday_stats[wd]['total'] += 1
-                            
-                            if lai > 0:
-                                wins += 1
-                                win_pnls.append(lai)
-                                weekday_stats[wd]['wins'] += 1
-                                current_losing_streak = 0
-                            else:
-                                losses += 1
-                                loss_pnls.append(lai)
-                                current_losing_streak += 1
-                                if current_losing_streak > max_losing_streak: max_losing_streak = current_losing_streak
-                        else:
-                            # Đứng ngoài nhưng vẫn tính nháp để bẻ cầu
-                            nhay = sum(db[str_dt]["prizes_int"].count(x) for x in dan)
-                            paper_chi = len(dan) * 10 * Config.COST_PER_POINT
-                            paper_thu = nhay * 10 * Config.WIN_PER_NHAY
-                            if paper_thu > paper_chi:
-                                current_losing_streak = 0
-                            else:
-                                current_losing_streak += 1
-                                if current_losing_streak > max_losing_streak: max_losing_streak = current_losing_streak
-                curr += timedelta(days=1)
+            for idx, current_mode in enumerate(Config.MODES):
+                curr = start_dt
+                wins, losses, total_chi, total_thu = 0, 0, 0, 0
+                daily_pnls = []
+                total_codes = 0
+                days_with_codes = 0
                 
-            roi = ((total_thu - total_chi) / total_chi * 100) if total_chi > 0 else 0
-            profit_factor = (total_thu / total_chi) if total_chi > 0 else 0
-            avg_win = (sum(win_pnls) / len(win_pnls)) if win_pnls else 0
-            avg_loss = (sum(loss_pnls) / len(loss_pnls)) if loss_pnls else 0
-            avg_codes = (total_codes / days_with_codes) if days_with_codes > 0 else 0
-            
-            # Tính Max Drawdown
-            cum_pnl = np.cumsum(daily_pnls) if daily_pnls else []
-            peak = np.maximum.accumulate(cum_pnl) if len(cum_pnl) > 0 else []
-            drawdowns = cum_pnl - peak if len(cum_pnl) > 0 else []
-            max_dd = abs(min(drawdowns)) if len(drawdowns) > 0 else 0
-            
-            # Chuẩn bị chuỗi ngày tuần
-            wd_str = ""
-            for i in range(7):
-                t = weekday_stats[i]['total']
-                w = weekday_stats[i]['wins']
-                if t > 0:
-                    wd_str += f"\n   - {day_names[i]}: Thắng {w}/{t} ({w/t*100:.1f}%)"
-                    
-            prompt = f"""[HỒ SƠ SINH HỌC QUANT LÕI - VUI LÒNG COPY GỬI CHO GEMINI TỰ PHẢN BIỆN]
+                while curr <= end_dt:
+                    str_dt = curr.strftime("%d/%m/%Y")
+                    if str_dt in db:
+                        dan, _, _ = QuantEngine.get_signal(curr, db, current_mode)
+                        multiplier, _ = QuantEngine.get_mm_multiplier(curr, db, current_mode)
+                        pts = int(10 * multiplier)
+                        
+                        if dan is not None and len(dan) > 0:
+                            total_codes += len(dan)
+                            days_with_codes += 1
+                            if pts > 0:
+                                nhay = sum(db[str_dt]["prizes_int"].count(x) for x in dan)
+                                chi = len(dan) * pts * Config.COST_PER_POINT
+                                thu = nhay * pts * Config.WIN_PER_NHAY
+                                lai = thu - chi
+                                total_chi += chi
+                                total_thu += thu
+                                daily_pnls.append(lai)
+                                if lai > 0: wins += 1
+                                else: losses += 1
+                    curr += timedelta(days=1)
+                
+                roi = ((total_thu - total_chi) / total_chi * 100) if total_chi > 0 else 0
+                avg_codes = (total_codes / days_with_codes) if days_with_codes > 0 else 0
+                
+                cum_pnl = np.cumsum(daily_pnls) if daily_pnls else []
+                peak = np.maximum.accumulate(cum_pnl) if len(cum_pnl) > 0 else []
+                drawdowns = cum_pnl - peak if len(cum_pnl) > 0 else []
+                max_dd = abs(min(drawdowns)) if len(drawdowns) > 0 else 0
+                
+                prompt_lines.extend([
+                    f"➤ CHIẾN LƯỢC {idx+1}: {current_mode}",
+                    f"   - ROI: {roi:.2f}% | Max Drawdown: {max_dd:,.0f} đ",
+                    f"   - Win/Loss: {wins}W / {losses}L | TB Mã: {avg_codes:.1f} mã/ngày",
+                    "-" * 40
+                ])
 
-Lệnh cho Gemini: Phân tích sâu Mật lệnh này và nâng cấp thuật toán.
-
-1. BẢN CHẤT HỆ THỐNG: {Config.VERSION} (Chiến lược: {mode})
-2. QUÉT TRONG 30 NGÀY QUA ({start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')})
-
-🔬 [A] CHỈ SỐ RỦI RO & HIỆU SUẤT:
-- Tỷ suất lợi nhuận (ROI): {roi:.2f}%
-- Max Drawdown (Sụt vốn tối đa): {max_dd:,.0f} VNĐ
-- Profit Factor (Hệ số LN): {profit_factor:.2f}
-- Tỷ lệ Lệnh: Thắng {wins} / Thua {losses} (Tổng thực đánh: {wins + losses})
-- Trung bình Lãi/ngày thắng: {avg_win:+,.0f} VNĐ
-- Trung bình Lỗ/ngày thua: {avg_loss:+,.0f} VNĐ
-
-🛡️ [B] HIỆU SUẤT BỘ LỌC VỐN ANTI-MARTINGALE:
-- Chuỗi thua Max (Losing Streak): {max_losing_streak} ngày.
-- Hoạt động Vốn: 100% ({multipliers_count.get(1.0,0)} ngày) | 80% ({multipliers_count.get(0.8,0)} ngày) | 50% ({multipliers_count.get(0.5,0)} ngày) | 30% ({multipliers_count.get(0.3,0)} ngày) | 0% Đứng ngoài ({multipliers_count.get(0.0,0)} ngày)
-
-🧩 [C] ĐỘ NHIỄU DỮ LIỆU & CHU KỲ:
-- Khối lượng mã trung bình: {avg_codes:.1f} mã/ngày
-- Tỷ lệ Thắng theo ngày trong tuần: {wd_str}
-
-⚠️ YÊU CẦU DÀNH CHO GEMINI:
-Bằng nghiệp vụ Quant: Phân tích Max Drawdown và Tỷ lệ thắng theo ngày. Nếu bộ lọc quá lỏng (mã/ngày cao) hoặc có ngày nào đó tỷ lệ thua > 80%, hãy tự viết đè lại thuật toán T-7 để cắt đuôi rủi ro. Xuất mã Python mới."""
-            return prompt
+            prompt_lines.extend([
+                "\n⚠️ YÊU CẦU DÀNH CHO GEMINI (QUY MÔ 300 NGÀY LỚN):",
+                "1. Tập dữ liệu 300 ngày cực kỳ chính xác. Hãy so sánh tỷ lệ sinh lời và độ rủi ro dài hạn.",
+                "2. Nếu chiến lược nào quá rác (ROI âm, Drawdown cao), hãy mạnh dạn đề xuất XÓA BỎ hoặc GỘP vào chiến lược khác.",
+                "3. Viết lại mã Python để nâng cấp toàn diện Lõi QuantEngine."
+            ])
+            return "\n".join(prompt_lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
 def create_ui():
@@ -759,11 +730,11 @@ def create_ui():
             btn_5.click(Auditor.phan_he_5_raw, inputs=date_5, outputs=out_5)
 
         with gr.Column(visible=False) as col_6:
-            gr.Markdown("### 🤖 BỘ NÃO AI - CHẨN ĐOÁN & NÂNG CẤP LÕI SÂU")
-            mode_6 = gr.Radio(choices=Config.MODES, value=Config.MODES[0], label="Chọn Chiến lược muốn Chẩn đoán")
-            btn_6 = gr.Button("🧬 TRÍCH XUẤT HỒ SƠ SINH HỌC (TẠO PROMPT)", variant="primary")
-            out_6 = gr.Textbox(label="Mật lệnh Prompt (Copy toàn bộ Text dưới đây gửi cho AI để tự vá lỗi)", lines=22)
-            btn_6.click(Auditor.phan_he_6_diagnostic_prompt, inputs=[mode_6], outputs=out_6)
+            gr.Markdown("### 🤖 BỘ NÃO AI - QUÉT TỔNG LỰC TOÀN HỆ THỐNG (300 NGÀY)")
+            gr.Markdown("Hệ thống sẽ tự động quét cả 4 chiến lược trong toàn bộ 300 ngày lịch sử, so sánh hiệu suất và sinh ra Mật lệnh Tự tiến hóa.")
+            btn_6 = gr.Button("🧬 CHẠY QUÉT TỔNG LỰC (TẠO PROMPT)", variant="primary")
+            out_6 = gr.Textbox(label="Mật lệnh Prompt (Copy toàn bộ Text dưới đây gửi cho AI để Tự Phản Biện)", lines=25)
+            btn_6.click(Auditor.phan_he_6_master_diagnostic_prompt, inputs=[], outputs=out_6)
 
         btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2])
         btn_1_crawl.click(lambda: Auditor.phan_he_1_sync(auto_crawl=True), outputs=[out_1, title_2])
