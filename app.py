@@ -23,12 +23,11 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V36.31 PRO (KỶ NGUYÊN ĐỘC TÔN)" 
+    VERSION = "V36.32 PRO (ULTIMATE SPEED & FULL HISTORY)" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
-    # LÕI ĐÃ ĐƯỢC THANH LỌC - CHỈ GIỮ LẠI NHỮNG GÌ TINH TÚY NHẤT SAU 300 NGÀY
     MODES = [
         "🚀 [ĐỘC TÔN] SỐ KHUYẾT TỐI ƯU (Momentum T-2, T-3)",
         "🛡️ [BẢO HIỂM] SỐ KHUYẾT TỐI ƯU (Tự động Đứng ngoài Thứ 3 - Chống Rủi ro)",
@@ -40,7 +39,7 @@ class Config:
         "🔍 3. KIỂM TOÁN CHUYÊN SÂU",
         "📈 4. PHÂN TÍCH CHU KỲ TỔNG HỢP",
         "🎰 5. KẾT QUẢ LOTO THEO NGÀY",
-        "🤖 6. BỘ NÃO AI (QUÉT TỔNG LỰC 300 NGÀY)"
+        "🤖 6. BỘ NÃO AI (QUÉT TỔNG LỰC TOÀN BỘ LỊCH SỬ DB)"
     ]
 
 # ==============================================================================
@@ -81,14 +80,15 @@ class Utils:
         except: return False, f"🛑 LỖI: '{name}' sai định dạng."
 
 # ==============================================================================
-# 🕸️ BLOCK 3: CRAWLER ĐA TÊN MIỀN
+# 🕸️ BLOCK 3: CRAWLER ĐA TÊN MIỀN (TỐI ƯU HÓA TỐC ĐỘ XÉ GIÓ < 3S)
 # ==============================================================================
 class Crawler:
     @staticmethod
     def _fetch_single_domain(domain):
         url = f"https://{domain}/so-ket-qua-truyen-thong/300"
         try:
-            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
+            # Ép time-out cực thấp (3 giây) để loại bỏ ngay lập tức các domain sập/chậm
+            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=3)
             if res.status_code == 200:
                 html_text = res.text
                 parts = re.split(r'(\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b)', html_text)
@@ -111,12 +111,14 @@ class Crawler:
         base_domains = ["ketqua.net", "ketqua.vn", "ketquaxoso.net"]
         numeric_domains = [f"ketqua{i}.net" for i in range(16, 51)] + [f"ketqua{i}.net" for i in range(1, 16)]
         domains_to_scan = numeric_domains + base_domains
-        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        
+        # BUNG TOÀN LỰC 60 LUỒNG SONG SONG - MỌI REQUEST ĐƯỢC GỬI TRONG CÙNG 1 TÍCH TẮC
+        with concurrent.futures.ThreadPoolExecutor(max_workers=60) as executor:
             future_to_domain = {executor.submit(Crawler._fetch_single_domain, dom): dom for dom in domains_to_scan}
             for future in concurrent.futures.as_completed(future_to_domain):
                 success, data, domain_name = future.result()
-                if success: return True, data, f"Quét thành công {len(data)} ngày từ [{domain_name}]"
-        return False, {}, "Toàn bộ mạng lưới Ketqua đã sập."
+                if success: return True, data, f"Quét chớp nhoáng đa luồng thành công {len(data)} ngày từ [{domain_name}]"
+        return False, {}, "Toàn bộ mạng lưới Ketqua đã sập hoặc Time-out > 3s."
 
 # ==============================================================================
 # 💾 BLOCK 4: DATABASE & AUTO-BACKUP
@@ -214,7 +216,7 @@ class DatabaseManager:
         return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE (LÕI "SỐ KHUYẾT TỐI ƯU" ĐỘC TÔN)
+# 🧠 BLOCK 5: QUANT ENGINE (LÕI SỐ KHUYẾT ĐỘC TÔN)
 # ==============================================================================
 class QuantEngine:
     @staticmethod
@@ -223,7 +225,6 @@ class QuantEngine:
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
         if not past_dates: return None, "[THIẾU DỮ LIỆU]", "Không có lịch sử."
 
-        # BỐC T-7 ĐỒNG PHA
         target_weekday = target_dt.weekday()
         t_minus_7_dt = None
         for p_dt in past_dates:
@@ -239,7 +240,6 @@ class QuantEngine:
         dan_t7 = set(prizes_t7)
         trace_log.append(f"[T-7 Log] Ngày cần đánh: {target_dt.strftime('%d/%m/%Y')} (Thứ {target_weekday+1}). Lấy T-7 tại {str_t7}.")
 
-        # BỐC T-1 VÀ LỌC SỐ KHUYẾT
         t_minus_1 = past_dates[0]
         str_t1 = t_minus_1.strftime("%d/%m/%Y")
         trace_log.append(f"[T-1 Log] Phiên quay gần nhất (T-1): {str_t1}.")
@@ -249,33 +249,25 @@ class QuantEngine:
         for x in dan_t7:
             lon = (x % 10) * 10 + (x // 10)
             if x in kq_t1 or lon in kq_t1: tinh_hoa.add(x)
-        
         so_khuyet_goc = set(dan_t7) - tinh_hoa
 
-        # ---------------------------------------------------------
-        # CHUYỂN MẠCH CHIẾN LƯỢC MỚI
-        # ---------------------------------------------------------
         if mode == Config.MODES[0]: # 🚀 ĐỘC TÔN: SỐ KHUYẾT TỐI ƯU
-            # Lấy Momentum đà rơi từ T-2 và T-3
             recent_2d_3d = set()
             for p_dt in past_dates[1:3]: 
                 str_p = p_dt.strftime("%d/%m/%Y")
                 recent_2d_3d.update(db[str_p]["prizes_int"])
-            
             dan_opt = [x for x in so_khuyet_goc if x in recent_2d_3d]
             trace_log.append(f"[Lõi Độc Tôn] Lọc số khuyết T-1 và ép điều kiện Momentum T-2, T-3. Dàn chuẩn: {len(dan_opt)} mã.")
             return sorted(list(dan_opt)), "OK", "\n".join(trace_log)
             
         elif mode == Config.MODES[1]: # 🛡️ BẢO HIỂM: SỐ KHUYẾT TỐI ƯU + ĐỨNG NGOÀI THỨ 3
-            if target_dt.weekday() == 1: # 0=Thứ 2, 1=Thứ 3
-                trace_log.append("[AI BẢO HIỂM RỦI RO] Kích hoạt rào chắn chu kỳ: Nhận diện Thứ 3 có lịch sử Drawdown khổng lồ. Yêu cầu ĐỨNG NGOÀI (Paper Trade).")
+            if target_dt.weekday() == 1: 
+                trace_log.append("[AI BẢO HIỂM RỦI RO] Kích hoạt rào chắn chu kỳ: Yêu cầu ĐỨNG NGOÀI Thứ 3 (Paper Trade).")
                 return [], "OK", "\n".join(trace_log)
-                
             recent_2d_3d = set()
             for p_dt in past_dates[1:3]: 
                 str_p = p_dt.strftime("%d/%m/%Y")
                 recent_2d_3d.update(db[str_p]["prizes_int"])
-            
             dan_opt = [x for x in so_khuyet_goc if x in recent_2d_3d]
             trace_log.append(f"[Lõi Bảo Hiểm] Không vướng rào chắn. Lọc số khuyết Momentum T-2, T-3. Dàn chuẩn: {len(dan_opt)} mã.")
             return sorted(list(dan_opt)), "OK", "\n".join(trace_log)
@@ -291,7 +283,6 @@ class QuantEngine:
         streak = 0
         trace_log = []
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
-        
         for curr_dt in past_dates[:40]: 
             str_curr = curr_dt.strftime("%d/%m/%Y")
             dan, _, _ = QuantEngine.get_signal(curr_dt, db, mode)
@@ -314,12 +305,11 @@ class QuantEngine:
         elif streak == 2: mult = 0.5 
         elif streak == 3: mult = 0.3 
         else: mult = 0.0             
-        
         trace_log.append(f"[MM Result] Chuỗi thua hiện tại = {streak} -> Hệ số = {mult}")
         return mult, "\n".join(trace_log)
 
 # ==============================================================================
-# 📊 BLOCK 6: AUDIT, REPORTING & AI MASTER DIAGNOSTICS (300 DAYS)
+# 📊 BLOCK 6: AUDIT, REPORTING & AI MASTER DIAGNOSTICS
 # ==============================================================================
 class Auditor:
     @staticmethod
@@ -422,9 +412,9 @@ class Auditor:
             
             for i, mode in enumerate(Config.MODES):
                 dan, msg, sig_trace = QuantEngine.get_signal(d_obj, db, mode)
-                mode_name = f"CHIẾN LƯỢC {i+1}"
+                mode_name = f"CHIẾN LƯỢC {i+1}: {mode}" # HIỂN THỊ RÕ TÊN PHƯƠNG ÁN Ở ĐÂY
                 if dan is None: 
-                    lines.extend([f"🛑 [{mode_name}] {mode}: Thiếu dữ liệu {msg}", f"   > Lý do truy vết: {sig_trace}"])
+                    lines.extend([f"🛑 [{mode_name}]: Thiếu dữ liệu {msg}", f"   > Lý do truy vết: {sig_trace}"])
                 else: 
                     mult, mm_trace = QuantEngine.get_mm_multiplier(d_obj, db, mode)
                     sl = len(dan)
@@ -602,11 +592,9 @@ class Auditor:
             min_dt, max_dt, _ = DatabaseManager.get_boundaries(db)
             if not min_dt or not max_dt: return "🛑 HỆ THỐNG RỖNG: Không thể chạy chẩn đoán do chưa có dữ liệu."
             
+            # MỞ KHÓA TOÀN BỘ GIỚI HẠN QUÉT LỊCH SỬ!
+            start_dt = min_dt
             end_dt = max_dt
-            start_dt = end_dt - timedelta(days=300)
-            if start_dt < min_dt:
-                start_dt = min_dt
-            
             total_days_scanned = (end_dt - start_dt).days + 1
             
             prompt_lines = [
@@ -662,8 +650,8 @@ class Auditor:
                 ])
 
             prompt_lines.extend([
-                "\n⚠️ YÊU CẦU DÀNH CHO GEMINI (QUY MÔ 300 NGÀY LỚN):",
-                "1. Tập dữ liệu 300 ngày cực kỳ chính xác. Hãy so sánh tỷ lệ sinh lời và độ rủi ro dài hạn.",
+                "\n⚠️ YÊU CẦU DÀNH CHO GEMINI (QUY MÔ LỊCH SỬ LỚN):",
+                "1. Tập dữ liệu đã quét sạch toàn bộ lịch sử có trong DB. Hãy đánh giá độ ổn định thực tế.",
                 "2. Nếu chiến lược nào quá rác (ROI âm, Drawdown cao), hãy mạnh dạn đề xuất XÓA BỎ hoặc GỘP vào chiến lược khác.",
                 "3. Viết lại mã Python để nâng cấp toàn diện Lõi QuantEngine."
             ])
@@ -742,9 +730,9 @@ def create_ui():
             btn_5.click(Auditor.phan_he_5_raw, inputs=date_5, outputs=out_5)
 
         with gr.Column(visible=False) as col_6:
-            gr.Markdown("### 🤖 BỘ NÃO AI - QUÉT TỔNG LỰC TOÀN HỆ THỐNG (300 NGÀY)")
-            gr.Markdown("Hệ thống sẽ tự động quét cả 3 chiến lược trong toàn bộ 300 ngày lịch sử, so sánh hiệu suất và sinh ra Mật lệnh Tự tiến hóa.")
-            btn_6 = gr.Button("🧬 CHẠY QUÉT TỔNG LỰC (TẠO PROMPT)", variant="primary")
+            gr.Markdown("### 🤖 BỘ NÃO AI - QUÉT TỔNG LỰC TOÀN BỘ LỊCH SỬ DB")
+            gr.Markdown("Hệ thống sẽ tự động quét cả 3 chiến lược trong TOÀN BỘ dữ liệu lịch sử hiện có, so sánh hiệu suất và sinh ra Mật lệnh.")
+            btn_6 = gr.Button("🧬 CHẠY QUÉT TOÀN BỘ DB (TẠO PROMPT)", variant="primary")
             out_6 = gr.Textbox(label="Mật lệnh Prompt (Copy toàn bộ Text dưới đây gửi cho AI để Tự Phản Biện)", lines=25)
             btn_6.click(Auditor.phan_he_6_master_diagnostic_prompt, inputs=[], outputs=out_6)
 
