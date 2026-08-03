@@ -6,6 +6,7 @@ import math
 import calendar
 import re
 import html
+import shutil
 from datetime import datetime, timedelta
 import traceback
 import gradio as gr
@@ -20,8 +21,9 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V36.18 PRO"
+    VERSION = "V36.21 PRO" # Tự động nhảy phiên bản
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
+    BACKUP_FILE = "Ket_Qua_Loto27_Backup.bak" # Tự sinh tính năng Backup
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
     MODES = [
@@ -80,50 +82,61 @@ class Utils:
         except: return False, f"🛑 LỖI: '{name}' sai định dạng."
 
 # ==============================================================================
-# 🕸️ BLOCK 3: CRAWLER KETQUA16.NET
+# 🕸️ BLOCK 3: CRAWLER ĐA TÊN MIỀN (DOMAIN RADAR)
 # ==============================================================================
 class Crawler:
     @staticmethod
-    def fetch_ketqua16():
+    def fetch_ketqua_radar():
         if not HAS_REQUESTS: return False, {}, "Thiếu thư viện 'requests'"
-        url = "https://ketqua16.net/so-ket-qua-truyen-thong/300"
-        try:
-            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
-            if res.status_code != 200: return False, {}, f"HTTP {res.status_code}"
-            
-            html_text = res.text
-            parts = re.split(r'(\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b)', html_text)
-            parsed_data = {}
-            
-            for i in range(1, len(parts)-1, 2):
-                date_str_raw = parts[i]
-                chunk = parts[i+1]
+        
+        base_domains = ["ketqua.net", "ketqua.vn", "ketquaxoso.net"]
+        numeric_domains = [f"ketqua{i}.net" for i in range(16, 51)] + [f"ketqua{i}.net" for i in range(1, 16)]
+        domains_to_scan = numeric_domains + base_domains
+        
+        for domain in domains_to_scan:
+            url = f"https://{domain}/so-ket-qua-truyen-thong/300"
+            try:
+                res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=6)
+                if res.status_code != 200: continue
                 
-                res_date = Utils.chuan_hoa_ngay(date_str_raw)
-                if res_date:
-                    _, std_date = res_date
-                    clean_text = re.sub(r'<[^>]+>', ' ', html.unescape(chunk))
-                    nums = re.findall(r'\b\d{2,}\b', clean_text)
-                    if len(nums) >= 27:
-                        prizes = [x[-2:] for x in nums[:27]]
-                        if std_date not in parsed_data:
-                            parsed_data[std_date] = " ".join(prizes)
-            
-            if parsed_data: return True, parsed_data, "Truy xuất thành công 300 ngày từ ketqua16.net"
-            return False, {}, "Không tìm thấy cấu trúc 27 giải"
-        except Exception as e:
-            return False, {}, f"Lỗi Crawler: {traceback.format_exc()}"
+                html_text = res.text
+                parts = re.split(r'(\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b)', html_text)
+                parsed_data = {}
+                
+                for i in range(1, len(parts)-1, 2):
+                    date_str_raw = parts[i]
+                    chunk = parts[i+1]
+                    
+                    res_date = Utils.chuan_hoa_ngay(date_str_raw)
+                    if res_date:
+                        _, std_date = res_date
+                        clean_text = re.sub(r'<[^>]+>', ' ', html.unescape(chunk))
+                        nums = re.findall(r'\b\d{2,}\b', clean_text)
+                        if len(nums) >= 27:
+                            prizes = [x[-2:] for x in nums[:27]]
+                            if std_date not in parsed_data:
+                                parsed_data[std_date] = " ".join(prizes)
+                
+                if parsed_data and len(parsed_data) > 10: 
+                    return True, parsed_data, f"Truy xuất thành công {len(parsed_data)} ngày từ {domain}"
+            except Exception:
+                continue 
+        return False, {}, "Toàn bộ mạng lưới Ketqua.net đã sập hoặc đổi cấu trúc."
 
 # ==============================================================================
-# 💾 BLOCK 4: QUẢN TRỊ DỮ LIỆU & AUTO-HEAL
+# 💾 BLOCK 4: QUẢN TRỊ DỮ LIỆU & BẢO VỆ CHỐNG CORRUPT (AUTO-BACKUP)
 # ==============================================================================
 class DatabaseManager:
     @staticmethod
     def load_db():
         db = {}
+        # TỰ ĐỘNG PHỤC HỒI NẾU FILE GỐC BỊ HỎNG/BIẾN MẤT
         if not os.path.exists(Config.DATA_FILE):
-            pd.DataFrame(columns=["Ngày", "Kết Quả Loto"]).to_excel(Config.DATA_FILE, index=False)
-            return db, "⚠️ Tệp dữ liệu rỗng."
+            if os.path.exists(Config.BACKUP_FILE):
+                shutil.copy(Config.BACKUP_FILE, Config.DATA_FILE)
+            else:
+                pd.DataFrame(columns=["Ngày", "Kết Quả Loto"]).to_excel(Config.DATA_FILE, index=False)
+                return db, "⚠️ Tệp dữ liệu rỗng."
         try:
             df = pd.read_excel(Config.DATA_FILE, dtype=str)
             for _, row in df.iterrows():
@@ -139,7 +152,12 @@ class DatabaseManager:
                         "raw_str": " ".join([f"{x:02d}" for x in loto_list[:27]])
                     }
             return db, f"🟢 ĐỒNG BỘ: {len(db)} PHIÊN."
-        except Exception as e: return db, f"🛑 LỖI ĐỌC:\n{traceback.format_exc()}"
+        except Exception as e: 
+            # Kích hoạt khi bị lỗi Corrupted file
+            if os.path.exists(Config.BACKUP_FILE):
+                shutil.copy(Config.BACKUP_FILE, Config.DATA_FILE)
+                return DatabaseManager.load_db() # Thử đọc lại
+            return db, f"🛑 LỖI ĐỌC:\n{traceback.format_exc()}"
 
     @staticmethod
     def rewrite_clean_db(db):
@@ -149,12 +167,17 @@ class DatabaseManager:
         if all_rows:
             df_final = pd.DataFrame(all_rows)
             df_final = df_final.sort_values(by='date_parse', ascending=False).drop(columns=['date_parse'])
+            
+            # TỰ ĐỘNG BACKUP TRƯỚC KHI GHI ĐÈ
+            if os.path.exists(Config.DATA_FILE):
+                shutil.copy(Config.DATA_FILE, Config.BACKUP_FILE)
+                
             df_final.to_excel(Config.DATA_FILE, index=False)
 
     @staticmethod
     def save_manual_data(date_str, numbers_str):
         res_date = Utils.chuan_hoa_ngay(date_str)
-        if not res_date: return "🛑 LỖI NHẬP LIỆU: Ngày không đúng định dạng (VD: 01/08/2026)."
+        if not res_date: return "🛑 LỖI NHẬP LIỆU: Ngày không đúng định dạng."
         dt_obj, std_date = res_date
         
         nums = re.findall(r'\d{2}', str(numbers_str))
@@ -178,7 +201,7 @@ class DatabaseManager:
         db, _ = DatabaseManager.load_db()
         now_vn = Utils.get_vn_time()
         
-        success, parsed_data, msg = Crawler.fetch_ketqua16()
+        success, parsed_data, msg = Crawler.fetch_ketqua_radar()
         if not success:
             return f"🛑 LỖI CRAWLER:\n{msg}\n👉 Vui lòng dùng chức năng Nhập Tay bên dưới!"
             
@@ -204,9 +227,9 @@ class DatabaseManager:
             try:
                 DatabaseManager.rewrite_clean_db(db)
                 if healed_count > 0:
-                    return f"✅ AUTO-HEAL: Đã nạp thành công {healed_count} phiên bị mất & Chuẩn hóa Format File."
+                    return f"✅ AUTO-HEAL: Đã nạp thành công {healed_count} phiên bị mất từ mạng lưới tự động."
                 else:
-                    return "✅ AUTO-HEAL: Dữ liệu liền mạch. Đã chuẩn hóa Format File thành công."
+                    return "✅ AUTO-HEAL: Dữ liệu liền mạch. Đã chuẩn hóa và Backup hệ thống."
             except Exception as e:
                 return f"🛑 LỖI GHI FILE TRUY VẾT:\n{traceback.format_exc()}"
         
@@ -225,28 +248,32 @@ class DatabaseManager:
         return min(all_dates), max_dt, max_dt + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE & MONEY MANAGEMENT
+# 🧠 BLOCK 5: QUANT ENGINE (CHỐNG NHIỄU KỲ NGHỈ LỄ & QUẢN TRỊ VỐN)
 # ==============================================================================
 class QuantEngine:
     @staticmethod
     def get_signal(target_dt, db, mode):
         t_minus_7 = target_dt - timedelta(days=7)
         str_t7 = t_minus_7.strftime("%d/%m/%Y")
-        if str_t7 not in db: return None, f"[THIẾU DỮ LIỆU T-7 ({str_t7})] - Hãy Cập nhật/Nhập tay!"
+        if str_t7 not in db: return None, f"[THIẾU DỮ LIỆU T-7 ({str_t7})]"
         prizes_t7 = db[str_t7]["prizes_int"]
         dan_t7 = set(prizes_t7)
 
+        past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
+
         if mode == Config.MODES[0]:  
             recent_3d = set()
-            for d in range(1, 4):
-                str_p = (target_dt - timedelta(days=d)).strftime("%d/%m/%Y")
-                if str_p in db: recent_3d.update(db[str_p]["prizes_int"])
+            for p_dt in past_dates[:3]:
+                str_p = p_dt.strftime("%d/%m/%Y")
+                recent_3d.update(db[str_p]["prizes_int"])
             dan_opt = [x for x in dan_t7 if prizes_t7.count(x) >= 2 or x in recent_3d]
             return sorted(list(dan_opt)), "OK"
+            
         elif mode in [Config.MODES[2], Config.MODES[3]]: 
-            t_minus_1 = target_dt - timedelta(days=1)
+            if not past_dates: return None, f"[THIẾU DỮ LIỆU T-1]"
+            t_minus_1 = past_dates[0]
             str_t1 = t_minus_1.strftime("%d/%m/%Y")
-            if str_t1 not in db: return None, f"[THIẾU DỮ LIỆU T-1 ({str_t1})]"
+            
             kq_t1 = set(db[str_t1]["prizes_int"])
             tinh_hoa = set()
             for x in dan_t7:
@@ -258,35 +285,26 @@ class QuantEngine:
 
     @staticmethod
     def get_mm_multiplier(target_dt, db, mode):
-        """
-        Thuật toán Quản trị vốn Anti-Martingale: Dò ngược quá khứ để đếm chuỗi Lỗ (Drawdown).
-        Tự động bẻ gãy chuỗi nếu gặp Win (ngay cả khi đó là 1 lệnh Paper Trade 0đ).
-        """
         streak = 0
-        curr_dt = target_dt - timedelta(days=1)
+        past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
         
-        for _ in range(40): # Giới hạn dò tối đa 40 ngày để tránh lặp vô hạn
+        for curr_dt in past_dates[:40]: 
             str_curr = curr_dt.strftime("%d/%m/%Y")
-            if str_curr in db:
-                dan, _ = QuantEngine.get_signal(curr_dt, db, mode)
-                if dan is not None and len(dan) > 0:
-                    # Kiểm tra Win/Loss tiêu chuẩn của lệnh
-                    nhay = sum(db[str_curr]["prizes_int"].count(x) for x in dan)
-                    cost = len(dan) * Config.COST_PER_POINT
-                    rev = nhay * Config.WIN_PER_NHAY
-                    if rev - cost > 0:
-                        break # Tìm thấy ngày Lãi -> Reset chuỗi
-                    else:
-                        streak += 1
-                        if streak >= 4:
-                            break # Chuỗi thua đã max, dừng đếm
-            curr_dt -= timedelta(days=1)
-            
-        if streak == 0: return 1.0   # 100% Vốn (10đ)
-        elif streak == 1: return 0.8 # 80% Vốn (8đ)
-        elif streak == 2: return 0.5 # 50% Vốn (5đ)
-        elif streak == 3: return 0.3 # 30% Vốn (3đ)
-        else: return 0.0             # Đứng ngoài chờ Cầu (0đ)
+            dan, _ = QuantEngine.get_signal(curr_dt, db, mode)
+            if dan is not None and len(dan) > 0:
+                nhay = sum(db[str_curr]["prizes_int"].count(x) for x in dan)
+                cost = len(dan) * Config.COST_PER_POINT
+                rev = nhay * Config.WIN_PER_NHAY
+                if rev - cost > 0: break 
+                else:
+                    streak += 1
+                    if streak >= 4: break 
+                        
+        if streak == 0: return 1.0   
+        elif streak == 1: return 0.8 
+        elif streak == 2: return 0.5 
+        elif streak == 3: return 0.3 
+        else: return 0.0             
 
 # ==============================================================================
 # 📊 BLOCK 6: AUDIT & REPORTING
@@ -348,7 +366,6 @@ class Auditor:
             so_luong_lo = len(dan)
             if so_luong_lo > 0:
                 dan_str = " ".join([f"{x:02d}" for x in dan])
-                
                 if adjusted_pts == 0:
                     lines.extend([
                         f"📋 DANH MỤC MÃ SỐ ({so_luong_lo} MÃ):", f" [ {dan_str} ]",
@@ -402,7 +419,6 @@ class Auditor:
             def calc_str(danh_sach, name, multiplier):
                 sl = len(danh_sach)
                 if sl == 0: return [f"🛑 [{name}] 👉 KHÔNG CÓ MÃ ĐẠT CHUẨN"]
-                
                 adjusted_pts = int(float(pts_per_code_base) * multiplier)
                 nhay = sum(db[ngay_str]["prizes_int"].count(x) for x in danh_sach)
                 
@@ -413,7 +429,6 @@ class Auditor:
                         f" • Đạt {nhay} lượt. Điểm đánh: 0 (Đứt Cầu Đứng Ngoài)",
                         f" 👉 PnL RÒNG: 0 VNĐ (Chế độ Backtest)"
                     ]
-                
                 chi = sl * adjusted_pts * Config.COST_PER_POINT
                 thu = nhay * adjusted_pts * Config.WIN_PER_NHAY
                 lai = thu - chi
@@ -432,7 +447,7 @@ class Auditor:
                     lines.append(f"🛑 [{mode_name}] {mode}: Thiếu dữ liệu {msg}")
                 else: 
                     mm_mult = QuantEngine.get_mm_multiplier(d_obj, db, mode)
-                    lines.extend(calc_str(dan, mode, mm_mult))
+                    lines.extend(calc_str(dan, mode_name, mm_mult))
                 lines.append("------------------------------------------------------------------------")
             return "\n".join(lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
@@ -442,7 +457,7 @@ class Auditor:
         try:
             db, _ = DatabaseManager.load_db()
             m = re.match(r'^(\d{1,2})[-/.](\d{4})$', str(month_raw).strip())
-            if not m: return "🛑 LỖI ĐỊNH DẠNG: Vui lòng nhập tháng dạng MM/YYYY (VD: 08/2026)."
+            if not m: return "🛑 LỖI ĐỊNH DẠNG: Vui lòng nhập tháng dạng MM/YYYY."
             thang, nam = int(m.group(1)), int(m.group(2))
             
             valid, err = Utils.check_valid_number(pts_per_code_base, "Vốn")
@@ -480,7 +495,6 @@ class Auditor:
                             d_list = f"{sl:>2} mã: {dan_str}"
                             
                             if adjusted_pts == 0:
-                                # Paper Trade
                                 lines.append(f"{short_date:<6} | {d_list:<26} | {0:<4} | {'0':<8} | {'0':<8} | {'[ĐỨNG NGOÀI]':<11} | {'-':<8}")
                             else:
                                 von = sl * adjusted_pts * Config.COST_PER_POINT
@@ -494,11 +508,11 @@ class Auditor:
                                 tot_lai += lai
                                 lines.append(f"{short_date:<6} | {d_list:<26} | {adjusted_pts:<4} | {von/1000:>8,.0f} | {thu/1000:>8,.0f} | {lai/1000:>+11,.0f} | {roi:>+6.1f}%")
                         else:
-                            lines.append(f"{short_date:<6} | {'🚫 KHÔNG CÓ TÍN HIỆU ĐẠT CHUẨN':<26} | {'-':<4} | {'-':<8} | {'-':<8} | {'-':<11} | {'-':<8}")
+                            lines.append(f"{short_date:<6} | {'🚫 KHÔNG CÓ TÍN HIỆU':<26} | {'-':<4} | {'-':<8} | {'-':<8} | {'-':<11} | {'-':<8}")
                     else:
                         lines.append(f"{short_date:<6} | ⚠️ Thiếu dữ liệu T-7/T-1{'':<4} | {'-':<4} | {'-':<8} | {'-':<8} | {'-':<11} | {'-':<8}")
                 else:
-                    lines.append(f"{short_date:<6} | ⚪ Chưa có kết quả trên Server{'':<1} | {'-':<4} | {'-':<8} | {'-':<8} | {'-':<11} | {'-':<8}")
+                    lines.append(f"{short_date:<6} | ⚪ Chưa có dữ liệu trên DB{'':<1} | {'-':<4} | {'-':<8} | {'-':<8} | {'-':<11} | {'-':<8}")
                 
                 curr += timedelta(days=1)
                 
