@@ -23,16 +23,16 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V36.30 PRO (LÕI QUANT TIẾN HÓA)" 
+    VERSION = "V36.31 PRO (KỶ NGUYÊN ĐỘC TÔN)" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
-    # ĐẬP BỎ TOÀN BỘ RÁC, XOAY TRỤC SANG HỆ "SỐ KHUYẾT"
+    # LÕI ĐÃ ĐƯỢC THANH LỌC - CHỈ GIỮ LẠI NHỮNG GÌ TINH TÚY NHẤT SAU 300 NGÀY
     MODES = [
-        "🚀 [NEW] SỐ KHUYẾT TỐI ƯU (Kết hợp Momentum T-2, T-3)",
-        "⭐ Giao Dịch SỐ KHUYẾT (Nguyên bản - Hiệu suất cao nhất)",
-        "Giao Dịch Toàn Bộ T-7 (Benchmark So Sánh)"
+        "🚀 [ĐỘC TÔN] SỐ KHUYẾT TỐI ƯU (Momentum T-2, T-3)",
+        "🛡️ [BẢO HIỂM] SỐ KHUYẾT TỐI ƯU (Tự động Đứng ngoài Thứ 3 - Chống Rủi ro)",
+        "Giao Dịch Toàn Bộ T-7 (Chỉ dùng để soi Benchmark)"
     ]
     MENU_OPTIONS = [
         "🔄 1. ĐỒNG BỘ & CẬP NHẬT DỮ LIỆU",
@@ -214,7 +214,7 @@ class DatabaseManager:
         return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE (LÕI SỐ KHUYẾT ĐỘC TÔN)
+# 🧠 BLOCK 5: QUANT ENGINE (LÕI "SỐ KHUYẾT TỐI ƯU" ĐỘC TÔN)
 # ==============================================================================
 class QuantEngine:
     @staticmethod
@@ -223,7 +223,7 @@ class QuantEngine:
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
         if not past_dates: return None, "[THIẾU DỮ LIỆU]", "Không có lịch sử."
 
-        # Bốc T-7
+        # BỐC T-7 ĐỒNG PHA
         target_weekday = target_dt.weekday()
         t_minus_7_dt = None
         for p_dt in past_dates:
@@ -239,12 +239,11 @@ class QuantEngine:
         dan_t7 = set(prizes_t7)
         trace_log.append(f"[T-7 Log] Ngày cần đánh: {target_dt.strftime('%d/%m/%Y')} (Thứ {target_weekday+1}). Lấy T-7 tại {str_t7}.")
 
-        # Bốc T-1
+        # BỐC T-1 VÀ LỌC SỐ KHUYẾT
         t_minus_1 = past_dates[0]
         str_t1 = t_minus_1.strftime("%d/%m/%Y")
         trace_log.append(f"[T-1 Log] Phiên quay gần nhất (T-1): {str_t1}.")
 
-        # TIỀN XỬ LÝ SỐ KHUYẾT (Công thức Thượng tôn từ 300 ngày)
         kq_t1 = set(db[str_t1]["prizes_int"])
         tinh_hoa = set()
         for x in dan_t7:
@@ -253,23 +252,36 @@ class QuantEngine:
         
         so_khuyet_goc = set(dan_t7) - tinh_hoa
 
-        # PHÂN LUỒNG CHIẾN LƯỢC MỚI
-        if mode == Config.MODES[0]: # [NEW] SỐ KHUYẾT TỐI ƯU
-            # Chỉ lấy số khuyết T-1 mà có xuất hiện ở T-2 hoặc T-3 (Đà Momentum)
+        # ---------------------------------------------------------
+        # CHUYỂN MẠCH CHIẾN LƯỢC MỚI
+        # ---------------------------------------------------------
+        if mode == Config.MODES[0]: # 🚀 ĐỘC TÔN: SỐ KHUYẾT TỐI ƯU
+            # Lấy Momentum đà rơi từ T-2 và T-3
             recent_2d_3d = set()
-            for p_dt in past_dates[1:3]: # Bỏ qua T-1 (index 0)
+            for p_dt in past_dates[1:3]: 
                 str_p = p_dt.strftime("%d/%m/%Y")
                 recent_2d_3d.update(db[str_p]["prizes_int"])
             
             dan_opt = [x for x in so_khuyet_goc if x in recent_2d_3d]
-            trace_log.append(f"[Ép Lượng Momentum] Lấy {len(so_khuyet_goc)} mã khuyết T-1, ép phải trùng nhịp rơi của T-2 hoặc T-3. Giữ lại: {len(dan_opt)} mã chuẩn.")
+            trace_log.append(f"[Lõi Độc Tôn] Lọc số khuyết T-1 và ép điều kiện Momentum T-2, T-3. Dàn chuẩn: {len(dan_opt)} mã.")
             return sorted(list(dan_opt)), "OK", "\n".join(trace_log)
             
-        elif mode == Config.MODES[1]: # SỐ KHUYẾT NGUYÊN BẢN (Winner cũ)
-            trace_log.append(f"[Số Khuyết Cổ Điển] Loại bỏ {len(tinh_hoa)} mã rơi/đảo từ T-1. Lọc được {len(so_khuyet_goc)} mã Thuần.")
-            return sorted(list(so_khuyet_goc)), "OK", "\n".join(trace_log)
+        elif mode == Config.MODES[1]: # 🛡️ BẢO HIỂM: SỐ KHUYẾT TỐI ƯU + ĐỨNG NGOÀI THỨ 3
+            if target_dt.weekday() == 1: # 0=Thứ 2, 1=Thứ 3
+                trace_log.append("[AI BẢO HIỂM RỦI RO] Kích hoạt rào chắn chu kỳ: Nhận diện Thứ 3 có lịch sử Drawdown khổng lồ. Yêu cầu ĐỨNG NGOÀI (Paper Trade).")
+                return [], "OK", "\n".join(trace_log)
+                
+            recent_2d_3d = set()
+            for p_dt in past_dates[1:3]: 
+                str_p = p_dt.strftime("%d/%m/%Y")
+                recent_2d_3d.update(db[str_p]["prizes_int"])
             
-        elif mode == Config.MODES[2]: # BENCHMARK GỐC
+            dan_opt = [x for x in so_khuyet_goc if x in recent_2d_3d]
+            trace_log.append(f"[Lõi Bảo Hiểm] Không vướng rào chắn. Lọc số khuyết Momentum T-2, T-3. Dàn chuẩn: {len(dan_opt)} mã.")
+            return sorted(list(dan_opt)), "OK", "\n".join(trace_log)
+            
+        elif mode == Config.MODES[2]: # Giao Dịch Toàn Bộ T-7 (Benchmark)
+            trace_log.append(f"[Benchmark] Lấy toàn bộ T-7 để so sánh. Dàn: {len(dan_t7)} mã.")
             return sorted(list(dan_t7)), "OK", "\n".join(trace_log)
             
         else: return sorted(list(dan_t7)), "OK", "\n".join(trace_log)
@@ -379,7 +391,7 @@ class Auditor:
                 lines.extend([
                     "📋 DANH MỤC MÃ SỐ ĐẠT CHUẨN: 👉 🚫 [ĐỨNG NGOÀI]",
                     "-------------------------------------------------------",
-                    "💡 HỆ THỐNG KHUYẾN NGHỊ ĐỨNG NGOÀI THỊ TRƯỜNG PHIÊN NÀY."
+                    "💡 HỆ THỐNG KHUYẾN NGHỊ ĐỨNG NGOÀI THỊ TRƯỜNG PHIÊN NÀY BẢO TOÀN VỐN."
                 ])
             lines.extend(["\n--- BẢN GHI TRUY VẾT TOÁN HỌC (TRACE LOG) ---", sig_trace, mm_trace])
             return "\n".join(lines)
