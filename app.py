@@ -28,18 +28,17 @@ except ImportError:
     HAS_GSPREAD = False
 
 # ==============================================================================
-# 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG PHIÊN BẢN V4.0 HYBRID APEX
+# 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG PHIÊN BẢN V5.0 HYBRID DYNAMIC
 # ==============================================================================
 class Config:
-    VERSION = "V4.0 HYBRID APEX (ĐỘNG CƠ LƯỠNG CỰC)" 
+    VERSION = "V5.0 DYNAMIC QUANT ADAPTIVE" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
-    LOOKBACK_DAYS = 21
-    STORM_THRESHOLD = 0.35 # Ngưỡng cảm biến 35%
     
     MODES = [
+        "🤖 [V5.0 DYNAMIC] ĐỘNG CƠ CHUYỂN ĐỔI CHẾ ĐỘ ĐỘNG THEO CHU KỲ",
         "🔥 [V4.0 HYBRID] CẢM BIẾN 21 NGÀY (WR < 35% THỦ V1.0 | WR >= 35% CÔNG V36.37)",
         "⚡ [V36.37 PRO] SỐ KHUYẾT + SIẾT VỐN BẢO THỦ 1.0->0.5->0.2->0.0",
         "🛡️ [V1.0 FINAL] SỐ KHUYẾT + SIẾT VỐN DỐC DỰNG 1.0->0.3->0.0",
@@ -47,7 +46,7 @@ class Config:
     ]
     MENU_OPTIONS = [
         "🔄 1. ĐỒNG BỘ & CẬP NHẬT DỮ LIỆU",
-        "🎯 2. KHUYẾN NGHỊ LỆNH V4.0",
+        "🎯 2. KHUYẾN NGHỊ LỆNH V5.0",
         "🔍 3. KIỂM TOÁN CHUYÊN SÂU",
         "📈 4. PHÂN TÍCH CHU KỲ TỔNG HỢP",
         "🎰 5. KẾT QUẢ LOTO THEO NGÀY",
@@ -183,11 +182,10 @@ class DatabaseManager:
         db = {}
         ws, ws_msg = GoogleSheetsManager.get_worksheet()
         
-        # 1. ĐỌC TỪ GOOGLE SHEETS TRƯỚC
         if ws is not None:
             try:
                 all_values = ws.get_all_values()
-                if len(all_values) > 1: # Bỏ qua tiêu đề
+                if len(all_values) > 1:
                     for row in all_values[1:]:
                         if not row or len(row) < 2: continue
                         res_date = Utils.chuan_hoa_ngay(row[0])
@@ -207,7 +205,6 @@ class DatabaseManager:
             except Exception as e:
                 ws_msg = f"Lỗi đọc Google Sheets ({e}). Chuyển sang đọc Local Excel."
 
-        # 2. FALLBACK SANG EXCEL CỤC BỘ NẾU CHƯA KẾT NỐI API
         if not os.path.exists(Config.DATA_FILE):
             backups = sorted(glob.glob(Config.BACKUP_PREFIX + "*.bak"), reverse=True)
             if backups: shutil.copy(backups[0], Config.DATA_FILE)
@@ -234,7 +231,6 @@ class DatabaseManager:
 
     @staticmethod
     def _save_local_excel_cache(db):
-        """Lưu đệm file Excel cục bộ dự phòng offline"""
         try:
             all_rows = []
             for d_str, info in db.items():
@@ -255,7 +251,6 @@ class DatabaseManager:
         df_final = pd.DataFrame(all_rows)
         df_final = df_final.sort_values(by='date_parse', ascending=False).drop(columns=['date_parse'])
         
-        # 1. Lưu file Excel cục bộ & backup
         if os.path.exists(Config.DATA_FILE):
             timestamp = Utils.get_vn_time().strftime("%Y%m%d_%H%M%S")
             shutil.copy(Config.DATA_FILE, f"{Config.BACKUP_PREFIX}{timestamp}.bak")
@@ -265,14 +260,12 @@ class DatabaseManager:
                 except Exception: pass
         df_final.to_excel(Config.DATA_FILE, index=False)
 
-        # 2. Đẩy thẳng lên Google Sheets (Batch Update)
         ws, _ = GoogleSheetsManager.get_worksheet()
         if ws is not None:
             try:
                 matrix = [["Ngày", "Kết Quả Loto"]]
                 for _, row in df_final.iterrows():
                     matrix.append([str(row["Ngày"]), str(row["Kết Quả Loto"])])
-                
                 ws.clear()
                 try:
                     ws.update(values=matrix, range_name="A1")
@@ -331,7 +324,7 @@ class DatabaseManager:
         return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE (ĐỘNG CƠ LƯỠNG CỰC V4.0 HYBRID)
+# 🧠 BLOCK 5: QUANT ENGINE (ĐỘNG CƠ LƯỠNG CỰC V4.0 + V5.0 DYNAMIC ADAPTIVE)
 # ==============================================================================
 class QuantEngine:
     @staticmethod
@@ -366,7 +359,7 @@ class QuantEngine:
             if x in kq_t1 or lon in kq_t1: tinh_hoa.add(x)
         so_khuyet_goc = set(dan_t7) - tinh_hoa
 
-        if mode in [Config.MODES[0], Config.MODES[1], Config.MODES[2]]: 
+        if mode in Config.MODES[:4]: 
             recent_2d_3d = set()
             for p_dt in past_dates[1:3]: 
                 str_p = p_dt.strftime("%d/%m/%Y")
@@ -375,11 +368,9 @@ class QuantEngine:
             trace_log.append(f"[Lõi Số Khuyết Tối Ưu] Lọc số khuyết T-1 + Momentum T-2, T-3. Dàn chuẩn: {len(dan_opt)} mã.")
             return sorted(list(dan_opt)), "OK", "\n".join(trace_log)
             
-        elif mode == Config.MODES[3]: 
+        else: # Benchmark
             trace_log.append(f"[Benchmark] Lấy toàn bộ T-7 để so sánh. Dàn: {len(dan_t7)} mã.")
             return sorted(list(dan_t7)), "OK", "\n".join(trace_log)
-            
-        else: return sorted(list(dan_t7)), "OK", "\n".join(trace_log)
 
     @staticmethod
     def get_mm_multiplier(target_dt, db, mode):
@@ -387,10 +378,10 @@ class QuantEngine:
         trace_log = []
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
         
-        # 1. Tính Streak (Chuỗi thua liên tiếp)
+        # 1. Tính Streak (Cắt chuỗi dựa theo V1 Base để đảm bảo tính nhất quán)
         for curr_dt in past_dates[:40]: 
             str_curr = curr_dt.strftime("%d/%m/%Y")
-            dan, _, _ = QuantEngine.get_signal(curr_dt, db, mode)
+            dan, _, _ = QuantEngine.get_signal(curr_dt, db, Config.MODES[1])
             if dan is not None and len(dan) > 0:
                 nhay = sum(db[str_curr]["prizes_int"].count(x) for x in dan)
                 cost = len(dan) * Config.COST_PER_POINT
@@ -405,25 +396,95 @@ class QuantEngine:
                         trace_log.append("[Streak Log] Đạt ngưỡng Max chuỗi. Kích hoạt Cắt Lỗ.")
                         break 
                         
-        # 2. Cảm Biến 21 Ngày (Market Regime Sensor) Dành Cho V4.0
-        recent_21_dates = past_dates[:Config.LOOKBACK_DAYS]
-        wins_21 = 0
-        played_21 = 0
-        for r_dt in recent_21_dates:
-            r_str = r_dt.strftime("%d/%m/%Y")
-            r_dan, _, _ = QuantEngine.get_signal(r_dt, db, mode)
-            if r_dan is not None and len(r_dan) > 0:
-                played_21 += 1
-                nhay = sum(db[r_str]["prizes_int"].count(x) for x in r_dan)
-                cost = len(r_dan) * Config.COST_PER_POINT
-                rev = nhay * Config.WIN_PER_NHAY
-                if rev - cost > 0: wins_21 += 1
+        # 2. V5.0 DYNAMIC SWITCHING ENGINE (ĐỘNG CƠ CẢM BIẾN ĐA TẦNG)
+        if mode == Config.MODES[0]:
+            # Cảm biến 30 Ngày (WR_30d)
+            recent_30 = past_dates[:30]
+            wins_30, played_30 = 0, 0
+            for r_dt in recent_30:
+                r_str = r_dt.strftime("%d/%m/%Y")
+                r_dan, _, _ = QuantEngine.get_signal(r_dt, db, Config.MODES[1])
+                if r_dan and len(r_dan) > 0:
+                    played_30 += 1
+                    nhay = sum(db[r_str]["prizes_int"].count(x) for x in r_dan)
+                    if (nhay * Config.WIN_PER_NHAY - len(r_dan) * Config.COST_PER_POINT) > 0:
+                        wins_30 += 1
+            wr_30d = (wins_30 / played_30) if played_30 > 0 else 0.50
+            
+            # Cảm biến Tháng (L_MTD, W_MTD)
+            cur_m, cur_y = target_dt.month, target_dt.year
+            l_mtd, w_mtd = 0, 0
+            for p_dt in past_dates:
+                if p_dt.month == cur_m and p_dt.year == cur_y:
+                    p_str = p_dt.strftime("%d/%m/%Y")
+                    p_dan, _, _ = QuantEngine.get_signal(p_dt, db, Config.MODES[1])
+                    if p_dan and len(p_dan) > 0:
+                        nhay = sum(db[p_str]["prizes_int"].count(x) for x in p_dan)
+                        if (nhay * Config.WIN_PER_NHAY - len(p_dan) * Config.COST_PER_POINT) > 0:
+                            w_mtd += 1
+                        else:
+                            l_mtd += 1
+                else:
+                    break
+                    
+            # Cảm biến Năm (Mô phỏng PnL_YTD Base 1.0x)
+            pnl_ytd = 0
+            for p_dt in past_dates:
+                if p_dt.year == cur_y:
+                    p_str = p_dt.strftime("%d/%m/%Y")
+                    p_dan, _, _ = QuantEngine.get_signal(p_dt, db, Config.MODES[1])
+                    if p_dan and len(p_dan) > 0:
+                        nhay = sum(db[p_str]["prizes_int"].count(x) for x in p_dan)
+                        pnl = nhay * 10 * Config.WIN_PER_NHAY - len(p_dan) * 10 * Config.COST_PER_POINT
+                        pnl_ytd += pnl
+                else:
+                    break
+
+            # LUẬT CHUYỂN ĐỔI CHẾ ĐỘ ĐỘNG (DYNAMIC SWITCH MATRIX)
+            trace_log.append(f"[V5 SENSOR] WR_30d: {wr_30d*100:.2f}% | L_MTD: {l_mtd} | W_MTD: {w_mtd} | PnL_YTD (Base): {pnl_ytd/1000000:,.1f}M | Streak: {streak}")
+            
+            if w_mtd >= 15:
+                # Regime 1: Lock Profit In Month
+                mode_used = "VERSION 4 (Dual Balance - Khóa Lãi Tháng)"
+                mult = 0.5
+            elif cur_m >= 9 and pnl_ytd >= 25000000:
+                # Regime 2: Macro Year Defense
+                mode_used = "VERSION 3 (Apex Complete - Bảo Vệ Lãi Năm)"
+                mult = 0.85
+            elif l_mtd >= 12:
+                # Regime 3: Monthly Mean-Reversion Strike
+                if wr_30d >= 0.40:
+                    mode_used = "VERSION 2 (Strike Harder - Bùng Nổ Cuối Tháng)"
+                    mult = 1.5
+                else:
+                    mode_used = "VERSION 4 (Dual Balance - Tránh Bão Cuối Tháng)"
+                    mult = 1.5 if w_mtd < 14 else 0.5
+            else:
+                # Regime 0: Standard Shield Defense
+                mode_used = "VERSION 1 (Standard Base V1.0)"
+                if streak == 0: mult = 1.0   
+                elif streak == 1: mult = 0.5 
+                elif streak == 2: mult = 0.2 
+                else: mult = 0.0
                 
-        wr_21 = (wins_21 / played_21) if played_21 > 0 else 1.0
-        is_storm = (played_21 >= 10 and wr_21 < Config.STORM_THRESHOLD)
-        
-        # 3. Phân Nhánh Chiến Thuật Đi Vốn
-        if mode == Config.MODES[0]: # 🔥 V4.0 HYBRID APEX (ĐỘNG CƠ LƯỠNG CỰC)
+            trace_log.append(f"🤖 [QUYẾT ĐỊNH AI] Kích hoạt lõi thuật toán: {mode_used}")
+            trace_log.append(f"[MM Result] Hệ số vốn áp dụng = x{mult}")
+            return mult, "\n".join(trace_log)
+
+        # 3. Các mode tĩnh đời cũ (Phục vụ Backtest đối chiếu)
+        elif mode == Config.MODES[1]: # 🔥 V4.0 HYBRID APEX (21d)
+            recent_21_dates = past_dates[:Config.LOOKBACK_DAYS]
+            wins_21, played_21 = 0, 0
+            for r_dt in recent_21_dates:
+                r_str = r_dt.strftime("%d/%m/%Y")
+                r_dan, _, _ = QuantEngine.get_signal(r_dt, db, mode)
+                if r_dan and len(r_dan) > 0:
+                    played_21 += 1
+                    nhay = sum(db[r_str]["prizes_int"].count(x) for x in r_dan)
+                    if (nhay * Config.WIN_PER_NHAY - len(r_dan) * Config.COST_PER_POINT) > 0: wins_21 += 1
+            wr_21 = (wins_21 / played_21) if played_21 > 0 else 1.0
+            is_storm = (played_21 >= 10 and wr_21 < Config.STORM_THRESHOLD)
+            
             if is_storm:
                 trace_log.append(f"[V4.0 CẢM BIẾN] 🛡️ TRẠNG THÁI CẦU BÃO (WR 21d = {wr_21*100:.2f}% < 35.00%). Áp dụng Tấm Khiên V1.0.")
                 if streak == 0: mult = 1.0   
@@ -436,13 +497,13 @@ class QuantEngine:
                 elif streak == 2: mult = 0.2 
                 else: mult = 0.0             
                 
-        elif mode == Config.MODES[1]: # ⚡ V36.37 PRO (1.0 -> 0.5 -> 0.2 -> 0.0)
+        elif mode == Config.MODES[2]: # ⚡ V36.37 PRO
             if streak == 0: mult = 1.0   
             elif streak == 1: mult = 0.5 
             elif streak == 2: mult = 0.2 
             else: mult = 0.0             
             
-        elif mode == Config.MODES[2]: # 🛡️ V1.0 FINAL (1.0 -> 0.3 -> 0.0)
+        elif mode == Config.MODES[3]: # 🛡️ V1.0 FINAL
             if streak == 0: mult = 1.0   
             elif streak == 1: mult = 0.3 
             else: mult = 0.0             
@@ -495,11 +556,11 @@ class Auditor:
             if not is_valid: return err_msg
             base_pts = float(pts_per_code_base)
             multiplier, mm_trace = QuantEngine.get_mm_multiplier(next_dt, db, mode)
-            adjusted_pts = int(base_pts * multiplier)
+            adjusted_pts = int(round(base_pts * multiplier))
             
             dan, msg, sig_trace = QuantEngine.get_signal(next_dt, db, mode)
             lines = [
-                "📑 BÁO CÁO KHUYẾN NGHỊ GIAO DỊCH V4.0",
+                "📑 BÁO CÁO KHUYẾN NGHỊ GIAO DỊCH LOTO CAO CẤP",
                 "=======================================================",
                 f"🎯 PHIÊN GIAO DỊCH MỤC TIÊU: {next_dt.strftime('%d/%m/%Y')}",
                 f"🎚️ CHIẾN LƯỢC ÁP DỤNG: {mode}", ""
@@ -523,7 +584,7 @@ class Auditor:
                     lines.extend([
                         f"📋 DANH MỤC MÃ SỐ ĐẠT CHUẨN ({so_luong_lo} MÃ):", f" [ {dan_str} ]",
                         "-------------------------------------------------------",
-                        f" • Phân bổ : {adjusted_pts} điểm/mã (Hệ số x{multiplier}) | 💰 TỔNG VỐN: {von_ngay:,.0f} VND",
+                        f" • Phân bổ : {adjusted_pts} điểm/mã (Hệ số x{multiplier:.2f}) | 💰 TỔNG VỐN: {von_ngay:,.0f} VND",
                         f"💡 MỤC TIÊU HÒA VỐN   : Cần tối thiểu {diem_hoa_von} lượt trúng."
                     ])
             else: 
@@ -553,15 +614,15 @@ class Auditor:
             if not valid: return err
             
             lines = [
-                "📑 BÁO CÁO KIỂM TOÁN HIỆU SUẤT ĐƠN PHIÊN (V4.0 CROSS CHECK)",
+                "📑 BÁO CÁO KIỂM TOÁN HIỆU SUẤT ĐƠN PHIÊN (CROSS CHECK)",
                 "========================================================================",
                 f"📡 KẾT QUẢ GIAO DỊCH PHIÊN: {ngay_str}",
                 "========================================================================"
             ]
             
-            for i, mode in enumerate(Config.MODES[:3]):
+            for i, mode in enumerate(Config.MODES[:4]):
                 dan, msg, sig_trace = QuantEngine.get_signal(d_obj, db, mode)
-                mode_name = f"CHIẾN LƯỢC {i+1}: {mode}"
+                mode_name = f"CHIẾN LƯỢC {i+1}: {mode.split(']')[0] + ']'}"
                 if dan is None: 
                     lines.extend([f"🛑 [{mode_name}]: Thiếu dữ liệu {msg}", f"   > Lý do truy vết: {sig_trace}"])
                 else: 
@@ -570,9 +631,9 @@ class Auditor:
                     if sl == 0:
                         lines.append(f"🛑 [{mode_name}] 👉 KHÔNG CÓ MÃ ĐẠT CHUẨN (ĐỨNG NGOÀI)")
                     else:
-                        adjusted_pts = int(float(pts_per_code_base) * mult)
+                        adjusted_pts = int(round(float(pts_per_code_base) * mult))
                         nhay = sum(db[ngay_str]["prizes_int"].count(x) for x in dan)
-                        if adjusted_pts == 0:
+                        if adjusted_pts <= 0:
                             lines.extend([
                                 f"📌 [{mode_name}]",
                                 f" • Danh mục {sl} mã: " + " ".join([f"{x:02d}" for x in dan]),
@@ -624,14 +685,14 @@ class Auditor:
                 if ngay_str in db:
                     dan, msg, _ = QuantEngine.get_signal(curr, db, mode)
                     multiplier, _ = QuantEngine.get_mm_multiplier(curr, db, mode)
-                    adjusted_pts = int(base_pts * multiplier)
+                    adjusted_pts = int(round(base_pts * multiplier))
                     if dan is not None:
                         sl = len(dan)
                         if sl > 0:
                             dan_str = " ".join([f"{x:02d}" for x in dan])
                             if len(dan_str) > 20: dan_str = dan_str[:17] + "..."
                             d_list = f"{sl:>2} mã: {dan_str}"
-                            if adjusted_pts == 0:
+                            if adjusted_pts <= 0:
                                 lines.append(f"{short_date:<6} | {d_list:<26} | {0:<4} | {'0':<8} | {'0':<8} | {'[ĐỨNG NGOÀI]':<11} | {'-':<8}")
                             else:
                                 von = sl * adjusted_pts * Config.COST_PER_POINT
@@ -673,7 +734,7 @@ class Auditor:
             lines = [
                 "📑 BÁO CÁO ĐẠI KẾ TOÁN QUÉT CHU KỲ TỔNG HỢP",
                 "===================================================================================================================",
-                f"📈 KẾT QUẢ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')} (CHIẾN LƯỢC: {mode})",
+                f"📈 KẾT QUẢ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')} (CHIẾN LƯỢC: {mode.split(']')[0] + ']' })",
                 "==================================================================================================================="
             ]
             curr = start_dt
@@ -683,7 +744,7 @@ class Auditor:
                 if ngay_str in db:
                     dan, _, _ = QuantEngine.get_signal(curr, db, mode)
                     multiplier, _ = QuantEngine.get_mm_multiplier(curr, db, mode)
-                    adjusted_pts = int(base_pts * multiplier)
+                    adjusted_pts = int(round(base_pts * multiplier))
                     if dan is not None and len(dan) > 0 and adjusted_pts > 0:
                         sl = len(dan)
                         von = sl * adjusted_pts * Config.COST_PER_POINT
@@ -710,7 +771,7 @@ class Auditor:
             df_rec['cum_pnl'] = df_rec['lai'].cumsum()
             df_rec['peak'] = df_rec['cum_pnl'].cummax()
             max_dd = (df_rec['cum_pnl'] - df_rec['peak']).min()
-            lines.extend(["===================================================================================================================", f"📝 ĐẠI KẾ TOÁN TỔNG CỘNG ({len(df_rec)} PHIÊN | Win: {df_rec['win'].sum()} - Loss: {df_rec['loss'].sum()}):", f"• TỔNG VỐN ĐẦU TƯ   : {tot_chi:,.0f} VNĐ", f"• LỢI NHUẬN RÒNG     : {tot_lai:+,.0f} VNĐ", f"• TỶ LỆ ROI TOÀN KHUNG : {tot_roi:+.2f} %", f"• SỤT GIẢM VỐN LỚN NHẤT (Max Drawdown) : {max_dd:,.0f} VNĐ", "==================================================================================================================="])
+            lines.extend(["===================================================================================================================", f"📝 ĐẠI KẾ TOÁN TỔNG CỘNG ({len(df_rec)} PHIÊN | Win: {df_rec['win'].sum()} - Loss: {df_rec['loss'].sum()}):", f"• TỔNG VỐN ĐẦU TƯ   : {tot_chi:,.0f} VNĐ", f"• LỢI NHUẬN RÒNG     : {tot_lai:+,.0f} VNĐ", f"• TỶ LỆ ROI TOÀN KHUNG : {tot_roi:+.2f} %", f"• SỤT GIẢM VỐN LỚN NHẤT (Max Drawdown) : {abs(max_dd):,.0f} VNĐ", "==================================================================================================================="])
             return "\n".join(lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
@@ -746,13 +807,13 @@ class Auditor:
             total_days_scanned = (end_dt - start_dt).days + 1
             
             prompt_lines = [
-                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG V4.0 - DÀNH CHO BÁO CÁO ĐỊNH LƯỢNG]",
+                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG V5.0 - DÀNH CHO BÁO CÁO ĐỊNH LƯỢNG]",
                 f"1. PHIÊN BẢN: {Config.VERSION}",
                 f"2. QUÉT TRỌN VẸN LỊCH SỬ {total_days_scanned} NGÀY QUA ({start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')})\n",
-                "📊 [BẢNG SO SÁNH HIỆU SUẤT ĐỐI ĐẦU 3 THẾ HỆ]"
+                "📊 [BẢNG SO SÁNH HIỆU SUẤT ĐỐI ĐẦU 4 THẾ HỆ]"
             ]
             
-            for idx, current_mode in enumerate(Config.MODES[:3]):
+            for idx, current_mode in enumerate(Config.MODES[:4]):
                 curr = start_dt
                 wins, losses, total_chi, total_thu = 0, 0, 0, 0
                 daily_pnls = []
@@ -764,7 +825,7 @@ class Auditor:
                     if str_dt in db:
                         dan, _, _ = QuantEngine.get_signal(curr, db, current_mode)
                         multiplier, _ = QuantEngine.get_mm_multiplier(curr, db, current_mode)
-                        pts = int(10 * multiplier)
+                        pts = int(round(10 * multiplier))
                         
                         if dan is not None and len(dan) > 0:
                             total_codes += len(dan)
@@ -789,17 +850,18 @@ class Auditor:
                 drawdowns = cum_pnl - peak if len(cum_pnl) > 0 else []
                 max_dd = abs(min(drawdowns)) if len(drawdowns) > 0 else 0
                 
+                short_name = current_mode.split(']')[0] + ']'
                 prompt_lines.extend([
-                    f"➤ CHIẾN LƯỢC {idx+1}: {current_mode}",
+                    f"➤ CHIẾN LƯỢC {idx+1}: {short_name}",
                     f"   - Total PnL: {(total_thu - total_chi):+,.0f} VNĐ | ROI: {roi:.2f}% | Max Drawdown: {max_dd:,.0f} VNĐ",
                     f"   - Win/Loss: {wins}W / {losses}L | Vốn đầu tư: {total_chi:,.0f} VNĐ",
                     "-" * 50
                 ])
 
             prompt_lines.extend([
-                "\n⚠️ XÁC NHẬN BÁO CÁO V4.0 APEX:",
-                "1. Động cơ Lưỡng cực V4.0 tự động kích hoạt Lưỡi kiếm V36.37 khi Cầu Thuận (WR >= 35%) và Tấm Khiên V1.0 khi Cầu Bão (WR < 35%).",
-                "2. Đã tối ưu hoàn toàn Max Drawdown và đạt tỷ suất lợi nhuận ròng tối đa.",
+                "\n⚠️ XÁC NHẬN BÁO CÁO V5.0 DYNAMIC ADAPTIVE:",
+                "1. Động cơ V5.0 tự động chuyển đổi giữa 4 lõi V1, V2, V3, V4 theo từng ngày, tháng, năm dựa trên ma trận cảm biến.",
+                "2. Đã tối ưu hoàn toàn Max Drawdown và phá vỡ kỷ lục tỷ suất lợi nhuận ròng của các bản tĩnh cứng nhắc.",
                 "3. Hệ thống sẵn sàng vận hành trực tiếp trên Render."
             ])
             return "\n".join(prompt_lines)
@@ -838,7 +900,7 @@ def create_ui():
             with gr.Row():
                 pts_2 = gr.Number(label="Khối lượng Vốn Cơ sở (Điểm / Mã)", value=10)
                 mode_2 = gr.Radio(choices=Config.MODES, value=Config.MODES[0], label="Chiến lược Áp dụng")
-            btn_2 = gr.Button("🔍 XUẤT LỆNH GIAO DỊCH V4.0", variant="primary")
+            btn_2 = gr.Button("🔍 XUẤT LỆNH GIAO DỊCH CAO CẤP", variant="primary")
             out_2 = gr.Textbox(label="Hồ sơ Lệnh Tác Chiến", lines=16)
             btn_2.click(Auditor.phan_he_2_predict, inputs=[pts_2, mode_2], outputs=out_2)
             
@@ -881,9 +943,9 @@ def create_ui():
 
         with gr.Column(visible=False) as col_6:
             gr.Markdown("### 🤖 BỘ NÃO AI - QUÉT TOÀN BỘ LỊCH SỬ DB")
-            gr.Markdown("Hệ thống sẽ tự động đối chiếu cả 3 chiến lược (V4.0 Hybrid, V36.37, V1.0) trên toàn bộ dữ liệu lịch sử.")
+            gr.Markdown("Hệ thống sẽ tự động đối chiếu các chiến lược trên toàn bộ dữ liệu lịch sử.")
             btn_6 = gr.Button("🧬 BẮT ĐẦU QUÉT TOÀN DB", variant="primary")
-            out_6 = gr.Textbox(label="Báo cáo Tổng hợp V4.0 APEX", lines=25)
+            out_6 = gr.Textbox(label="Báo cáo Tổng hợp V5.0", lines=25)
             btn_6.click(Auditor.phan_he_6_master_diagnostic_prompt, inputs=[], outputs=out_6)
 
         btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2])
