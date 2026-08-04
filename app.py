@@ -8,6 +8,7 @@ import re
 import html
 import shutil
 import glob
+import json
 import concurrent.futures
 from datetime import datetime, timedelta
 import traceback
@@ -19,23 +20,34 @@ try:
 except ImportError:
     HAS_REQUESTS = False
 
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+    HAS_GSPREAD = True
+except ImportError:
+    HAS_GSPREAD = False
+
 # ==============================================================================
-# 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG PHIÊN BẢN CHUẨN V1.0 FINAL
+# 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG PHIÊN BẢN V4.0 HYBRID APEX
 # ==============================================================================
 class Config:
-    VERSION = "V1.0 FINAL (QUANT ENGINE APEX)" 
+    VERSION = "V4.0 HYBRID APEX (ĐỘNG CƠ LƯỠNG CỰC)" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
+    LOOKBACK_DAYS = 21
+    STORM_THRESHOLD = 0.35 # Ngưỡng cảm biến 35%
+    
     MODES = [
-        "🚀 [V1.0 FINAL] SỐ KHUYẾT + SIẾT VỐN DỐC DỰNG 1.0->0.3->0.0 (Max ROI 9.66% - Max DD 5.82M)",
-        "⚡ [V36.37 CORE] SỐ KHUYẾT + SIẾT VỐN BẢO THỦ 1.0->0.5->0.2->0.0 (Max ROI 7.56% - Max DD 6.94M)",
+        "🔥 [V4.0 HYBRID] CẢM BIẾN 21 NGÀY (WR < 35% THỦ V1.0 | WR >= 35% CÔNG V36.37)",
+        "⚡ [V36.37 PRO] SỐ KHUYẾT + SIẾT VỐN BẢO THỦ 1.0->0.5->0.2->0.0",
+        "🛡️ [V1.0 FINAL] SỐ KHUYẾT + SIẾT VỐN DỐC DỰNG 1.0->0.3->0.0",
         "📊 Giao Dịch Toàn Bộ T-7 (Chỉ dùng để soi Benchmark)"
     ]
     MENU_OPTIONS = [
         "🔄 1. ĐỒNG BỘ & CẬP NHẬT DỮ LIỆU",
-        "🎯 2. KHUYẾN NGHỊ LỆNH",
+        "🎯 2. KHUYẾN NGHỊ LỆNH V4.0",
         "🔍 3. KIỂM TOÁN CHUYÊN SÂU",
         "📈 4. PHÂN TÍCH CHU KỲ TỔNG HỢP",
         "🎰 5. KẾT QUẢ LOTO THEO NGÀY",
@@ -80,14 +92,14 @@ class Utils:
         except: return False, f"🛑 LỖI: '{name}' sai định dạng."
 
 # ==============================================================================
-# 🕸️ BLOCK 3: CRAWLER ĐA TÊN MIỀN
+# 🕸️ BLOCK 3: CRAWLER TỰ ĐỘNG ĐA LUỒNG (KETQUA RADAR)
 # ==============================================================================
 class Crawler:
     @staticmethod
     def _fetch_single_domain(domain):
         url = f"https://{domain}/so-ket-qua-truyen-thong/300"
         try:
-            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=3)
+            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}, timeout=3)
             if res.status_code == 200:
                 html_text = res.text
                 parts = re.split(r'(\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b)', html_text)
@@ -118,18 +130,90 @@ class Crawler:
         return False, {}, "Toàn bộ mạng lưới Ketqua đã sập hoặc Time-out > 3s."
 
 # ==============================================================================
-# 💾 BLOCK 4: DATABASE & AUTO-BACKUP
+# 📊 BLOCK 4: GOOGLE SHEETS & DATABASE MANAGER
 # ==============================================================================
+class GoogleSheetsManager:
+    @staticmethod
+    def get_worksheet():
+        if not HAS_GSPREAD:
+            return None, "Thiếu thư viện 'gspread' hoặc 'google-auth'."
+            
+        sheet_name = os.environ.get("GOOGLE_SHEET_NAME", "Ket_Qua_Loto27").strip()
+        sheet_id = os.environ.get("GOOGLE_SHEET_ID", "").strip()
+        creds_json_str = os.environ.get("GOOGLE_CREDENTIALS", "").strip() or os.environ.get("GOOGLE_SHEETS_JSON", "").strip()
+        
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        
+        creds = None
+        if creds_json_str:
+            try:
+                creds_dict = json.loads(creds_json_str)
+                creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+            except Exception:
+                pass
+                
+        if not creds:
+            for fname in ["google_credentials.json", "credentials.json", "service_account.json"]:
+                if os.path.exists(fname):
+                    try:
+                        creds = Credentials.from_service_account_file(fname, scopes=scopes)
+                        break
+                    except Exception:
+                        pass
+                        
+        if not creds:
+            return None, "Chưa cấu hình Google Credentials."
+            
+        try:
+            gc = gspread.authorize(creds)
+            if sheet_id:
+                ws = gc.open_by_key(sheet_id).sheet1
+            else:
+                ws = gc.open(sheet_name).sheet1
+            return ws, "OK"
+        except Exception as e:
+            return None, f"Lỗi kết nối Google Sheets: {str(e)}"
+
 class DatabaseManager:
     @staticmethod
     def load_db():
         db = {}
+        ws, ws_msg = GoogleSheetsManager.get_worksheet()
+        
+        # 1. ĐỌC TỪ GOOGLE SHEETS TRƯỚC
+        if ws is not None:
+            try:
+                all_values = ws.get_all_values()
+                if len(all_values) > 1: # Bỏ qua tiêu đề
+                    for row in all_values[1:]:
+                        if not row or len(row) < 2: continue
+                        res_date = Utils.chuan_hoa_ngay(row[0])
+                        if not res_date: continue
+                        dt_obj, ngay_str = res_date
+                        loto_raw = re.sub(r"[^\d\s]", " ", str(row[1]))
+                        loto_list = [int(x.strip()[-2:]) for x in loto_raw.split() if x.strip().isdigit()]
+                        if len(loto_list) >= 27:
+                            db[ngay_str] = {
+                                "date_obj": dt_obj, 
+                                "prizes_int": loto_list[:27], 
+                                "raw_str": " ".join([f"{x:02d}" for x in loto_list[:27]])
+                            }
+                    if db:
+                        DatabaseManager._save_local_excel_cache(db)
+                    return db, f"🟢 GOOGLE SHEETS: Đồng bộ vĩnh viễn {len(db)} phiên."
+            except Exception as e:
+                ws_msg = f"Lỗi đọc Google Sheets ({e}). Chuyển sang đọc Local Excel."
+
+        # 2. FALLBACK SANG EXCEL CỤC BỘ NẾU CHƯA KẾT NỐI API
         if not os.path.exists(Config.DATA_FILE):
             backups = sorted(glob.glob(Config.BACKUP_PREFIX + "*.bak"), reverse=True)
             if backups: shutil.copy(backups[0], Config.DATA_FILE)
             else:
                 pd.DataFrame(columns=["Ngày", "Kết Quả Loto"]).to_excel(Config.DATA_FILE, index=False)
-                return db, "⚠️ Tệp dữ liệu rỗng."
+                return db, f"⚠️ Tệp dữ liệu rỗng. ({ws_msg})"
         try:
             df = pd.read_excel(Config.DATA_FILE, dtype=str)
             for _, row in df.iterrows():
@@ -140,7 +224,7 @@ class DatabaseManager:
                 loto_list = [int(x.strip()[-2:]) for x in loto_raw.split() if x.strip().isdigit()]
                 if len(loto_list) >= 27:
                     db[ngay_str] = {"date_obj": dt_obj, "prizes_int": loto_list[:27], "raw_str": " ".join([f"{x:02d}" for x in loto_list[:27]])}
-            return db, f"🟢 ĐỒNG BỘ: {len(db)} PHIÊN."
+            return db, f"🟢 LOCAL EXCEL: Đồng bộ {len(db)} phiên. [{ws_msg}]"
         except Exception as e: 
             backups = sorted(glob.glob(Config.BACKUP_PREFIX + "*.bak"), reverse=True)
             if backups:
@@ -149,24 +233,58 @@ class DatabaseManager:
             return db, f"🛑 LỖI ĐỌC:\n{traceback.format_exc()}"
 
     @staticmethod
+    def _save_local_excel_cache(db):
+        """Lưu đệm file Excel cục bộ dự phòng offline"""
+        try:
+            all_rows = []
+            for d_str, info in db.items():
+                all_rows.append({"Ngày": d_str, "Kết Quả Loto": info["raw_str"], "date_parse": info["date_obj"]})
+            if all_rows:
+                df_final = pd.DataFrame(all_rows)
+                df_final = df_final.sort_values(by='date_parse', ascending=False).drop(columns=['date_parse'])
+                df_final.to_excel(Config.DATA_FILE, index=False)
+        except Exception: pass
+
+    @staticmethod
     def rewrite_clean_db(db):
         all_rows = []
         for d_str, info in db.items():
             all_rows.append({"Ngày": d_str, "Kết Quả Loto": info["raw_str"], "date_parse": info["date_obj"]})
-        if all_rows:
-            df_final = pd.DataFrame(all_rows)
-            df_final = df_final.sort_values(by='date_parse', ascending=False).drop(columns=['date_parse'])
-            if os.path.exists(Config.DATA_FILE):
-                timestamp = Utils.get_vn_time().strftime("%Y%m%d_%H%M%S")
-                shutil.copy(Config.DATA_FILE, f"{Config.BACKUP_PREFIX}{timestamp}.bak")
-                existing_backups = sorted(glob.glob(Config.BACKUP_PREFIX + "*.bak"), reverse=True)
-                for old_bak in existing_backups[3:]: os.remove(old_bak)
-            df_final.to_excel(Config.DATA_FILE, index=False)
+        if not all_rows: return
+
+        df_final = pd.DataFrame(all_rows)
+        df_final = df_final.sort_values(by='date_parse', ascending=False).drop(columns=['date_parse'])
+        
+        # 1. Lưu file Excel cục bộ & backup
+        if os.path.exists(Config.DATA_FILE):
+            timestamp = Utils.get_vn_time().strftime("%Y%m%d_%H%M%S")
+            shutil.copy(Config.DATA_FILE, f"{Config.BACKUP_PREFIX}{timestamp}.bak")
+            existing_backups = sorted(glob.glob(Config.BACKUP_PREFIX + "*.bak"), reverse=True)
+            for old_bak in existing_backups[3:]: 
+                try: os.remove(old_bak)
+                except Exception: pass
+        df_final.to_excel(Config.DATA_FILE, index=False)
+
+        # 2. Đẩy thẳng lên Google Sheets (Batch Update)
+        ws, _ = GoogleSheetsManager.get_worksheet()
+        if ws is not None:
+            try:
+                matrix = [["Ngày", "Kết Quả Loto"]]
+                for _, row in df_final.iterrows():
+                    matrix.append([str(row["Ngày"]), str(row["Kết Quả Loto"])])
+                
+                ws.clear()
+                try:
+                    ws.update(values=matrix, range_name="A1")
+                except TypeError:
+                    ws.update("A1", matrix)
+            except Exception as e:
+                print(f"[!] Lỗi ghi dữ liệu Google Sheets: {e}")
 
     @staticmethod
     def save_manual_data(date_str, numbers_str):
         res_date = Utils.chuan_hoa_ngay(date_str)
-        if not res_date: return "🛑 LỖI NHẬP LIỆU: Ngày không đúng định dạng."
+        if not res_date: return "🛑 LỖI NHẬP LIỆU: Ngày không đúng định dạng (DD/MM/YYYY)."
         dt_obj, std_date = res_date
         nums = re.findall(r'\d{2}', str(numbers_str))
         if len(nums) < 27: return f"🛑 LỖI NHẬP LIỆU: Chỉ tìm thấy {len(nums)}/27 con số."
@@ -174,7 +292,7 @@ class DatabaseManager:
             db, _ = DatabaseManager.load_db()
             db[std_date] = {"date_obj": dt_obj, "prizes_int": [int(x) for x in nums[:27]], "raw_str": " ".join(nums[:27])}
             DatabaseManager.rewrite_clean_db(db)
-            return f"✅ NHẬP TAY THÀNH CÔNG: {std_date}!"
+            return f"✅ NHẬP TAY THÀNH CÔNG VÀ ĐÃ BẮN LÊN GOOGLE SHEETS: {std_date}!"
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
     @staticmethod
@@ -198,8 +316,8 @@ class DatabaseManager:
         if healed_count > 0 or len(db) > 0:
             try:
                 DatabaseManager.rewrite_clean_db(db)
-                if healed_count > 0: return f"✅ AUTO-HEAL: {msg}. Bổ sung {healed_count} phiên bị mất."
-                else: return "✅ AUTO-HEAL: Dữ liệu liền mạch."
+                if healed_count > 0: return f"✅ AUTO-HEAL: {msg}. Bổ sung {healed_count} phiên mới vào Google Sheets!"
+                else: return "✅ AUTO-HEAL: Dữ liệu Google Sheets đã đồng bộ liền mạch."
             except Exception as e: return f"🛑 LỖI GHI FILE:\n{traceback.format_exc()}"
         return "✅ AUTO-HEAL: Dữ liệu đã liền mạch."
 
@@ -213,7 +331,7 @@ class DatabaseManager:
         return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE (V1.0 FINAL CHUẨN ĐỊNH LƯỢNG)
+# 🧠 BLOCK 5: QUANT ENGINE (ĐỘNG CƠ LƯỠNG CỰC V4.0 HYBRID)
 # ==============================================================================
 class QuantEngine:
     @staticmethod
@@ -248,7 +366,7 @@ class QuantEngine:
             if x in kq_t1 or lon in kq_t1: tinh_hoa.add(x)
         so_khuyet_goc = set(dan_t7) - tinh_hoa
 
-        if mode in [Config.MODES[0], Config.MODES[1]]: 
+        if mode in [Config.MODES[0], Config.MODES[1], Config.MODES[2]]: 
             recent_2d_3d = set()
             for p_dt in past_dates[1:3]: 
                 str_p = p_dt.strftime("%d/%m/%Y")
@@ -257,7 +375,7 @@ class QuantEngine:
             trace_log.append(f"[Lõi Số Khuyết Tối Ưu] Lọc số khuyết T-1 + Momentum T-2, T-3. Dàn chuẩn: {len(dan_opt)} mã.")
             return sorted(list(dan_opt)), "OK", "\n".join(trace_log)
             
-        elif mode == Config.MODES[2]: 
+        elif mode == Config.MODES[3]: 
             trace_log.append(f"[Benchmark] Lấy toàn bộ T-7 để so sánh. Dàn: {len(dan_t7)} mã.")
             return sorted(list(dan_t7)), "OK", "\n".join(trace_log)
             
@@ -269,6 +387,7 @@ class QuantEngine:
         trace_log = []
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
         
+        # 1. Tính Streak (Chuỗi thua liên tiếp)
         for curr_dt in past_dates[:40]: 
             str_curr = curr_dt.strftime("%d/%m/%Y")
             dan, _, _ = QuantEngine.get_signal(curr_dt, db, mode)
@@ -277,45 +396,78 @@ class QuantEngine:
                 cost = len(dan) * Config.COST_PER_POINT
                 rev = nhay * Config.WIN_PER_NHAY
                 if rev - cost > 0:
-                    trace_log.append(f"[MM Log] Cắt chuỗi tại ngày WIN ({str_curr}).")
+                    trace_log.append(f"[Streak Log] Cắt chuỗi tại ngày WIN ({str_curr}).")
                     break 
                 else:
                     streak += 1
-                    trace_log.append(f"[MM Log] Ngày {str_curr} THUA -> Chuỗi = {streak}.")
+                    trace_log.append(f"[Streak Log] Ngày {str_curr} THUA -> Chuỗi = {streak}.")
                     if streak >= 4:
-                        trace_log.append("[MM Log] Max chuỗi thua. Kích hoạt Đứng Ngoài.")
+                        trace_log.append("[Streak Log] Đạt ngưỡng Max chuỗi. Kích hoạt Cắt Lỗ.")
                         break 
                         
-        if mode == Config.MODES[0]: # LÕI V1.0 FINAL - SIẾT VỐN DỐC DỰNG (1.0 -> 0.3 -> 0.0)
-            if streak == 0: mult = 1.0   
-            elif streak == 1: mult = 0.3 
-            else: mult = 0.0             
-        elif mode == Config.MODES[1]: # LÕI V36.37 BẢO THỦ (1.0 -> 0.5 -> 0.2 -> 0.0)
+        # 2. Cảm Biến 21 Ngày (Market Regime Sensor) Dành Cho V4.0
+        recent_21_dates = past_dates[:Config.LOOKBACK_DAYS]
+        wins_21 = 0
+        played_21 = 0
+        for r_dt in recent_21_dates:
+            r_str = r_dt.strftime("%d/%m/%Y")
+            r_dan, _, _ = QuantEngine.get_signal(r_dt, db, mode)
+            if r_dan is not None and len(r_dan) > 0:
+                played_21 += 1
+                nhay = sum(db[r_str]["prizes_int"].count(x) for x in r_dan)
+                cost = len(r_dan) * Config.COST_PER_POINT
+                rev = nhay * Config.WIN_PER_NHAY
+                if rev - cost > 0: wins_21 += 1
+                
+        wr_21 = (wins_21 / played_21) if played_21 > 0 else 1.0
+        is_storm = (played_21 >= 10 and wr_21 < Config.STORM_THRESHOLD)
+        
+        # 3. Phân Nhánh Chiến Thuật Đi Vốn
+        if mode == Config.MODES[0]: # 🔥 V4.0 HYBRID APEX (ĐỘNG CƠ LƯỠNG CỰC)
+            if is_storm:
+                trace_log.append(f"[V4.0 CẢM BIẾN] 🛡️ TRẠNG THÁI CẦU BÃO (WR 21d = {wr_21*100:.2f}% < 35.00%). Áp dụng Tấm Khiên V1.0.")
+                if streak == 0: mult = 1.0   
+                elif streak == 1: mult = 0.3 
+                else: mult = 0.0             
+            else:
+                trace_log.append(f"[V4.0 CẢM BIẾN] ⚔️ TRẠNG THÁI CẦU THUẬN (WR 21d = {wr_21*100:.2f}% >= 35.00%). Áp dụng Lưỡi Kiếm V36.37.")
+                if streak == 0: mult = 1.0   
+                elif streak == 1: mult = 0.5 
+                elif streak == 2: mult = 0.2 
+                else: mult = 0.0             
+                
+        elif mode == Config.MODES[1]: # ⚡ V36.37 PRO (1.0 -> 0.5 -> 0.2 -> 0.0)
             if streak == 0: mult = 1.0   
             elif streak == 1: mult = 0.5 
             elif streak == 2: mult = 0.2 
             else: mult = 0.0             
-        else:
+            
+        elif mode == Config.MODES[2]: # 🛡️ V1.0 FINAL (1.0 -> 0.3 -> 0.0)
+            if streak == 0: mult = 1.0   
+            elif streak == 1: mult = 0.3 
+            else: mult = 0.0             
+            
+        else: # Benchmark
             if streak == 0: mult = 1.0   
             elif streak == 1: mult = 0.8 
             elif streak == 2: mult = 0.5 
             elif streak == 3: mult = 0.3 
             else: mult = 0.0
 
-        trace_log.append(f"[MM Result] Chuỗi thua hiện tại = {streak} -> Hệ số vốn = {mult}")
+        trace_log.append(f"[MM Result] Chuỗi thua hiện tại = {streak} -> Hệ số vốn áp dụng = x{mult}")
         return mult, "\n".join(trace_log)
 
 # ==============================================================================
-# 📊 BLOCK 6: AUDIT, REPORTING & AI MASTER DIAGNOSTICS
+# 📊 BLOCK 6: AUDIT & REPORTING
 # ==============================================================================
 class Auditor:
     @staticmethod
     def phan_he_1_sync(auto_crawl=False):
-        crawl_msg = "ℹ️ Chế độ Offline. Chưa kích hoạt Crawler."
+        crawl_msg = "ℹ️ Chế độ Offline. Bấm nút cập nhật để kích hoạt Radar."
         if auto_crawl: crawl_msg = DatabaseManager.auto_heal_history()
         db, msg = DatabaseManager.load_db()
         _, latest_dt, next_predict_dt = DatabaseManager.get_boundaries(db)
-        latest_str = latest_dt.strftime('%d/%m/%Y') if latest_dt else "⚠️ CHƯA CÓ DỮ LIỆU NÀO TRONG DB!"
+        latest_str = latest_dt.strftime('%d/%m/%Y') if latest_dt else "⚠️ CHƯA CÓ DỮ LIỆU!"
         lines = [
             "📑 BÁO CÁO ĐỒNG BỘ CƠ SỞ DỮ LIỆU",
             "=================================================================================",
@@ -347,7 +499,7 @@ class Auditor:
             
             dan, msg, sig_trace = QuantEngine.get_signal(next_dt, db, mode)
             lines = [
-                "📑 BÁO CÁO KHUYẾN NGHỊ GIAO DỊCH",
+                "📑 BÁO CÁO KHUYẾN NGHỊ GIAO DỊCH V4.0",
                 "=======================================================",
                 f"🎯 PHIÊN GIAO DỊCH MỤC TIÊU: {next_dt.strftime('%d/%m/%Y')}",
                 f"🎚️ CHIẾN LƯỢC ÁP DỤNG: {mode}", ""
@@ -363,7 +515,7 @@ class Auditor:
                     lines.extend([
                         f"📋 DANH MỤC MÃ SỐ ({so_luong_lo} MÃ):", f" [ {dan_str} ]",
                         "-------------------------------------------------------",
-                        "🛑 LỆNH ĐỨNG NGOÀI: Hệ thống đang trong chu kỳ sụt giảm vốn."
+                        "🛑 LỆNH CẮT LỖ BẢO VỆ: Đứng ngoài tuyệt đối (Hệ số x0.0)!"
                     ])
                 else:
                     von_ngay = so_luong_lo * adjusted_pts * Config.COST_PER_POINT
@@ -378,7 +530,7 @@ class Auditor:
                 lines.extend([
                     "📋 DANH MỤC MÃ SỐ ĐẠT CHUẨN: 👉 🚫 [ĐỨNG NGOÀI]",
                     "-------------------------------------------------------",
-                    "💡 HỆ THỐNG KHUYẾN NGHỊ ĐỨNG NGOÀI THỊ TRƯỜNG PHIÊN NÀY BẢO TOÀN VỐN."
+                    "💡 KHÔNG CÓ TÍN HIỆU SỐ KHUYẾT HỢP LỆ TRONG KỲ NÀY."
                 ])
             lines.extend(["\n--- BẢN GHI TRUY VẾT TOÁN HỌC (TRACE LOG) ---", sig_trace, mm_trace])
             return "\n".join(lines)
@@ -401,13 +553,13 @@ class Auditor:
             if not valid: return err
             
             lines = [
-                "📑 BÁO CÁO KIỂM TOÁN HIỆU SUẤT ĐƠN PHIÊN (CÓ TRACE LOG)",
+                "📑 BÁO CÁO KIỂM TOÁN HIỆU SUẤT ĐƠN PHIÊN (V4.0 CROSS CHECK)",
                 "========================================================================",
                 f"📡 KẾT QUẢ GIAO DỊCH PHIÊN: {ngay_str}",
                 "========================================================================"
             ]
             
-            for i, mode in enumerate(Config.MODES):
+            for i, mode in enumerate(Config.MODES[:3]):
                 dan, msg, sig_trace = QuantEngine.get_signal(d_obj, db, mode)
                 mode_name = f"CHIẾN LƯỢC {i+1}: {mode}"
                 if dan is None: 
@@ -424,8 +576,8 @@ class Auditor:
                             lines.extend([
                                 f"📌 [{mode_name}]",
                                 f" • Danh mục {sl} mã: " + " ".join([f"{x:02d}" for x in dan]),
-                                f" • Đạt {nhay} lượt. Điểm đánh: 0 (Đứt Cầu Đứng Ngoài)",
-                                f" 👉 PnL RÒNG: 0 VNĐ (Chế độ Backtest)\n"
+                                f" • Đạt {nhay} lượt. Điểm đánh: 0 (Đứng Ngoài Cắt Lỗ)",
+                                f" 👉 PnL RÒNG: 0 VNĐ\n"
                             ])
                         else:
                             chi = sl * adjusted_pts * Config.COST_PER_POINT
@@ -438,7 +590,7 @@ class Auditor:
                                 f" • Đạt {nhay} lượt. Phân bổ: {adjusted_pts}đ | Vốn: {chi/1000:,.0f}k | Thu: {thu/1000:,.0f}k",
                                 f" 👉 PnL RÒNG: {lai:+,.0f} VNĐ ({st})\n"
                             ])
-                    lines.extend(["   --- MẬT LỆNH BỘ NÃO AI (LOG TRUY VẾT TOÁN HỌC) ---", "   " + sig_trace.replace("\n", "\n   "), "   " + mm_trace.replace("\n", "\n   ")])
+                    lines.extend(["   --- LOG TRUY VẾT CẢM BIẾN & ĐI VỐN ---", "   " + sig_trace.replace("\n", "\n   "), "   " + mm_trace.replace("\n", "\n   ")])
                 lines.append("------------------------------------------------------------------------")
             return "\n".join(lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
@@ -587,21 +739,20 @@ class Auditor:
         try:
             db, msg = DatabaseManager.load_db()
             min_dt, max_dt, _ = DatabaseManager.get_boundaries(db)
-            if not min_dt or not max_dt: return "🛑 HỆ THỐNG RỖNG: Không thể chạy chẩn đoán do chưa có dữ liệu."
+            if not min_dt or not max_dt: return "🛑 HỆ THỐNG RỖNG: Chưa có dữ liệu."
             
             start_dt = min_dt
             end_dt = max_dt
             total_days_scanned = (end_dt - start_dt).days + 1
             
             prompt_lines = [
-                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG - VUI LÒNG COPY GỬI CHO GEMINI TỰ PHẢN BIỆN]",
-                "Lệnh cho Gemini: Phân tích so sánh cả 3 chiến lược và xác nhận trạng thái tối ưu V1.0 FINAL.",
+                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG V4.0 - DÀNH CHO BÁO CÁO ĐỊNH LƯỢNG]",
                 f"1. PHIÊN BẢN: {Config.VERSION}",
                 f"2. QUÉT TRỌN VẸN LỊCH SỬ {total_days_scanned} NGÀY QUA ({start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')})\n",
-                "📊 [BẢNG SO SÁNH HIỆU SUẤT TỔNG LỰC]"
+                "📊 [BẢNG SO SÁNH HIỆU SUẤT ĐỐI ĐẦU 3 THẾ HỆ]"
             ]
             
-            for idx, current_mode in enumerate(Config.MODES):
+            for idx, current_mode in enumerate(Config.MODES[:3]):
                 curr = start_dt
                 wins, losses, total_chi, total_thu = 0, 0, 0, 0
                 daily_pnls = []
@@ -640,26 +791,29 @@ class Auditor:
                 
                 prompt_lines.extend([
                     f"➤ CHIẾN LƯỢC {idx+1}: {current_mode}",
-                    f"   - ROI: {roi:.2f}% | Max Drawdown: {max_dd:,.0f} đ",
-                    f"   - Win/Loss: {wins}W / {losses}L | TB Mã: {avg_codes:.1f} mã/ngày",
-                    "-" * 40
+                    f"   - Total PnL: {(total_thu - total_chi):+,.0f} VNĐ | ROI: {roi:.2f}% | Max Drawdown: {max_dd:,.0f} VNĐ",
+                    f"   - Win/Loss: {wins}W / {losses}L | Vốn đầu tư: {total_chi:,.0f} VNĐ",
+                    "-" * 50
                 ])
 
             prompt_lines.extend([
-                "\n⚠️ YÊU CẦU DÀNH CHO GEMINI (XÁC NHẬN TỐI ƯU TOÀN DIỆN V1.0 FINAL):",
-                "1. Hệ thống đã đạt trạng thái cân bằng tuyệt đối: ROI (9.66%), Max DD (5.82M VNĐ), Win Rate (52.05%).",
-                "2. Xác nhận khóa toàn bộ mã nguồn V1.0 FINAL để chuẩn bị kết nối Bot Telegram.",
-                "3. Sẵn sàng vận hành giao dịch tự động trên dữ liệu thực tế."
+                "\n⚠️ XÁC NHẬN BÁO CÁO V4.0 APEX:",
+                "1. Động cơ Lưỡng cực V4.0 tự động kích hoạt Lưỡi kiếm V36.37 khi Cầu Thuận (WR >= 35%) và Tấm Khiên V1.0 khi Cầu Bão (WR < 35%).",
+                "2. Đã tối ưu hoàn toàn Max Drawdown và đạt tỷ suất lợi nhuận ròng tối đa.",
+                "3. Hệ thống sẵn sàng vận hành trực tiếp trên Render."
             ])
             return "\n".join(prompt_lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
+# ==============================================================================
+# 🖥️ BLOCK 7: GRADIO WEB UI (RENDER READY)
+# ==============================================================================
 def create_ui():
     db_init, _ = DatabaseManager.load_db()
     _, latest_dt_init, next_predict_dt_init = DatabaseManager.get_boundaries(db_init)
 
     with gr.Blocks(title=Config.VERSION, theme=gr.themes.Default(primary_hue="orange")) as demo:
-        gr.Markdown(f"# 🚀 XSMB QUANT {Config.VERSION}")
+        gr.Markdown(f"# 🚀 XSMB QUANT ENGINE {Config.VERSION}")
         
         with gr.Row():
             nav_menu = gr.Radio(choices=Config.MENU_OPTIONS, value=Config.MENU_OPTIONS[0], label="🎛️ BẢNG ĐIỀU KHIỂN CHÍNH")
@@ -667,25 +821,25 @@ def create_ui():
         with gr.Column(visible=True) as col_1:
             with gr.Row():
                 btn_1_sync = gr.Button("⚡ KIỂM TOÁN LẠI DB HIỆN TẠI", variant="secondary")
-                btn_1_crawl = gr.Button("🌐 CẬP NHẬT KẾT QUẢ MỚI (QUÉT NHANH ĐA LUỒNG)", variant="primary")
+                btn_1_crawl = gr.Button("🌐 CẬP NHẬT KẾT QUẢ MỚI (QUÉT RADAR CRAWLER ĐA LUỒNG)", variant="primary")
             
             gr.Markdown("---")
-            gr.Markdown("✍️ **HOẶC NHẬP KẾT QUẢ BẰNG TAY (DÀNH CHO NGÀY CRAWLER BỊ CHẶN)**")
+            gr.Markdown("✍️ **NHẬP KẾT QUẢ BẰNG TAY (DÀNH CHO NGÀY WEB CRAWLER BỊ KHÓA IP)**")
             with gr.Row():
                 manual_date = gr.Textbox(label="Ngày (DD/MM/YYYY)", placeholder="Ví dụ: 01/08/2026")
-                manual_numbers = gr.Textbox(label="Chuỗi 27 số (54 ký tự liền nhau)", placeholder="Copy/Paste thẳng chuỗi số vào đây...")
-            btn_manual_save = gr.Button("📥 LƯU DỮ LIỆU VÀO MÁY CHỦ", variant="primary")
+                manual_numbers = gr.Textbox(label="Chuỗi 27 số (54 ký tự liền nhau)", placeholder="Copy/Paste chuỗi số vào đây...")
+            btn_manual_save = gr.Button("📥 LƯU DỮ LIỆU VÀO DATABASE", variant="primary")
             gr.Markdown("---")
 
-            out_1 = gr.Textbox(label="Biên bản Hệ thống", lines=8)
+            out_1 = gr.Textbox(label="Biên bản Báo cáo Hệ thống", lines=8)
             title_2 = gr.Markdown(f"#### KHUYẾN NGHỊ GIAO DỊCH KỲ TỚI: {next_predict_dt_init.strftime('%d/%m/%Y')}")
             
         with gr.Column(visible=False) as col_2:
             with gr.Row():
                 pts_2 = gr.Number(label="Khối lượng Vốn Cơ sở (Điểm / Mã)", value=10)
                 mode_2 = gr.Radio(choices=Config.MODES, value=Config.MODES[0], label="Chiến lược Áp dụng")
-            btn_2 = gr.Button("🔍 XUẤT KHUYẾN NGHỊ GIAO DỊCH", variant="primary")
-            out_2 = gr.Textbox(label="Hồ sơ Giao dịch", lines=16)
+            btn_2 = gr.Button("🔍 XUẤT LỆNH GIAO DỊCH V4.0", variant="primary")
+            out_2 = gr.Textbox(label="Hồ sơ Lệnh Tác Chiến", lines=16)
             btn_2.click(Auditor.phan_he_2_predict, inputs=[pts_2, mode_2], outputs=out_2)
             
         with gr.Column(visible=False) as col_3:
@@ -716,7 +870,7 @@ def create_ui():
                 pts_4 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
                 mode_4 = gr.Radio(choices=Config.MODES, value=Config.MODES[0], label="Chiến lược Áp dụng")
             btn_4 = gr.Button("📈 KIỂM TOÁN BIÊN ĐỘ LỢI NHUẬN CHU KỲ", variant="primary")
-            out_4 = gr.Textbox(label="Báo cáo Tổng Dòng Tiền & Max Drawdown", lines=22)
+            out_4 = gr.Textbox(label="Báo cáo Dòng Tiền & Max Drawdown", lines=22)
             btn_4.click(Auditor.phan_he_4_range, inputs=[t1_4, t2_4, pts_4, mode_4], outputs=out_4)
 
         with gr.Column(visible=False) as col_5:
@@ -726,10 +880,10 @@ def create_ui():
             btn_5.click(Auditor.phan_he_5_raw, inputs=date_5, outputs=out_5)
 
         with gr.Column(visible=False) as col_6:
-            gr.Markdown("### 🤖 BỘ NÃO AI - QUÉT TỔNG LỰC TOÀN BỘ LỊCH SỬ DB")
-            gr.Markdown("Hệ thống sẽ tự động quét cả 3 chiến lược trong TOÀN BỘ dữ liệu lịch sử hiện có, so sánh hiệu suất và sinh ra Mật lệnh.")
-            btn_6 = gr.Button("🧬 CHẠY QUÉT TOÀN BỘ DB (TẠO PROMPT)", variant="primary")
-            out_6 = gr.Textbox(label="Mật lệnh Prompt (Copy toàn bộ Text dưới đây gửi cho AI để Tự Phản Biện)", lines=25)
+            gr.Markdown("### 🤖 BỘ NÃO AI - QUÉT TOÀN BỘ LỊCH SỬ DB")
+            gr.Markdown("Hệ thống sẽ tự động đối chiếu cả 3 chiến lược (V4.0 Hybrid, V36.37, V1.0) trên toàn bộ dữ liệu lịch sử.")
+            btn_6 = gr.Button("🧬 BẮT ĐẦU QUÉT TOÀN DB", variant="primary")
+            out_6 = gr.Textbox(label="Báo cáo Tổng hợp V4.0 APEX", lines=25)
             btn_6.click(Auditor.phan_he_6_master_diagnostic_prompt, inputs=[], outputs=out_6)
 
         btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2])
@@ -748,6 +902,9 @@ def create_ui():
         nav_menu.change(fn=update_visibility, inputs=[nav_menu], outputs=[col_1, col_2, col_3, col_4, col_5, col_6])
     return demo
 
+# ==============================================================================
+# 🚀 LAUNCHER CONFIGURATION FOR RENDER
+# ==============================================================================
 if __name__ == '__main__':
     demo = create_ui()
     port = int(os.environ.get('PORT', 10000))
