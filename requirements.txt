@@ -3,3 +3,5 @@ pandas
 openpyxl
 numpy
 requests
+gspread
+google-auth
