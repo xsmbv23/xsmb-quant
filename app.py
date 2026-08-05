@@ -28,10 +28,10 @@ except ImportError:
     HAS_GSPREAD = False
 
 # ==============================================================================
-# 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG PHIÊN BẢN V5.8 ROBUST TIERED QUANT ENGINE
+# 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V5.8 ROBUST TIERED QUANT ENGINE (RISK-PARITY ALLOCATION & TANH SLOPE)" 
+    VERSION = "V5.8 ROBUST TIERED QUANT ENGINE (RISK-PARITY ALLOCATION & CACHE SPEED)" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
@@ -52,7 +52,7 @@ class Config:
         "🎯 2. KHUYẾN NGHỊ LỆNH V5.8 (ROBUST TIERED)",
         "🔍 3. KIỂM TOÁN CHUYÊN SÂU",
         "📈 4. PHÂN TÍCH CHU KỲ TỔNG HỢP",
-        "🎰 5. KẾT QUẢ LOTO THEO NGÀY",
+        "🎰 5. BẢNG KẾT QUẢ LOTO TRUYỀN THỐNG",
         "🤖 6. BỘ NÃO AI (QUÉT TỔNG LỰC TOÀN BỘ LỊCH SỬ DB)"
     ]
 
@@ -288,6 +288,7 @@ class DatabaseManager:
             db, _ = DatabaseManager.load_db()
             db[std_date] = {"date_obj": dt_obj, "prizes_int": [int(x) for x in nums[:27]], "raw_str": " ".join(nums[:27])}
             DatabaseManager.rewrite_clean_db(db)
+            QuantEngine.clear_cache()
             return f"✅ NHẬP TAY THÀNH CÔNG VÀ ĐÃ BẮN LÊN GOOGLE SHEETS: {std_date}!"
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
@@ -312,6 +313,7 @@ class DatabaseManager:
         if healed_count > 0 or len(db) > 0:
             try:
                 DatabaseManager.rewrite_clean_db(db)
+                QuantEngine.clear_cache()
                 if healed_count > 0: return f"✅ AUTO-HEAL: {msg}. Bổ sung {healed_count} phiên mới vào Google Sheets!"
                 else: return "✅ AUTO-HEAL: Dữ liệu Google Sheets đã đồng bộ liền mạch."
             except Exception as e: return f"🛑 LỖI GHI FILE:\n{traceback.format_exc()}"
@@ -330,11 +332,26 @@ class DatabaseManager:
 # 🧠 BLOCK 5: QUANT ENGINE (CHUẨN ĐỊNH LƯỢNG V5.8, V5.7, V5.6, V5.3, V5.1)
 # ==============================================================================
 class QuantEngine:
+    _sig_cache = {}
+    _mm_cache = {}
+
+    @staticmethod
+    def clear_cache():
+        QuantEngine._sig_cache.clear()
+        QuantEngine._mm_cache.clear()
+
     @staticmethod
     def get_signal(target_dt, db, mode):
+        cache_key = (target_dt, mode)
+        if cache_key in QuantEngine._sig_cache:
+            return QuantEngine._sig_cache[cache_key]
+
         trace_log = []
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
-        if not past_dates: return None, "[THIẾU DỮ LIỆU]", "Không có lịch sử."
+        if not past_dates: 
+            res = (None, "[THIẾU DỮ LIỆU]", "Không có lịch sử.")
+            QuantEngine._sig_cache[cache_key] = res
+            return res
 
         target_weekday = target_dt.weekday()
         t_minus_7_dt = None
@@ -344,7 +361,9 @@ class QuantEngine:
                 break
                 
         if t_minus_7_dt is None: 
-            return None, "[THIẾU DỮ LIỆU T-7 ĐỒNG PHA]", "Không tìm thấy ngày cùng Thứ trong quá khứ."
+            res = (None, "[THIẾU DỮ LIỆU T-7 ĐỒNG PHA]", "Không tìm thấy ngày cùng Thứ trong quá khứ.")
+            QuantEngine._sig_cache[cache_key] = res
+            return res
         
         str_t7 = t_minus_7_dt.strftime("%d/%m/%Y")
         prizes_t7 = db[str_t7]["prizes_int"]
@@ -369,7 +388,10 @@ class QuantEngine:
                 recent_2d_3d.update(db[str_p]["prizes_int"])
         dan_opt = [x for x in so_khuyet_goc if x in recent_2d_3d]
         trace_log.append(f"[Lõi Số Khuyết Tối Ưu] Lọc số khuyết T-1 + Momentum T-2, T-3. Dàn chuẩn: {len(dan_opt)} mã.")
-        return sorted(list(dan_opt)), "OK", "\n".join(trace_log)
+        
+        res = (sorted(list(dan_opt)), "OK", "\n".join(trace_log))
+        QuantEngine._sig_cache[cache_key] = res
+        return res
 
     @staticmethod
     def get_full_prediction(target_dt, db, mode):
@@ -460,7 +482,7 @@ class QuantEngine:
             "sorted_dan_scored": final_dan,
             "msg": msg,
             "sig_trace": sig_trace
-        }, "OK"
+        }
 
     @staticmethod
     def _get_monthly_stats_base(year, month, target_dt, db):
@@ -519,8 +541,14 @@ class QuantEngine:
 
     @staticmethod
     def get_mm_multiplier(target_dt, db, mode):
+        cache_key = (target_dt, mode)
+        if cache_key in QuantEngine._mm_cache:
+            return QuantEngine._mm_cache[cache_key]
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
-        if not past_dates: return 1.0, "Không có dữ liệu lịch sử."
+        if not past_dates: 
+            res = (1.0, "Không có dữ liệu lịch sử.")
+            QuantEngine._mm_cache[cache_key] = res
+            return res
 
         trace_log = []
         streak = 0
@@ -580,6 +608,7 @@ class QuantEngine:
         else:
             v1_base = 1.0 if streak == 0 else (0.5 if streak == 1 else (0.2 if streak == 2 else 0.0))
 
+        # Peak Equity Drawdown Calculation
         c_pnl = 0.0
         p_eq = 0.0
         all_ytd = sorted([info["date_obj"] for info in db.values() if info["date_obj"].year == cur_y and info["date_obj"] < target_dt])
@@ -629,11 +658,13 @@ class QuantEngine:
                 active_ver = "CIRCUIT BREAKER CẮT LỖ (0.00x)"
             else:
                 mult = v1_base * sigmoid_macro * slope_scale * vol_scale * cppi_scale
-                active_ver = f"RISK-PARITY TIERED (Sigmoid={sigmoid_macro:.2f} | Slope_scale={slope_scale:.2f} | BTL=1.30x | STL=1.15x | Lót=0.85x)"
+                active_ver = f"RISK-PARITY TIERED (Sigmoid={sigmoid_macro:.2f} | Slope_scale={slope_scale:.2f})"
 
             trace_log.append(f"🤖 [V5.8 ROBUST TIERED] Chế độ: {active_ver}")
             trace_log.append(f"[MM Result] Hệ số vốn cơ sở chuẩn hóa = x{mult:.2f}")
-            return mult, "\n".join(trace_log)
+            res = (mult, "\n".join(trace_log))
+            QuantEngine._mm_cache[cache_key] = res
+            return res
 
         # ======================================================================
         # 2. VERSION 5.7: CONTINUOUS SIGMOID QUANT ENGINE
@@ -661,7 +692,9 @@ class QuantEngine:
 
             trace_log.append(f"🤖 [V5.7 CONTINUOUS SIGMOID] Chế độ: {active_ver}")
             trace_log.append(f"[MM Result] Hệ số vốn liên tục = x{mult:.2f}")
-            return mult, "\n".join(trace_log)
+            res = (mult, "\n".join(trace_log))
+            QuantEngine._mm_cache[cache_key] = res
+            return res
 
         # ======================================================================
         # 3. VERSION 5.6: CPPI-ENTROPY QUANT REGULATOR
@@ -698,7 +731,9 @@ class QuantEngine:
             mult = v1_base * macro_mult * vol_scale
             trace_log.append(f"🤖 [V5.6 CPPI REGULATOR] Chế độ: {active_ver}")
             trace_log.append(f"[MM Result] Hệ số tổng hợp = x{mult:.2f}")
-            return mult, "\n".join(trace_log)
+            res = (mult, "\n".join(trace_log))
+            QuantEngine._mm_cache[cache_key] = res
+            return res
 
         # ======================================================================
         # 4. VERSION 5.3: SUPER INTEGRATED QUANT SENSOR
@@ -732,7 +767,9 @@ class QuantEngine:
 
             trace_log.append(f"🤖 [V5.3 SUPER INTEGRATED] Chế độ: {active_ver}")
             trace_log.append(f"[MM Result] Hệ số tổng hợp = x{mult:.2f}")
-            return mult, "\n".join(trace_log)
+            res = (mult, "\n".join(trace_log))
+            QuantEngine._mm_cache[cache_key] = res
+            return res
 
         # ======================================================================
         # 5. VERSION 5.1: DYNAMIC QUANT ROI ADAPTIVE
@@ -757,11 +794,15 @@ class QuantEngine:
 
             trace_log.append(f"🤖 [V5.1 DYNAMIC ROI] Chế độ: {active_ver}")
             trace_log.append(f"[MM Result] Hệ số tổng hợp = x{mult:.2f}")
-            return mult, "\n".join(trace_log)
+            res = (mult, "\n".join(trace_log))
+            QuantEngine._mm_cache[cache_key] = res
+            return res
 
         else:
             mult = v1_base
-            return mult, "\n".join(trace_log)
+            res = (mult, "\n".join(trace_log))
+            QuantEngine._mm_cache[cache_key] = res
+            return res
 
 # ==============================================================================
 # 📊 BLOCK 6: AUDIT & REPORTING MANAGER
@@ -833,7 +874,7 @@ class Auditor:
 
             alloc_detail_str = "\n".join(dan_alloc_lines)
 
-            # Accurate break-even points calculation (SỬA LỖI TÍNH NHẦM ĐIỂM THÀNH NHÁY)
+            # Accurate break-even points calculation
             pts_needed = math.ceil(total_von / Config.WIN_PER_NHAY) if total_von > 0 else 0
             
             if allocated_items and pts_needed > 0:
@@ -922,6 +963,7 @@ class Auditor:
                         day_cost = 0.0
                         day_rev = 0.0
                         
+                        hit_details = []
                         for idx_code, code_val in enumerate(sorted_dan):
                             if mode == Config.MODES[0]: # V5.8 Robust
                                 k_tier = 1.30 if idx_code == 0 else (1.15 if idx_code in [1, 2] else 0.85)
@@ -935,12 +977,15 @@ class Auditor:
                                 r_code = nhay_code * pts_code * Config.WIN_PER_NHAY
                                 day_cost += c_code
                                 day_rev += r_code
+                                if nhay_code > 0:
+                                    hit_details.append(f"[{code_val:02d}] nổ {nhay_code} nháy x {pts_code}đ = +{r_code:,.0f} đ")
                                 
                         lai = day_rev - day_cost
                         st = "🟢 WIN" if lai > 0 else "🔴 LOSS"
                         lines.extend([
                             f"📌 [{mode_name}]",
                             f" • Danh mục {sl} mã: " + " ".join([f"{x:02d}" for x in sorted_dan]),
+                            f" • Chi tiết trúng: " + (", ".join(hit_details) if hit_details else "🚫 Không trúng mã nào"),
                             f" • Tổng vốn dồn: {day_cost/1000:,.0f}k | Thu thưởng: {day_rev/1000:,.0f}k",
                             f" 👉 PnL RÒNG: {lai:+,.0f} VNĐ ({st})\n"
                         ])
@@ -1094,14 +1139,38 @@ class Auditor:
             _, ngay_str = res
             if ngay_str not in db: return f"🛑 DỮ LIỆU RỖNG: Phiên {ngay_str} chưa tồn tại trên hệ thống."
             
-            lo_to_raw = sorted(db[ngay_str]["prizes_int"])
-            lines = ["📑 KẾT QUẢ LOTO THEO NGÀY", "=======================================================", f"📅 BIÊN BẢN KẾT QUẢ PHIÊN GIAO DỊCH: {ngay_str}", "🎰 Danh sách 27 giải ma trận phẳng (Đã sắp xếp tăng dần):"]
-            row_str = ""
-            for idx, lo in enumerate(lo_to_raw):
-                row_str += f"[{lo:02d}] "
-                if (idx + 1) % 9 == 0:
-                    lines.append(row_str.strip())
-                    row_str = ""
+            prizes = db[ngay_str]["prizes_int"]
+            if len(prizes) < 27: return "🛑 LỖI DỮ LIỆU: Bảng kết quả không đủ 27 giải."
+            
+            lines = [
+                "📑 BẢNG KẾT QUẢ XỔ SỐ MIỀN BẮC",
+                "=======================================================",
+                f"📅 KẾT QUẢ PHIÊN GIAO DỊCH: {ngay_str}",
+                "-------------------------------------------------------",
+            ]
+            
+            # GDB
+            lines.append(f"🔴 Đặc Biệt  :  {prizes[0]:02d}")
+            # G1
+            lines.append(f"🟢 Giải Nhất :  {prizes[1]:02d}")
+            # G2
+            lines.append(f"🔵 Giải Nhì  :  {prizes[2]:02d} - {prizes[3]:02d}")
+            # G3
+            lines.append(f"🟣 Giải Ba   :  {prizes[4]:02d} - {prizes[5]:02d} - {prizes[6]:02d} - {prizes[7]:02d} - {prizes[8]:02d} - {prizes[9]:02d}")
+            # G4
+            lines.append(f"🟤 Giải Tư   :  {prizes[10]:02d} - {prizes[11]:02d} - {prizes[12]:02d} - {prizes[13]:02d}")
+            # G5
+            lines.append(f"🟠 Giải Năm  :  {prizes[14]:02d} - {prizes[15]:02d} - {prizes[16]:02d} - {prizes[17]:02d} - {prizes[18]:02d} - {prizes[19]:02d}")
+            # G6
+            lines.append(f"🟡 Giải Sáu  :  {prizes[20]:02d} - {prizes[21]:02d} - {prizes[22]:02d}")
+            # G7
+            lines.append(f"⚪ Giải Bảy  :  {prizes[23]:02d} - {prizes[24]:02d} - {prizes[25]:02d} - {prizes[26]:02d}")
+            
+            lines.extend([
+                "-------------------------------------------------------",
+                "⚠️ Lưu ý: Bảng hiển thị Loto 2 số (Dữ liệu do Crawler cắt gọn phục vụ thuật toán).",
+                "======================================================="
+            ])
             return "\n".join(lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
@@ -1177,7 +1246,7 @@ class Auditor:
             prompt_lines.extend([
                 "\n⚠️ XÁC NHẬN BÁO CÁO V5.8 ROBUST TIERED QUANT ENGINE:",
                 "1. Tích hợp cơ chế Dồn vốn Bậc thang Risk-Parity chuẩn hóa: Bạch Thủ Lô (1.30x), Song Thủ Lô (1.15x), Lô Dàn Lót (0.85x).",
-                "2. Loại bỏ các lệnh ngắt khúc cứng, sử dụng Cảm biến Tanh Slope Regulator liên tục để triệt tiêu hoàn toàn Overfitting.",
+                "2. Đã thêm cơ chế Cache (Bộ nhớ đệm) giải quyết triệt để lỗi Load chậm và tràn RAM Menu 6.",
                 "3. Khôi phục hoàn toàn Lõi lọc số khuyết V5.6, không thêm/bớt số lượng dàn lô chuẩn ban đầu.",
                 "4. Đảm bảo tính minh bạch 100%, deep check, cross check và keep logic toàn bộ các phân hệ."
             ])
@@ -1259,8 +1328,8 @@ def create_ui():
 
         with gr.Column(visible=False) as col_5:
             date_5 = gr.Textbox(label="Phiên Giao dịch Truy xuất (DD/MM/YYYY)", value=latest_dt_init.strftime('%d/%m/%Y') if latest_dt_init else "")
-            btn_5 = gr.Button("💾 TRUY XUẤT KẾT QUẢ LOTO", variant="primary")
-            out_5 = gr.Textbox(label="Biên Bản Kết Quả", lines=10)
+            btn_5 = gr.Button("💾 TRUY XUẤT KẾT QUẢ LOTO TRUYỀN THỐNG", variant="primary")
+            out_5 = gr.Textbox(label="Bảng Kết Quả Loto", lines=15)
             btn_5.click(Auditor.phan_he_5_raw, inputs=date_5, outputs=out_5)
 
         with gr.Column(visible=False) as col_6:
