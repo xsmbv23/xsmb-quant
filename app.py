@@ -48,7 +48,7 @@ class Config:
         "📈 [VERSION 5.1] V5.1 DYNAMIC QUANT ROI ADAPTIVE (CẢM BIẾN ROI ĐA KHUNG THỜI GIAN)"
     ]
     MENU_OPTIONS = [
-        "🔄 1. ĐỒNG BỘ & CẬP NHẬT DỮ LIỆU",
+        "🔄 1. ĐỒNG BỘ & CẬP thực DỮ LIỆU",
         "🎯 2. KHUYẾN NGHỊ LỆNH V5.8 (ROBUST TIERED)",
         "🔍 3. KIỂM TOÁN CHUYÊN SÂU",
         "📈 4. PHÂN TÍCH CHU KỲ TỔNG HỢP",
@@ -399,7 +399,7 @@ class QuantEngine:
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
         
         if not past_dates or dan_opt is None:
-            return None, msg
+            return None, f"{msg}\n👉 Truy vết: {sig_trace}"
 
         recent_14 = past_dates[:14]
         freq_14 = {}
@@ -1259,7 +1259,7 @@ class Auditor:
 # ==============================================================================
 def create_ui():
     db_init, _ = DatabaseManager.load_db()
-    _, latest_dt_init, next_predict_dt_init = DatabaseManager.get_boundaries(db_init)
+    min_dt_init, latest_dt_init, next_predict_dt_init = DatabaseManager.get_boundaries(db_init)
 
     with gr.Blocks(title=Config.VERSION, theme=gr.themes.Default(primary_hue="orange")) as demo:
         gr.Markdown(f"# 🚀 XSMB QUANT ENGINE {Config.VERSION}")
@@ -1319,7 +1319,7 @@ def create_ui():
 
         with gr.Column(visible=False) as col_4:
             with gr.Row():
-                t1_4 = gr.Textbox(label="Từ ngày (DD/MM/YYYY)", value="01/01/2026")
+                t1_4 = gr.Textbox(label="Từ ngày (DD/MM/YYYY)", value=min_dt_init.strftime('%d/%m/%Y') if min_dt_init else "")
                 t2_4 = gr.Textbox(label="Đến ngày (DD/MM/YYYY)", value=latest_dt_init.strftime('%d/%m/%Y') if latest_dt_init else "")
                 pts_4 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
                 mode_4 = gr.Radio(choices=Config.MODES, value=Config.MODES[0], label="Chiến lược Áp dụng")
