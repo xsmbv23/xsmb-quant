@@ -377,7 +377,7 @@ class QuantEngine:
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
         
         if not past_dates or dan_opt is None:
-            return None, msg, sig_trace
+            return None, msg
 
         recent_14 = past_dates[:14]
         freq_14 = {}
@@ -461,25 +461,6 @@ class QuantEngine:
             "msg": msg,
             "sig_trace": sig_trace
         }, "OK"
-
-    @staticmethod
-    def _get_streak(target_dt, db):
-        past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
-        streak = 0
-        for curr_dt in past_dates[:40]: 
-            str_curr = curr_dt.strftime("%d/%m/%Y")
-            dan, _, _ = QuantEngine.get_signal(curr_dt, db, Config.MODES[0])
-            if dan is not None and len(dan) > 0:
-                nhay = sum(db[str_curr]["prizes_int"].count(x) for x in dan)
-                cost = len(dan) * Config.BASE_PTS * Config.COST_PER_POINT
-                rev = nhay * Config.BASE_PTS * Config.WIN_PER_NHAY
-                if rev - cost > 0:
-                    break 
-                else:
-                    streak += 1
-                    if streak >= 4:
-                        break 
-        return streak
 
     @staticmethod
     def _get_monthly_stats_base(year, month, target_dt, db):
@@ -599,7 +580,8 @@ class QuantEngine:
         else:
             v1_base = 1.0 if streak == 0 else (0.5 if streak == 1 else (0.2 if streak == 2 else 0.0))
 
-        c_pnl, p_eq = 0.0, 0.0
+        c_pnl = 0.0
+        p_eq = 0.0
         all_ytd = sorted([info["date_obj"] for info in db.values() if info["date_obj"].year == cur_y and info["date_obj"] < target_dt])
         for p_dt in all_ytd:
             p_dan, _, _ = QuantEngine.get_signal(p_dt, db, Config.MODES[0])
@@ -851,7 +833,7 @@ class Auditor:
 
             alloc_detail_str = "\n".join(dan_alloc_lines)
 
-            # Accurate break-even points calculation
+            # Accurate break-even points calculation (SỬA LỖI TÍNH NHẦM ĐIỂM THÀNH NHÁY)
             pts_needed = math.ceil(total_von / Config.WIN_PER_NHAY) if total_von > 0 else 0
             
             if allocated_items and pts_needed > 0:
