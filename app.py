@@ -399,7 +399,7 @@ class QuantEngine:
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
         
         if not past_dates or dan_opt is None:
-            return None, msg
+            return None, f"{msg}\n👉 Truy vết: {sig_trace}"
 
         recent_14 = past_dates[:14]
         freq_14 = {}
@@ -420,8 +420,6 @@ class QuantEngine:
 
         prizes_t7 = set(db[past_dates[6].strftime("%d/%m/%Y")]["prizes_int"]) if len(past_dates) >= 7 else set()
         
-        # CHỈ SỬ DỤNG ĐÚNG DÀN dan_opt CỦA V5.6, KHÔNG THÊM BỚT
-        # Calculate composite score for each candidate in dan_opt
         scored_candidates = sorted(
             dan_opt, 
             key=lambda x: (freq_14.get(x, 0) * 1.5 + (2.0 if x in prizes_t7 else 0.0), x), 
@@ -430,10 +428,8 @@ class QuantEngine:
         
         final_dan = list(scored_candidates)
 
-        # 1. Bạch Thủ Lô (Rank 0)
         best_btl = final_dan[0] if len(final_dan) > 0 else 0
 
-        # 2. Song Thủ Lô (Rank 1 & 2)
         lon_btl = (best_btl % 10) * 10 + (best_btl // 10)
         if len(final_dan) >= 3:
             stl_pair = (final_dan[1], final_dan[2])
@@ -442,25 +438,21 @@ class QuantEngine:
         else:
             stl_pair = (lon_btl if lon_btl != best_btl else (best_btl + 11) % 100, (best_btl + 22) % 100)
 
-        # 3. Lô Xiên 2
         sec1 = stl_pair[0]
         sec2 = stl_pair[1]
         xien2_pair1 = f"{best_btl:02d} - {sec1:02d}"
         xien2_pair2 = f"{best_btl:02d} - {sec2:02d}"
         loto_xien2 = f"{xien2_pair1} | {xien2_pair2}"
 
-        # 4. Lô 3 Càng (3D)
         top_hundreds = sorted(hundreds_freq.keys(), key=lambda h: -hundreds_freq[h])[:2]
         h1 = top_hundreds[0] if len(top_hundreds) > 0 else 0
         h2 = top_hundreds[1] if len(top_hundreds) > 1 else 1
         loto_3cang = f"{h1}{best_btl:02d} - {h2}{stl_pair[0]:02d}"
 
-        # 5. Lô Kép Bằng
         keps = [0, 11, 22, 33, 44, 55, 66, 77, 88, 99]
         sorted_keps = sorted(keps, key=lambda k: (- (1 if k in final_dan else 0), -freq_14.get(k, 0)))
         lo_kep = f"{sorted_keps[0]:02d} - {sorted_keps[1]:02d}"
 
-        # 6. Dàn Đề 10 Số
         str_t1 = past_dates[0].strftime("%d/%m/%Y")
         gdb_t1 = db[str_t1]["prizes_int"][0]
         de_head, de_tail = gdb_t1 // 10, gdb_t1 % 10
@@ -482,7 +474,7 @@ class QuantEngine:
             "sorted_dan_scored": final_dan,
             "msg": msg,
             "sig_trace": sig_trace
-        }
+        }, "OK"
 
     @staticmethod
     def _get_monthly_stats_base(year, month, target_dt, db):
@@ -1059,10 +1051,10 @@ class Auditor:
             lines.extend([
                 "=============================================================================================================================",
                 f"📝 TỔNG KẾT THÁNG {thang:02d}/{nam}:",
-                f"💰 TỔNG VỐN DỒN ROBUST TIERED : {tot_von:,.0f} VNĐ",
-                f"💵 TỔNG DOANH THU THƯỞNG    : {tot_thu:,.0f} VNĐ",
-                f"🚀 LỢI NHUẬN RÒNG            : {tot_lai:+,.0f} VNĐ",
-                f"📈 TỶ SUẤT R.O.I             : {tot_roi:+.2f} %"
+                f"💰 TỔNG VỐN DỒN TIERED   : {tot_von:,.0f} VNĐ",
+                f"💵 TỔNG DOANH THU THƯỞNG  : {tot_thu:,.0f} VNĐ",
+                f"🚀 LỢI NHUẬN RÒNG          : {tot_lai:+,.0f} VNĐ",
+                f"📈 TỶ SUẤT R.O.I           : {tot_roi:+.2f} %"
             ])
             return "\n".join(lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
