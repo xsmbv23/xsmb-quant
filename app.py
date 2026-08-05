@@ -28,10 +28,10 @@ except ImportError:
     HAS_GSPREAD = False
 
 # ==============================================================================
-# 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG PHIÊN BẢN V5.6 CPPI-ENTROPY QUANT REGULATOR
+# 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG PHIÊN BẢN V5.7 CONTINUOUS SIGMOID QUANT ENGINE
 # ==============================================================================
 class Config:
-    VERSION = "V5.6 CPPI-ENTROPY QUANT REGULATOR (BẢN ỔN ĐỊNH & BỀN BỈ NÂNG CAO)" 
+    VERSION = "V5.7 CONTINUOUS SIGMOID QUANT ENGINE (TOÁN HỌC LIÊN TỤC CHỐNG OVERFIT)" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
@@ -41,13 +41,14 @@ class Config:
     STORM_THRESHOLD = 0.35
     
     MODES = [
+        "🤖 [VERSION 5.7] V5.7 CONTINUOUS SIGMOID QUANT ENGINE (HÀM S-CURVE LIÊN TỤC CHỐNG OVERFIT)",
         "🤖 [VERSION 5.6] V5.6 CPPI-ENTROPY QUANT REGULATOR (BẢN ỔN ĐỊNH & BỀN BỈ NÂNG CAO)",
         "🧬 [VERSION 5.3] V5.3 SUPER INTEGRATED QUANT SENSOR (TÍCH HỢP 10 CẢM BIẾN ĐA TẦNG)",
         "📈 [VERSION 5.1] V5.1 DYNAMIC QUANT ROI ADAPTIVE (CẢM BIẾN ROI ĐA KHUNG THỜI GIAN)"
     ]
     MENU_OPTIONS = [
         "🔄 1. ĐỒNG BỘ & CẬP NHẬT DỮ LIỆU",
-        "🎯 2. KHUYẾN NGHỊ LỆNH V5.6",
+        "🎯 2. KHUYẾN NGHỊ LỆNH V5.7 (HỒ SƠ CHỐT SỐ THƯỞNG KÊ)",
         "🔍 3. KIỂM TOÁN CHUYÊN SÂU",
         "📈 4. PHÂN TÍCH CHU KỲ TỔNG HỢP",
         "🎰 5. KẾT QUẢ LOTO THEO NGÀY",
@@ -325,7 +326,7 @@ class DatabaseManager:
         return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE (CHUẨN ĐỊNH LƯỢNG V5.6, V5.3, V5.1)
+# 🧠 BLOCK 5: QUANT ENGINE (CHUẨN ĐỊNH LƯỢNG V5.7, V5.6, V5.3, V5.1)
 # ==============================================================================
 class QuantEngine:
     @staticmethod
@@ -368,6 +369,117 @@ class QuantEngine:
         dan_opt = [x for x in so_khuyet_goc if x in recent_2d_3d]
         trace_log.append(f"[Lõi Số Khuyết Tối Ưu] Lọc số khuyết T-1 + Momentum T-2, T-3. Dàn chuẩn: {len(dan_opt)} mã.")
         return sorted(list(dan_opt)), "OK", "\n".join(trace_log)
+
+    @staticmethod
+    def get_full_prediction(target_dt, db, mode):
+        dan_opt, msg, sig_trace = QuantEngine.get_signal(target_dt, db, mode)
+        past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
+        
+        if not past_dates or dan_opt is None:
+            return None, msg, sig_trace
+
+        recent_14 = past_dates[:14]
+        freq_14 = {}
+        hundreds_freq = {i: 0 for i in range(10)}
+        
+        for p_dt in recent_14:
+            p_str = p_dt.strftime("%d/%m/%Y")
+            prizes = db[p_str]["prizes_int"]
+            raw_tokens = db[p_str]["raw_str"].split()
+            
+            for num in prizes:
+                freq_14[num] = freq_14.get(num, 0) + 1
+            
+            for token in raw_tokens:
+                if len(token) >= 3:
+                    h_digit = int(token[-3])
+                    hundreds_freq[h_digit] += 1
+
+        # 1. Bạch Thủ Lô (BTL)
+        if dan_opt:
+            best_btl = max(dan_opt, key=lambda x: (freq_14.get(x, 0), x))
+        else:
+            best_btl = max(range(100), key=lambda x: freq_14.get(x, 0))
+
+        # 2. Song Thủ Lô (STL)
+        lon_btl = (best_btl % 10) * 10 + (best_btl // 10)
+        if len(dan_opt) >= 2:
+            stl_candidates = [x for x in dan_opt if x != best_btl]
+            best_stl_2 = max(stl_candidates, key=lambda x: (freq_14.get(x, 0), x))
+            stl_pair = (best_btl, best_stl_2)
+        elif lon_btl != best_btl:
+            stl_pair = (best_btl, lon_btl)
+        else:
+            other_num = (best_btl + 11) % 100
+            stl_pair = (best_btl, other_num)
+
+        # 3. Lô Xiên 2
+        candidates_sorted = sorted(dan_opt if len(dan_opt) >= 4 else list(set(dan_opt + [lon_btl, (best_btl+50)%100, (best_btl+14)%100])), key=lambda x: -freq_14.get(x, 0))
+        sec1 = candidates_sorted[1] if len(candidates_sorted) > 1 else (best_btl + 14) % 100
+        sec2 = candidates_sorted[2] if len(candidates_sorted) > 2 else (best_btl + 69) % 100
+        
+        xien2_pair1 = f"{best_btl:02d} - {sec1:02d}"
+        xien2_pair2 = f"{stl_pair[0]:02d} - {sec2:02d}" if stl_pair[0] != stl_pair[1] else f"{sec1:02d} - {sec2:02d}"
+        loto_xien2 = f"{xien2_pair1} | {xien2_pair2}"
+
+        # 4. Lô 3 Càng (3D)
+        top_hundreds = sorted(hundreds_freq.keys(), key=lambda h: -hundreds_freq[h])[:2]
+        h1, h2 = top_hundreds[0], top_hundreds[1]
+        cang3d_1 = f"{h1}{best_btl:02d}"
+        cang3d_2 = f"{h2}{stl_pair[1]:02d}"
+        loto_3cang = f"{cang3d_1} - {cang3d_2}"
+
+        # 5. Lô Kép Bằng
+        keps = [0, 11, 22, 33, 44, 55, 66, 77, 88, 99]
+        sorted_keps = sorted(keps, key=lambda k: (- (1 if k in dan_opt else 0), -freq_14.get(k, 0)))
+        lo_kep = f"{sorted_keps[0]:02d} - {sorted_keps[1]:02d}"
+
+        # 6. Dàn Đề 10 Số
+        str_t1 = past_dates[0].strftime("%d/%m/%Y")
+        gdb_t1 = db[str_t1]["prizes_int"][0]
+        de_head = gdb_t1 // 10
+        de_tail = gdb_t1 % 10
+        
+        de_set = set([best_btl, lon_btl, stl_pair[0], stl_pair[1]])
+        for i in range(10):
+            de_set.add(de_head * 10 + i)
+            de_set.add(i * 10 + de_tail)
+            if len(de_set) >= 10: break
+            
+        sorted_de = sorted(list(de_set), key=lambda x: (- (1 if x in dan_opt else 0), -freq_14.get(x, 0)))[:10]
+        sorted_de = sorted(sorted_de)
+        dan_de_10 = ", ".join([f"{x:02d}" for x in sorted_de])
+
+        return {
+            "btl": f"{best_btl:02d}",
+            "stl": f"{stl_pair[0]:02d} - {stl_pair[1]:02d}",
+            "xien2": loto_xien2,
+            "cang3d": loto_3cang,
+            "kep": lo_kep,
+            "dan_de_10": dan_de_10,
+            "dan_opt": dan_opt,
+            "msg": msg,
+            "sig_trace": sig_trace
+        }, "OK"
+
+    @staticmethod
+    def _get_streak(target_dt, db):
+        past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
+        streak = 0
+        for curr_dt in past_dates[:40]: 
+            str_curr = curr_dt.strftime("%d/%m/%Y")
+            dan, _, _ = QuantEngine.get_signal(curr_dt, db, Config.MODES[0])
+            if dan is not None and len(dan) > 0:
+                nhay = sum(db[str_curr]["prizes_int"].count(x) for x in dan)
+                cost = len(dan) * Config.BASE_PTS * Config.COST_PER_POINT
+                rev = nhay * Config.BASE_PTS * Config.WIN_PER_NHAY
+                if rev - cost > 0:
+                    break 
+                else:
+                    streak += 1
+                    if streak >= 4:
+                        break 
+        return streak
 
     @staticmethod
     def _get_monthly_stats_base(year, month, target_dt, db):
@@ -430,30 +542,13 @@ class QuantEngine:
         if not past_dates: return 1.0, "Không có dữ liệu lịch sử."
 
         trace_log = []
-        streak = 0
-        for curr_dt in past_dates[:40]: 
-            str_curr = curr_dt.strftime("%d/%m/%Y")
-            dan, _, _ = QuantEngine.get_signal(curr_dt, db, Config.MODES[0])
-            if dan is not None and len(dan) > 0:
-                nhay = sum(db[str_curr]["prizes_int"].count(x) for x in dan)
-                cost = len(dan) * Config.BASE_PTS * Config.COST_PER_POINT
-                rev = nhay * Config.BASE_PTS * Config.WIN_PER_NHAY
-                if rev - cost > 0:
-                    trace_log.append(f"[Streak Log] Cắt chuỗi tại ngày WIN ({str_curr}).")
-                    break 
-                else:
-                    streak += 1
-                    trace_log.append(f"[Streak Log] Ngày {str_curr} THUA -> Chuỗi = {streak}.")
-                    if streak >= 4:
-                        trace_log.append("[Streak Log] Đạt Max chuỗi thua 4. Kích hoạt Cắt Lỗ tuyệt đối.")
-                        break 
+        streak = QuantEngine._get_streak(target_dt, db)
 
         cur_m, cur_y = target_dt.month, target_dt.year
         cost_mtd, pnl_mtd, roi_mtd, w_mtd, l_mtd = QuantEngine._get_monthly_stats_base(cur_y, cur_m, target_dt, db)
         cost_ytd, pnl_ytd, roi_ytd = QuantEngine._get_ytd_stats_base(cur_y, target_dt, db)
         cost_7d, pnl_7d, roi_7d = QuantEngine._get_rolling_stats_base(7, target_dt, db)
 
-        # Calculate rolling 14d Hit Density and Daily PnL Volatility
         recent_14 = past_dates[:14]
         tot_nhay_14, tot_codes_14 = 0, 0
         daily_pnls_14 = []
@@ -466,9 +561,9 @@ class QuantEngine:
                 tot_nhay_14 += nhay_r
                 pnl_r = nhay_r * Config.BASE_PTS * Config.WIN_PER_NHAY - len(r_dan) * Config.BASE_PTS * Config.COST_PER_POINT
                 daily_pnls_14.append(pnl_r)
-        d_nhay_14d = (tot_nhay_14 / tot_codes_14) if tot_codes_14 > 0 else 0.20
+        p_hit_14d = (tot_nhay_14 / tot_codes_14) if tot_codes_14 > 0 else 0.27
+        d_nhay_14d = p_hit_14d
 
-        # Micro V1 Base Multiplier
         recent_21 = past_dates[:21]
         wins_21, played_21 = 0, 0
         for r_dt in recent_21:
@@ -486,7 +581,6 @@ class QuantEngine:
         else:
             v1_base = 1.0 if streak == 0 else (0.5 if streak == 1 else (0.2 if streak == 2 else 0.0))
 
-        # Peak Equity Drawdown Calculation
         c_pnl = 0.0
         p_eq = 0.0
         all_ytd = sorted([info["date_obj"] for info in db.values() if info["date_obj"].year == cur_y and info["date_obj"] < target_dt])
@@ -503,70 +597,79 @@ class QuantEngine:
         mt_roi_sign = "🟢 DƯƠNG" if roi_mtd > 0 else "🔴 ÂM"
         lt_roi_sign = "🟢 DƯƠNG" if roi_ytd > 0 else "🔴 ÂM"
 
-        trace_log.append(f"[QUAN SÁT CẢM BIẾN] WR_21d: {wr_21d*100:.1f}% | D_nháy(14d): {d_nhay_14d:.2f} | Streak: {streak}")
+        trace_log.append(f"[QUAN SÁT CẢM BIẾN] WR_21d: {wr_21d*100:.1f}% | P_Hit(14d): {p_hit_14d:.2f} | Streak: {streak}")
         trace_log.append(f" • 📈 ROI Ngắn (7d): {roi_7d*100:+.2f}% ({st_roi_sign}) | 📅 MTD: {roi_mtd*100:+.2f}% ({mt_roi_sign}) | 🗓️ YTD: {roi_ytd*100:+.2f}% ({lt_roi_sign})")
         trace_log.append(f" • 🏔️ Đỉnh Tài Sản (Peak): {p_eq/1e6:,.1f}M | Sub_Drawdown từ Đỉnh: {drawdown_from_peak/1e6:,.1f}M")
 
-        # ======================================================================
-        # 1. VERSION 5.6: CPPI-ENTROPY QUANT REGULATOR
-        # ======================================================================
+        # 1. VERSION 5.7: CONTINUOUS SIGMOID & CPPI QUANT ENGINE
         if mode == Config.MODES[0]:
-            vol_14d = np.std(daily_pnls_14) if len(daily_pnls_14) >= 10 else 1200000.0
-            if vol_14d > 2200000:
-                vol_scale = 0.85
-                vol_status = "🔴 VOLATILITY CAO (Chiết khấu nhiễu 0.85x)"
-            elif vol_14d < 1100000 and pnl_mtd > 0:
-                vol_scale = 1.10
-                vol_status = "🟢 VOLATILITY MƯỢT (Tăng tốc 1.10x)"
-            else:
-                vol_scale = 1.00
-                vol_status = "⚪ VOLATILITY CHUẨN (1.00x)"
+            b_odds = Config.WIN_PER_NHAY / Config.COST_PER_POINT
+            ev_14d = p_hit_14d * b_odds - (1.0 - p_hit_14d)
 
+            x_diff = l_mtd - w_mtd
+            sigmoid_macro = 0.50 + 1.00 / (1.0 + np.exp(-0.30 * x_diff))
+
+            ev_scale = max(0.85, min(1.20, 1.0 + ev_14d * 0.40))
+
+            vol_14d = np.std(daily_pnls_14) if len(daily_pnls_14) >= 10 else 1200000.0
+            vol_scale = 0.88 if vol_14d > 2200000 else (1.08 if (vol_14d < 1100000 and pnl_mtd > 0) else 1.00)
+
+            is_cppi_active = (drawdown_from_peak >= 5000000 and streak >= 1)
+            cppi_scale = 0.60 if is_cppi_active else 1.00
+
+            if streak >= 3 or v1_base == 0.0:
+                mult = 0.0
+                active_ver = "CIRCUIT BREAKER CẮT LỖ (0.00x)"
+            else:
+                mult = v1_base * sigmoid_macro * ev_scale * vol_scale * cppi_scale
+                active_ver = f"SIGMOID S-CURVE (S={sigmoid_macro:.2f} | EV_scale={ev_scale:.2f} | CPPI={cppi_scale:.2f})"
+
+            trace_log.append(f"🤖 [V5.7 CONTINUOUS SIGMOID] Chế độ: {active_ver}")
+            trace_log.append(f"[MM Result] Hệ số vốn liên tục = x{mult:.2f}")
+            return mult, "\n".join(trace_log)
+
+        # 2. VERSION 5.6: CPPI-ENTROPY QUANT REGULATOR
+        elif mode == Config.MODES[1]:
+            vol_14d = np.std(daily_pnls_14) if len(daily_pnls_14) >= 10 else 1200000.0
+            vol_scale = 0.85 if vol_14d > 2200000 else (1.10 if (vol_14d < 1100000 and pnl_mtd > 0) else 1.00)
             is_cppi_floor_active = (drawdown_from_peak >= 5500000 and streak >= 1)
 
             if is_cppi_floor_active:
                 macro_mult = 0.60
-                active_ver = "CPPI CUSHION GUARDRAIL (Khóa sàn Drawdown 0.60x)"
+                active_ver = "CPPI CUSHION GUARDRAIL (0.60x)"
             elif w_mtd >= 15 and roi_mtd > 0:
                 macro_mult = 0.80 if roi_7d > 0.05 else 0.50
-                active_ver = "SOFT/HARD MONTH LOCK (Phanh Khóa Lãi Tháng 0.80x/0.50x)"
+                active_ver = "SOFT/HARD MONTH LOCK (0.80x/0.50x)"
             elif cur_m >= 9 and pnl_ytd >= 25000000 and roi_ytd > 0.05:
                 macro_mult = (1.5 if l_mtd >= 12 else 1.0) * 0.85
-                active_ver = "Q4 MACRO SHIELD (Van Bảo Vệ Lãi Q4 0.85x)"
+                active_ver = "Q4 MACRO SHIELD (0.85x)"
             elif l_mtd >= 11:
-                if roi_7d >= 0 and d_nhay_14d >= 0.22:
-                    macro_mult = 1.50
-                    active_ver = "STRIKE HARDER BÙ SỚM (Density High 1.50x)"
-                elif roi_7d >= 0:
-                    macro_mult = 1.30
-                    active_ver = "MODERATE CATCH-UP (1.30x)"
-                else:
-                    macro_mult = (1.30 if w_mtd < 14 else 0.5)
-                    active_ver = "DUAL BALANCE CATCH-UP (1.30x/0.50x)"
+                if roi_7d >= 0 and d_nhay_14d >= 0.22: macro_mult = 1.50
+                elif roi_7d >= 0: macro_mult = 1.30
+                else: macro_mult = (1.30 if w_mtd < 14 else 0.5)
+                active_ver = "REBOUND CATCH-UP (1.50x/1.30x)"
             elif cur_m >= 3 and roi_ytd < 0:
                 macro_mult = 1.15
-                active_ver = "YEARLY REBOUND (Sóng Hồi 1.15x)"
+                active_ver = "YEARLY REBOUND (1.15x)"
             elif d_nhay_14d >= 0.26 and streak == 0 and roi_7d >= 0:
                 macro_mult = 1.20
-                active_ver = "SMART DENSITY BOOSTER (1.20x)"
+                active_ver = "DENSITY BOOSTER (1.20x)"
             else:
                 macro_mult = 1.00
                 active_ver = "V1 SHIELD BASE (1.00x)"
 
             mult = v1_base * macro_mult * vol_scale
-            trace_log.append(f"🤖 [V5.6 CPPI REGULATOR] Chế độ: {active_ver} | {vol_status}")
+            trace_log.append(f"🤖 [V5.6 CPPI REGULATOR] Chế độ: {active_ver}")
             trace_log.append(f"[MM Result] Hệ số tổng hợp = x{mult:.2f}")
             return mult, "\n".join(trace_log)
 
-        # ======================================================================
-        # 2. VERSION 5.3: SUPER INTEGRATED QUANT SENSOR
-        # ======================================================================
-        elif mode == Config.MODES[1]:
+        # 3. VERSION 5.3: SUPER INTEGRATED QUANT SENSOR
+        elif mode == Config.MODES[2]:
             is_peak_guard = (p_eq >= 12000000 and drawdown_from_peak >= 4500000)
 
             if is_peak_guard and streak >= 1:
                 mult = v1_base * 0.5
-                active_ver = "PEAK GUARD (Sụt lùi đỉnh 0.5x)"
+                active_ver = "PEAK GUARD (0.5x)"
             elif w_mtd >= 15 or (roi_mtd > 0.10 and w_mtd >= 14):
                 mult = v1_base * 0.5
                 active_ver = "MONTHLY CEILING LOCK (0.5x)"
@@ -574,15 +677,10 @@ class QuantEngine:
                 mult = v1_base * (1.5 if l_mtd >= 12 else 1.0) * 0.85
                 active_ver = "Q4 MACRO LOCK (0.85x)"
             elif l_mtd >= 12:
-                if roi_7d >= 0 and d_nhay_14d >= 0.24:
-                    mult = v1_base * 1.5
-                    active_ver = "SUPER STRIKE (1.5x)"
-                elif roi_7d >= 0:
-                    mult = v1_base * 1.25
-                    active_ver = "MODERATE STRIKE (1.25x)"
-                else:
-                    mult = v1_base * (1.5 if w_mtd < 14 else 0.5)
-                    active_ver = "STORM CATCH-UP (1.5x/0.5x)"
+                if roi_7d >= 0 and d_nhay_14d >= 0.24: mult = v1_base * 1.5
+                elif roi_7d >= 0: mult = v1_base * 1.25
+                else: mult = v1_base * (1.5 if w_mtd < 14 else 0.5)
+                active_ver = "SUPER STRIKE (1.5x/1.25x)"
             elif cur_m >= 3 and roi_ytd < 0:
                 mult = v1_base * 1.15
                 active_ver = "YEARLY REBOUND (1.15x)"
@@ -597,10 +695,8 @@ class QuantEngine:
             trace_log.append(f"[MM Result] Hệ số tổng hợp = x{mult:.2f}")
             return mult, "\n".join(trace_log)
 
-        # ======================================================================
-        # 3. VERSION 5.1: DYNAMIC QUANT ROI ADAPTIVE
-        # ======================================================================
-        elif mode == Config.MODES[2]:
+        # 4. VERSION 5.1: DYNAMIC QUANT ROI ADAPTIVE
+        elif mode == Config.MODES[3]:
             if roi_mtd > 0 and w_mtd >= 15:
                 mult = v1_base * 0.5
                 active_ver = "ROI MTD LOCK (0.5x)"
@@ -608,12 +704,9 @@ class QuantEngine:
                 mult = v1_base * (1.5 if l_mtd >= 12 else 1.0) * 0.85
                 active_ver = "ROI Q4 SHIELD (0.85x)"
             elif l_mtd >= 12:
-                if roi_7d >= 0:
-                    mult = v1_base * 1.5
-                    active_ver = "ROI V2 CATCH-UP (1.5x)"
-                else:
-                    mult = v1_base * (1.5 if w_mtd < 14 else 0.5)
-                    active_ver = "ROI V4 PROTECTION (1.5x/0.5x)"
+                if roi_7d >= 0: mult = v1_base * 1.5
+                else: mult = v1_base * (1.5 if w_mtd < 14 else 0.5)
+                active_ver = "ROI V2 CATCH-UP (1.5x)"
             elif cur_m >= 3 and roi_ytd < 0:
                 mult = v1_base * 1.15
                 active_ver = "ROI YEAR REBOUND (1.15x)"
@@ -669,42 +762,43 @@ class Auditor:
             multiplier, mm_trace = QuantEngine.get_mm_multiplier(next_dt, db, mode)
             adjusted_pts = int(round(base_pts * multiplier))
             
-            dan, msg, sig_trace = QuantEngine.get_signal(next_dt, db, mode)
+            pred_data, status = QuantEngine.get_full_prediction(next_dt, db, mode)
+            if pred_data is None:
+                return f"🛑 CẢNH BÁO: {status}.\n👉 TRUY VẾT LỖI:\n{mm_trace}"
+
+            dan = pred_data["dan_opt"]
+            so_luong_lo = len(dan)
+            dan_str = " ".join([f"{x:02d}" for x in dan]) if so_luong_lo > 0 else "🚫 [ĐỨNG NGOÀI]"
+
+            von_ngay = so_luong_lo * adjusted_pts * Config.COST_PER_POINT if adjusted_pts > 0 else 0
+            diem_hoa_von = math.ceil(von_ngay / (adjusted_pts * Config.WIN_PER_NHAY)) if adjusted_pts > 0 else 0
+
             lines = [
                 "📑 BÁO CÁO KHUYẾN NGHỊ GIAO DỊCH QUANT CAO CẤP",
                 "=======================================================",
                 f"🎯 PHIÊN GIAO DỊCH MỤC TIÊU: {next_dt.strftime('%d/%m/%Y')}",
-                f"🎚️ CHIẾN LƯỢC ÁP DỤNG: {mode}", ""
+                f"🎚️ CHIẾN LƯỢC ÁP DỤNG: {mode}",
+                "=======================================================",
+                "📊 HỒ SƠ CHỐT SỐ THƯỞNG KÊ (DỰ BÁO KQXS CAO CẤP)",
+                "-------------------------------------------------------",
+                f"{'Danh Mục':<22} | Con Số Thưởng Kê",
+                "-------------------------------------------------------",
+                f"{'Bạch Thủ Lô':<22} | {pred_data['btl']}",
+                f"{'Song Thủ Lô':<22} | {pred_data['stl']}",
+                f"{'Lô Xiên 2':<22} | {pred_data['xien2']}",
+                f"{'Lô 3 Càng (3 Số)':<22} | {pred_data['cang3d']}",
+                f"{'Lô Kép Bằng':<22} | {pred_data['kep']}",
+                f"{'Dàn Đề 10 Số':<22} | {pred_data['dan_de_10']}",
+                "-------------------------------------------------------",
+                "💰 QUẢN TRỊ VỐN & PHÂN BỔ ĐIỂM CƯỢC:",
+                f" • Phân bổ : {adjusted_pts} điểm/mã (Hệ số x{multiplier:.2f}) | 💰 TỔNG VỐN: {von_ngay:,.0f} VND",
+                f" • Danh mục Lô Dàn Chuẩn ({so_luong_lo} mã) : [ {dan_str} ]",
+                f"💡 MỤC TIÊU HÒA VỐN   : Cần tối thiểu {diem_hoa_von} lượt trúng.",
+                "\n--- BẢN GHI TRUY VẾT TOÁN HỌC (TRACE LOG) ---",
+                pred_data['sig_trace'],
+                mm_trace
             ]
-            if dan is None:
-                lines.extend([f"🛑 CẢNH BÁO: {msg}.", "👉 TRUY VẾT LỖI:", sig_trace])
-                return "\n".join(lines)
-                
-            so_luong_lo = len(dan)
-            if so_luong_lo > 0:
-                dan_str = " ".join([f"{x:02d}" for x in dan])
-                if adjusted_pts == 0:
-                    lines.extend([
-                        f"📋 DANH MỤC MÃ SỐ ({so_luong_lo} MÃ):", f" [ {dan_str} ]",
-                        "-------------------------------------------------------",
-                        "🛑 LỆNH CẮT LỖ BẢO VỆ: Đứng ngoài tuyệt đối (Hệ số x0.0)!"
-                    ])
-                else:
-                    von_ngay = so_luong_lo * adjusted_pts * Config.COST_PER_POINT
-                    diem_hoa_von = math.ceil(von_ngay / (adjusted_pts * Config.WIN_PER_NHAY))
-                    lines.extend([
-                        f"📋 DANH MỤC MÃ SỐ ĐẠT CHUẨN ({so_luong_lo} MÃ):", f" [ {dan_str} ]",
-                        "-------------------------------------------------------",
-                        f" • Phân bổ : {adjusted_pts} điểm/mã (Hệ số x{multiplier:.2f}) | 💰 TỔNG VỐN: {von_ngay:,.0f} VND",
-                        f"💡 MỤC TIÊU HÒA VỐN   : Cần tối thiểu {diem_hoa_von} lượt trúng."
-                    ])
-            else: 
-                lines.extend([
-                    "📋 DANH MỤC MÃ SỐ ĐẠT CHUẨN: 👉 🚫 [ĐỨNG NGOÀI]",
-                    "-------------------------------------------------------",
-                    "💡 KHÔNG CÓ TÍN HIỆU SỐ KHUYẾT HỢP LỆ TRONG KỲ NÀY."
-                ])
-            lines.extend(["\n--- BẢN GHI TRUY VẾT TOÁN HỌC (TRACE LOG) ---", sig_trace, mm_trace])
+
             return "\n".join(lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
@@ -727,13 +821,13 @@ class Auditor:
             if not valid: return err
             
             lines = [
-                "📑 BÁO CÁO KIỂM TOÁN HIỆU SUẤT ĐƠN PHIÊN (CROSS CHECK ALL 3 VERSIONS)",
+                "📑 BÁO CÁO KIỂM TOÁN HIỆU SUẤT ĐƠN PHIÊN (CROSS CHECK ALL 4 VERSIONS)",
                 "========================================================================",
                 f"📡 KẾT QUẢ GIAO DỊCH PHIÊN: {ngay_str}",
                 "========================================================================"
             ]
             
-            for i, mode in enumerate(Config.MODES[:3]):
+            for i, mode in enumerate(Config.MODES[:4]):
                 dan, msg, sig_trace = QuantEngine.get_signal(d_obj, db, mode)
                 mode_name = f"CHIẾN LƯỢC {i+1}: {mode.split('(')[0].strip()}"
                 if dan is None: 
@@ -915,18 +1009,19 @@ class Auditor:
             min_dt, max_dt, _ = DatabaseManager.get_boundaries(db)
             if not min_dt or not max_dt: return "🛑 HỆ THỐNG RỖNG: Chưa có dữ liệu."
             
+            sorted_dates = sorted([info["date_obj"] for info in db.values()])
             start_dt = min_dt
             end_dt = max_dt
             total_days_scanned = (end_dt - start_dt).days + 1
             
             prompt_lines = [
-                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG V5.6 - DÀNH CHO BÁO CÁO ĐỊNH LƯỢNG CHUẨN TRUY VẾT]",
+                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG V5.7 - DÀNH CHO BÁO CÁO ĐỊNH LƯỢNG CHUẨN TRUY VẾT]",
                 f"1. PHIÊN BẢN HỆ THỐNG: {Config.VERSION}",
                 f"2. QUÉT TRỌN VẸN LỊCH SỬ {total_days_scanned} NGÀY QUA ({start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')})\n",
-                "📊 [BẢNG SO SÁNH HIỆU SUẤT ĐỐI ĐẦU 03 PHIÊN BẢN CHÍNH THỨC]"
+                "📊 [BẢNG SO SÁNH HIỆU SUẤT ĐỐI ĐẦU 04 PHIÊN BẢN ĐỘNG CAO CẤP]"
             ]
             
-            for idx, current_mode in enumerate(Config.MODES[:3]):
+            for idx, current_mode in enumerate(Config.MODES[:4]):
                 curr = start_dt
                 wins, losses, total_chi, total_thu = 0, 0, 0, 0
                 daily_pnls = []
@@ -948,79 +1043,8 @@ class Auditor:
                             cost_ytd, pnl_ytd = 0.0, 0.0
 
                         dan, _, _ = QuantEngine.get_signal(curr, db, current_mode)
-                        past_dates = sorted([p for p in sorted_dates if p < curr], reverse=True)
-                        streak = get_streak(curr)
-                        v1_base = get_v1_mult(curr)
-
-                        if past_dates:
-                            recent_14 = past_dates[:14]
-                            tot_nhay_14, tot_codes_14 = 0, 0
-                            for r_dt in recent_14:
-                                r_dan, _, _ = QuantEngine.get_signal(r_dt, db, current_mode)
-                                if r_dan:
-                                    r_str = r_dt.strftime("%d/%m/%Y")
-                                    tot_codes_14 += len(r_dan)
-                                    tot_nhay_14 += sum(db[r_str]["prizes_int"].count(x) for x in r_dan)
-                            d_nhay_14d = (tot_nhay_14 / tot_codes_14) if tot_codes_14 > 0 else 0.20
-
-                            cost_7d, pnl_7d = 0.0, 0.0
-                            for r_dt in past_dates[:7]:
-                                r_dan, _, _ = QuantEngine.get_signal(r_dt, db, current_mode)
-                                if r_dan:
-                                    r_str = r_dt.strftime("%d/%m/%Y")
-                                    c_r = len(r_dan) * Config.BASE_PTS * Config.COST_PER_POINT
-                                    r_r = sum(db[r_str]["prizes_int"].count(x) for x in r_dan) * Config.BASE_PTS * Config.WIN_PER_NHAY
-                                    cost_7d += c_r
-                                    pnl_7d += (r_r - c_r)
-                            roi_7d = (pnl_7d / cost_7d) if cost_7d > 0 else 0.0
-                            roi_mtd = (pnl_mtd / cost_mtd) if cost_mtd > 0 else 0.0
-                            roi_ytd = (pnl_ytd / cost_ytd) if cost_ytd > 0 else 0.0
-
-                            drawdown_from_peak = peak_equity - cum_pnl_tracker
-
-                            if idx == 0: # V5.6
-                                vol_14d = np.std(daily_pnls_rolling[-14:]) if len(daily_pnls_rolling) >= 14 else 1200000.0
-                                vol_scale = 0.85 if vol_14d > 2200000 else (1.10 if (vol_14d < 1100000 and pnl_mtd > 0) else 1.00)
-                                is_cppi_floor_active = (drawdown_from_peak >= 5500000 and streak >= 1)
-
-                                if is_cppi_floor_active: macro_mult = 0.60
-                                elif w_mtd >= 15 and roi_mtd > 0: macro_mult = 0.80 if roi_7d > 0.05 else 0.50
-                                elif curr.month >= 9 and pnl_ytd >= 25000000 and roi_ytd > 0.05: macro_mult = (1.5 if l_mtd >= 12 else 1.0) * 0.85
-                                elif l_mtd >= 11:
-                                    if roi_7d >= 0 and d_nhay_14d >= 0.22: macro_mult = 1.50
-                                    elif roi_7d >= 0: macro_mult = 1.30
-                                    else: macro_mult = (1.30 if w_mtd < 14 else 0.5)
-                                elif curr.month >= 3 and roi_ytd < 0: macro_mult = 1.15
-                                elif d_nhay_14d >= 0.26 and streak == 0 and roi_7d >= 0: macro_mult = 1.20
-                                else: macro_mult = 1.00
-
-                                raw_mult = v1_base * macro_mult * vol_scale
-
-                            elif idx == 1: # V5.3
-                                is_peak_guard = (peak_equity >= 12000000 and drawdown_from_peak >= 4500000)
-                                if is_peak_guard and streak >= 1: raw_mult = v1_base * 0.5
-                                elif w_mtd >= 15 or (roi_mtd > 0.10 and w_mtd >= 14): raw_mult = v1_base * 0.5
-                                elif curr.month >= 9 and pnl_ytd >= 25000000 and roi_ytd > 0.05: raw_mult = v1_base * (1.5 if l_mtd >= 12 else 1.0) * 0.85
-                                elif l_mtd >= 12:
-                                    if roi_7d >= 0 and d_nhay_14d >= 0.24: raw_mult = v1_base * 1.5
-                                    elif roi_7d >= 0: raw_mult = v1_base * 1.25
-                                    else: raw_mult = v1_base * (1.5 if w_mtd < 14 else 0.5)
-                                elif curr.month >= 3 and roi_ytd < 0: raw_mult = v1_base * 1.15
-                                elif d_nhay_14d >= 0.28 and streak == 0: raw_mult = v1_base * 1.20
-                                else: raw_mult = v1_base
-
-                            elif idx == 2: # V5.1
-                                if roi_mtd > 0 and w_mtd >= 15: raw_mult = v1_base * 0.5
-                                elif curr.month >= 9 and pnl_ytd >= 25000000 and roi_ytd > 0.05: raw_mult = v1_base * (1.5 if l_mtd >= 12 else 1.0) * 0.85
-                                elif l_mtd >= 12:
-                                    if roi_7d >= 0: raw_mult = v1_base * 1.5
-                                    else: raw_mult = v1_base * (1.5 if w_mtd < 14 else 0.5)
-                                elif curr.month >= 3 and roi_ytd < 0: raw_mult = v1_base * 1.15
-                                else: raw_mult = v1_base
-
-                            pts = int(round(Config.BASE_PTS * raw_mult))
-                        else:
-                            pts = int(round(Config.BASE_PTS * v1_base))
+                        multiplier, _ = QuantEngine.get_mm_multiplier(curr, db, current_mode)
+                        pts = int(round(Config.BASE_PTS * multiplier))
 
                         if dan and len(dan) > 0:
                             if pts > 0:
@@ -1048,12 +1072,6 @@ class Auditor:
                                 else:
                                     losses += 1
                                     l_mtd += 1
-                            else:
-                                daily_pnls_rolling.append(0.0)
-                                nhay_base = sum(db[str_dt]["prizes_int"].count(x) for x in dan)
-                                pnl_base = nhay_base * Config.BASE_PTS * Config.WIN_PER_NHAY - len(dan) * Config.BASE_PTS * Config.COST_PER_POINT
-                                if pnl_base > 0: w_mtd += 1
-                                else: l_mtd += 1
 
                     curr += timedelta(days=1)
 
@@ -1072,9 +1090,9 @@ class Auditor:
                 ])
 
             prompt_lines.extend([
-                "\n⚠️ XÁC NHẬN BÁO CÁO V5.6 CPPI-ENTROPY QUANT REGULATOR:",
-                "1. Đã loại bỏ hoàn toàn các lựa chọn cũ (V5.0, V4.0 Standard, Dual Balance, Apex Complete, Strike Harder, Benchmark T-7).",
-                "2. Hệ thống tập trung tối đa vào 3 phiên bản động cao cấp nhất: V5.6, V5.3, và V5.1.",
+                "\n⚠️ XÁC NHẬN BÁO CÁO V5.7 CONTINUOUS SIGMOID QUANT ENGINE:",
+                "1. Loại bỏ triệt để các câu lệnh IF-ELSE cắt khúc, sử dụng Hàm S-Curve Sigmoid liên tục để loại bỏ hoàn toàn Overfitting.",
+                "2. Kết hợp với Expected Value Scaling (EV), Volatility Dampener, và CPPI Floor Cushion.",
                 "3. Đảm bảo tính minh bạch 100%, deep check, cross check và keep logic toàn bộ các phân hệ."
             ])
             return "\n".join(prompt_lines)
@@ -1161,9 +1179,9 @@ def create_ui():
 
         with gr.Column(visible=False) as col_6:
             gr.Markdown("### 🤖 BỘ NÃO AI - QUÉT TOÀN BỘ LỊCH SỬ DB")
-            gr.Markdown("Hệ thống sẽ tự động đối chiếu cả 3 phiên bản chính thức trên toàn bộ dữ liệu lịch sử DB 600 ngày.")
+            gr.Markdown("Hệ thống sẽ tự động đối chiếu các phiên bản động cao cấp trên toàn bộ dữ liệu lịch sử DB 600 ngày.")
             btn_6 = gr.Button("🧬 BẮT ĐẦU QUÉT TOÀN DB", variant="primary")
-            out_6 = gr.Textbox(label="Báo cáo Tổng hợp V5.6", lines=25)
+            out_6 = gr.Textbox(label="Báo cáo Tổng hợp V5.7", lines=25)
             btn_6.click(Auditor.phan_he_6_master_diagnostic_prompt, inputs=[], outputs=out_6)
 
         btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2])
