@@ -398,42 +398,44 @@ class QuantEngine:
 
         prizes_t7 = set(db[past_dates[6].strftime("%d/%m/%Y")]["prizes_int"]) if len(past_dates) >= 7 else set()
         
-        # Sort dan_opt by composite score
-        sorted_dan_scored = sorted(
+        # CHỈ SỬ DỤNG ĐÚNG DÀN dan_opt CỦA V5.6, KHÔNG THÊM BỚT
+        # Calculate composite score for each candidate in dan_opt
+        scored_candidates = sorted(
             dan_opt, 
             key=lambda x: (freq_14.get(x, 0) * 1.5 + (2.0 if x in prizes_t7 else 0.0), x), 
             reverse=True
         )
+        
+        final_dan = list(scored_candidates)
 
-        # 1. Bạch Thủ Lô
-        best_btl = sorted_dan_scored[0] if sorted_dan_scored else max(range(100), key=lambda x: freq_14.get(x, 0))
+        # 1. Bạch Thủ Lô (Rank 0)
+        best_btl = final_dan[0] if len(final_dan) > 0 else 0
 
-        # 2. Song Thủ Lô
+        # 2. Song Thủ Lô (Rank 1 & 2)
         lon_btl = (best_btl % 10) * 10 + (best_btl // 10)
-        if len(sorted_dan_scored) >= 2:
-            stl_pair = (sorted_dan_scored[0], sorted_dan_scored[1])
-        elif lon_btl != best_btl:
-            stl_pair = (best_btl, lon_btl)
+        if len(final_dan) >= 3:
+            stl_pair = (final_dan[1], final_dan[2])
+        elif len(final_dan) == 2:
+            stl_pair = (final_dan[1], lon_btl if lon_btl != best_btl and lon_btl != final_dan[1] else (best_btl + 11) % 100)
         else:
-            stl_pair = (best_btl, (best_btl + 11) % 100)
+            stl_pair = (lon_btl if lon_btl != best_btl else (best_btl + 11) % 100, (best_btl + 22) % 100)
 
         # 3. Lô Xiên 2
-        candidates = sorted_dan_scored if len(sorted_dan_scored) >= 4 else sorted(list(set(sorted_dan_scored + [lon_btl, (best_btl+50)%100, (best_btl+14)%100])), key=lambda x: -freq_14.get(x, 0))
-        sec1 = candidates[1] if len(candidates) > 1 else (best_btl + 14) % 100
-        sec2 = candidates[2] if len(candidates) > 2 else (best_btl + 69) % 100
-        
+        sec1 = stl_pair[0]
+        sec2 = stl_pair[1]
         xien2_pair1 = f"{best_btl:02d} - {sec1:02d}"
-        xien2_pair2 = f"{stl_pair[0]:02d} - {sec2:02d}" if stl_pair[0] != stl_pair[1] else f"{sec1:02d} - {sec2:02d}"
+        xien2_pair2 = f"{best_btl:02d} - {sec2:02d}"
         loto_xien2 = f"{xien2_pair1} | {xien2_pair2}"
 
         # 4. Lô 3 Càng (3D)
         top_hundreds = sorted(hundreds_freq.keys(), key=lambda h: -hundreds_freq[h])[:2]
-        h1, h2 = top_hundreds[0], top_hundreds[1]
-        loto_3cang = f"{h1}{best_btl:02d} - {h2}{stl_pair[1]:02d}"
+        h1 = top_hundreds[0] if len(top_hundreds) > 0 else 0
+        h2 = top_hundreds[1] if len(top_hundreds) > 1 else 1
+        loto_3cang = f"{h1}{best_btl:02d} - {h2}{stl_pair[0]:02d}"
 
         # 5. Lô Kép Bằng
         keps = [0, 11, 22, 33, 44, 55, 66, 77, 88, 99]
-        sorted_keps = sorted(keps, key=lambda k: (- (1 if k in dan_opt else 0), -freq_14.get(k, 0)))
+        sorted_keps = sorted(keps, key=lambda k: (- (1 if k in final_dan else 0), -freq_14.get(k, 0)))
         lo_kep = f"{sorted_keps[0]:02d} - {sorted_keps[1]:02d}"
 
         # 6. Dàn Đề 10 Số
@@ -445,7 +447,7 @@ class QuantEngine:
             de_set.add(de_head * 10 + i)
             de_set.add(i * 10 + de_tail)
             if len(de_set) >= 10: break
-        sorted_de = sorted(sorted(list(de_set), key=lambda x: (- (1 if x in dan_opt else 0), -freq_14.get(x, 0)))[:10])
+        sorted_de = sorted(sorted(list(de_set), key=lambda x: (- (1 if x in final_dan else 0), -freq_14.get(x, 0)))[:10])
         dan_de_10 = ", ".join([f"{x:02d}" for x in sorted_de])
 
         return {
@@ -455,7 +457,7 @@ class QuantEngine:
             "cang3d": loto_3cang,
             "kep": lo_kep,
             "dan_de_10": dan_de_10,
-            "sorted_dan_scored": sorted_dan_scored,
+            "sorted_dan_scored": final_dan,
             "msg": msg,
             "sig_trace": sig_trace
         }, "OK"
@@ -540,13 +542,30 @@ class QuantEngine:
         if not past_dates: return 1.0, "Không có dữ liệu lịch sử."
 
         trace_log = []
-        streak = QuantEngine._get_streak(target_dt, db)
+        streak = 0
+        for curr_dt in past_dates[:40]: 
+            str_curr = curr_dt.strftime("%d/%m/%Y")
+            dan, _, _ = QuantEngine.get_signal(curr_dt, db, Config.MODES[0])
+            if dan is not None and len(dan) > 0:
+                nhay = sum(db[str_curr]["prizes_int"].count(x) for x in dan)
+                cost = len(dan) * Config.BASE_PTS * Config.COST_PER_POINT
+                rev = nhay * Config.BASE_PTS * Config.WIN_PER_NHAY
+                if rev - cost > 0:
+                    trace_log.append(f"[Streak Log] Cắt chuỗi tại ngày WIN ({str_curr}).")
+                    break 
+                else:
+                    streak += 1
+                    trace_log.append(f"[Streak Log] Ngày {str_curr} THUA -> Chuỗi = {streak}.")
+                    if streak >= 4:
+                        trace_log.append("[Streak Log] Đạt Max chuỗi thua 4. Kích hoạt Cắt Lỗ tuyệt đối.")
+                        break 
 
         cur_m, cur_y = target_dt.month, target_dt.year
         cost_mtd, pnl_mtd, roi_mtd, w_mtd, l_mtd = QuantEngine._get_monthly_stats_base(cur_y, cur_m, target_dt, db)
         cost_ytd, pnl_ytd, roi_ytd = QuantEngine._get_ytd_stats_base(cur_y, target_dt, db)
         cost_7d, pnl_7d, roi_7d = QuantEngine._get_rolling_stats_base(7, target_dt, db)
 
+        # Calculate rolling 14d Hit Density and Daily PnL Volatility
         recent_14 = past_dates[:14]
         tot_nhay_14, tot_codes_14 = 0, 0
         daily_pnls_14 = []
@@ -562,6 +581,7 @@ class QuantEngine:
         p_hit_14d = (tot_nhay_14 / tot_codes_14) if tot_codes_14 > 0 else 0.27
         d_nhay_14d = p_hit_14d
 
+        # Micro V1 Base Multiplier
         recent_21 = past_dates[:21]
         wins_21, played_21 = 0, 0
         for r_dt in recent_21:
@@ -732,6 +752,31 @@ class QuantEngine:
             trace_log.append(f"[MM Result] Hệ số tổng hợp = x{mult:.2f}")
             return mult, "\n".join(trace_log)
 
+        # ======================================================================
+        # 5. VERSION 5.1: DYNAMIC QUANT ROI ADAPTIVE
+        # ======================================================================
+        elif mode == Config.MODES[4]:
+            if roi_mtd > 0 and w_mtd >= 15:
+                mult = v1_base * 0.5
+                active_ver = "ROI MTD LOCK (0.5x)"
+            elif cur_m >= 9 and pnl_ytd >= 25000000 and roi_ytd > 0.05:
+                mult = v1_base * (1.5 if l_mtd >= 12 else 1.0) * 0.85
+                active_ver = "ROI Q4 SHIELD (0.85x)"
+            elif l_mtd >= 12:
+                if roi_7d >= 0: mult = v1_base * 1.5
+                else: mult = v1_base * (1.5 if w_mtd < 14 else 0.5)
+                active_ver = "ROI V2 CATCH-UP (1.5x)"
+            elif cur_m >= 3 and roi_ytd < 0:
+                mult = v1_base * 1.15
+                active_ver = "ROI YEAR REBOUND (1.15x)"
+            else:
+                mult = v1_base
+                active_ver = "V1 BASE (1.0x)"
+
+            trace_log.append(f"🤖 [V5.1 DYNAMIC ROI] Chế độ: {active_ver}")
+            trace_log.append(f"[MM Result] Hệ số tổng hợp = x{mult:.2f}")
+            return mult, "\n".join(trace_log)
+
         else:
             mult = v1_base
             return mult, "\n".join(trace_log)
@@ -782,42 +827,53 @@ class Auditor:
             sorted_dan = pred_data["sorted_dan_scored"]
             so_luong_lo = len(sorted_dan)
 
-            if mode == Config.MODES[0]: # V5.8 Robust Tiered
-                pts_btl = int(round(base_pts * multiplier * 1.30))
-                pts_stl = int(round(base_pts * multiplier * 1.15))
-                pts_lot = int(round(base_pts * multiplier * 0.85))
-                
-                dan_alloc_lines = []
-                total_von = 0.0
-                for idx_code, code_val in enumerate(sorted_dan):
-                    if idx_code == 0:
-                        pts_this = pts_btl
-                        tag = "BẠCH THỦ (1.30x)"
-                    elif idx_code in [1, 2]:
-                        pts_this = pts_stl
-                        tag = "SONG THỦ (1.15x)"
-                    else:
-                        pts_this = pts_lot
-                        tag = "Lót dàn (0.85x)"
-                    
-                    cost_this = pts_this * Config.COST_PER_POINT
-                    total_von += cost_this
-                    dan_alloc_lines.append(f"   + Mã [{code_val:02d}] ({tag:<16}) : {pts_this:>3} điểm | Vốn: {cost_this:,.0f} VND")
-                
-                alloc_detail_str = "\n".join(dan_alloc_lines)
-            else:
-                pts_uniform = int(round(base_pts * multiplier))
-                total_von = so_luong_lo * pts_uniform * Config.COST_PER_POINT
-                dan_str = " ".join([f"{x:02d}" for x in sorted_dan]) if so_luong_lo > 0 else "🚫 [ĐỨNG NGOÀI]"
-                alloc_detail_str = f" • Phân bổ Dàn Đều ({so_luong_lo} mã) : [ {dan_str} ]\n • Điểm cược : {pts_uniform} điểm/mã (Hệ số x{multiplier:.2f})"
+            if so_luong_lo == 0:
+                return f"📋 DANH MỤC MÃ SỐ ĐẠT CHUẨN: 👉 🚫 [ĐỨNG NGOÀI]\n-------------------------------------------------------\n💡 KHÔNG CÓ TÍN HIỆU SỐ KHUYẾT HỢP LỆ TRONG KỲ NÀY."
 
-            diem_hoa_von = math.ceil(total_von / (Config.WIN_PER_NHAY)) if total_von > 0 else 0
+            # Build detailed allocation per code
+            dan_alloc_lines = []
+            total_von = 0.0
+            allocated_items = []
+
+            for idx_code, code_val in enumerate(sorted_dan):
+                if mode == Config.MODES[0]: # V5.8 Robust Tiered
+                    k_tier = 1.30 if idx_code == 0 else (1.15 if idx_code in [1, 2] else 0.85)
+                    tag = "BẠCH THỦ (1.30x)" if idx_code == 0 else ("SONG THỦ (1.15x)" if idx_code in [1, 2] else "Lót dàn (0.85x)")
+                else:
+                    k_tier = 1.0
+                    tag = "Dàn đều (1.00x)"
+                
+                pts_this = int(round(base_pts * multiplier * k_tier))
+                cost_this = pts_this * Config.COST_PER_POINT
+                total_von += cost_this
+                allocated_items.append((code_val, tag, pts_this, cost_this))
+                dan_alloc_lines.append(f"   + Mã [{code_val:02d}] ({tag:<16}) : {pts_this:>3} điểm | Vốn: {cost_this:,.0f} VND")
+
+            alloc_detail_str = "\n".join(dan_alloc_lines)
+
+            # Accurate break-even points calculation
+            pts_needed = math.ceil(total_von / Config.WIN_PER_NHAY) if total_von > 0 else 0
+            
+            if allocated_items and pts_needed > 0:
+                low_p = allocated_items[-1][2]
+                nhay_low_needed = math.ceil(pts_needed / low_p) if low_p > 0 else 0
+                btl_p = allocated_items[0][2]
+                rem_p = max(0, pts_needed - btl_p)
+                
+                breakeven_explanation = (
+                    f"💡 MỤC TIÊU HÒA VỐN       : Cần tổng tối thiểu {pts_needed} ĐIỂM LÔ nổ (Thu về >= {pts_needed * Config.WIN_PER_NHAY:,.0f} VND)\n"
+                    f"   👉 Ví dụ thực tế có LÃI : Chỉ cần {nhay_low_needed} nháy Lót ({low_p}đ/nháy), "
+                    f"hoặc 1 nháy BTL ({btl_p}đ) + {rem_p}đ nổ bổ sung là LÃI ngay."
+                )
+            else:
+                breakeven_explanation = "💡 MỤC TIÊU HÒA VỐN       : Lệnh cắt lỗ đứng ngoài (0 điểm)."
 
             lines = [
                 "📑 BÁO CÁO KHUYẾN NGHỊ GIAO DỊCH QUANT CAO CẤP",
                 "=======================================================",
                 f"🎯 PHIÊN GIAO DỊCH MỤC TIÊU: {next_dt.strftime('%d/%m/%Y')}",
                 f"🎚️ CHIẾN LƯỢC ÁP DỤNG: {mode}",
+                f"📋 QUY MÔ DÀN LÔ CHUẨN: TÌM ĐƯỢC ĐÚNG {so_luong_lo} MÃ TỪ V5.6 CORE",
                 "=======================================================",
                 "📊 HỒ SƠ CHỐT SỐ THƯỞNG KÊ (DỰ BÁO KQXS CAO CẤP)",
                 "-------------------------------------------------------",
@@ -830,11 +886,11 @@ class Auditor:
                 f"{'Lô Kép Bằng':<22} | {pred_data['kep']}",
                 f"{'Dàn Đề 10 Số':<22} | {pred_data['dan_de_10']}",
                 "-------------------------------------------------------",
-                "💰 QUẢN TRỊ VỐN & CHI TIẾT PHÂN BỔ ROBUST TIERED:",
+                f"💰 QUẢN TRỊ VỐN & CHI TIẾT PHÂN BỔ BẬC THANG ({so_luong_lo} MÃ):",
                 alloc_detail_str,
                 "-------------------------------------------------------",
                 f"💰 TỔNG VỐN DỒN TIERED   : {total_von:,.0f} VNĐ",
-                f"💡 MỤC TIÊU HÒA VỐN       : Cần tối thiểu {diem_hoa_von} nháy trúng cơ sở.",
+                breakeven_explanation,
                 "\n--- BẢN GHI TRUY VẾT TOÁN HỌC (TRACE LOG) ---",
                 pred_data['sig_trace'],
                 mm_trace
@@ -862,13 +918,13 @@ class Auditor:
             if not valid: return err
             
             lines = [
-                "📑 BÁO CÁO KIỂM TOÁN HIỆU SUẤT ĐƠN PHIÊN (CROSS CHECK ALL 4 VERSIONS)",
+                "📑 BÁO CÁO KIỂM TOÁN HIỆU SUẤT ĐƠN PHIÊN (CROSS CHECK ALL VERSIONS)",
                 "========================================================================",
                 f"📡 KẾT QUẢ GIAO DỊCH PHIÊN: {ngay_str}",
                 "========================================================================"
             ]
             
-            for i, mode in enumerate(Config.MODES[:4]):
+            for i, mode in enumerate(Config.MODES[:5]):
                 pred_data, msg = QuantEngine.get_full_prediction(d_obj, db, mode)
                 mode_name = f"CHIẾN LƯỢC {i+1}: {mode.split('(')[0].strip()}"
                 if pred_data is None: 
@@ -1080,7 +1136,7 @@ class Auditor:
             total_days_scanned = (end_dt - start_dt).days + 1
             
             prompt_lines = [
-                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG V5.8 - DÀNH CHO BÁO CÁO ĐỊNH LƯỢNG CHUẨN TRUY VẾT]",
+                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG V5.8 ROBUST - DÀNH CHO BÁO CÁO ĐỊNH LƯỢNG CHUẨN TRUY VẾT]",
                 f"1. PHIÊN BẢN HỆ THỐNG: {Config.VERSION}",
                 f"2. QUÉT TRỌN VẸN LỊCH SỬ {total_days_scanned} NGÀY QUA ({start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')})\n",
                 "📊 [BẢNG SO SÁNH HIỆU SUẤT ĐỐI ĐẦU CÁC PHIÊN BẢN ĐỘNG CAO CẤP]"
@@ -1140,7 +1196,8 @@ class Auditor:
                 "\n⚠️ XÁC NHẬN BÁO CÁO V5.8 ROBUST TIERED QUANT ENGINE:",
                 "1. Tích hợp cơ chế Dồn vốn Bậc thang Risk-Parity chuẩn hóa: Bạch Thủ Lô (1.30x), Song Thủ Lô (1.15x), Lô Dàn Lót (0.85x).",
                 "2. Loại bỏ các lệnh ngắt khúc cứng, sử dụng Cảm biến Tanh Slope Regulator liên tục để triệt tiêu hoàn toàn Overfitting.",
-                "3. Đảm bảo tính minh bạch 100%, deep check, cross check và keep logic toàn bộ các phân hệ."
+                "3. Khôi phục hoàn toàn Lõi lọc số khuyết V5.6, không thêm/bớt số lượng dàn lô chuẩn ban đầu.",
+                "4. Đảm bảo tính minh bạch 100%, deep check, cross check và keep logic toàn bộ các phân hệ."
             ])
             return "\n".join(prompt_lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
@@ -1179,7 +1236,7 @@ def create_ui():
                 pts_2 = gr.Number(label="Khối lượng Vốn Cơ sở (Điểm / Mã)", value=10)
                 mode_2 = gr.Radio(choices=Config.MODES, value=Config.MODES[0], label="Chiến lược Áp dụng")
             btn_2 = gr.Button("🔍 XUẤT LỆNH GIAO DỊCH CAO CẤP", variant="primary")
-            out_2 = gr.Textbox(label="Hồ sơ Lệnh Tác Chiến", lines=22)
+            out_2 = gr.Textbox(label="Hồ sơ Lệnh Tác Chiến", lines=25)
             btn_2.click(Auditor.phan_he_2_predict, inputs=[pts_2, mode_2], outputs=out_2)
             
         with gr.Column(visible=False) as col_3:
