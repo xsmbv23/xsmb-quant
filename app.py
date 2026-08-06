@@ -274,6 +274,7 @@ class DatabaseManager:
         db, _ = DatabaseManager.load_db()
         now_vn = Utils.get_vn_time()
         
+        # Mốc 19:00 hàng ngày (GMT+7)
         end_dt = now_vn.replace(hour=0, minute=0, second=0, microsecond=0)
         if now_vn.hour < 19:
             end_dt -= timedelta(days=1)
@@ -384,6 +385,7 @@ class QuantEngine:
                 str_p = p_dt.strftime("%d/%m/%Y")
                 recent_2d_3d.update(db[str_p]["prizes_int"])
         dan_opt = [x for x in so_khuyet_goc if x in recent_2d_3d]
+        trace_log.append(f"[Lõi Số Khuyết Tối Ưu] Lọc số khuyết T-1 + Momentum T-2, T-3. Dàn chuẩn tìm được: {len(dan_opt)} mã.")
         
         res = (sorted(list(dan_opt)), "OK")
         QuantEngine._sig_cache[cache_key] = res
@@ -1088,7 +1090,8 @@ def create_ui():
             title_2 = gr.Markdown(f"#### KHUYẾN NGHỊ GIAO DỊCH KỲ TỚI: {next_predict_dt_init.strftime('%d/%m/%Y') if next_predict_dt_init else ''}")
             
             gr.Markdown("---")
-            download_btn = gr.DownloadButton("📥 BẤM VÀO ĐÂY ĐỂ TẢI BẢN BACKUP EXCEL VỀ MÁY", value=os.path.abspath(Config.DATA_FILE), variant="primary")
+            download_btn = gr.File(label="Tải file Excel Database hiện tại về máy", value=os.path.abspath(Config.DATA_FILE), interactive=False)
+            btn_refresh_file = gr.Button("🔄 LÀM MỚI FILE TẢI VỀ (NẾU ĐÉO TẢI ĐƯỢC)", variant="secondary")
             
         with gr.Column(visible=False) as col_2:
             with gr.Row():
@@ -1143,12 +1146,14 @@ def create_ui():
             out_6 = gr.Textbox(label="Báo cáo Tổng hợp V5.8", lines=25)
             btn_6.click(Auditor.phan_he_6_master_diagnostic_prompt, inputs=[], outputs=out_6)
 
-        def update_download():
-            return gr.update(value=os.path.abspath(Config.DATA_FILE))
+        def refresh_file_path():
+            return os.path.abspath(Config.DATA_FILE)
 
-        btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2]).then(update_download, outputs=download_btn)
-        btn_1_crawl.click(lambda: Auditor.phan_he_1_sync(auto_crawl=True), outputs=[out_1, title_2]).then(update_download, outputs=download_btn)
-        btn_manual_save.click(Auditor.process_manual_input, inputs=[manual_date, manual_numbers], outputs=[out_1, title_2]).then(update_download, outputs=download_btn)
+        btn_refresh_file.click(refresh_file_path, inputs=[], outputs=download_btn)
+        
+        btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2]).then(refresh_file_path, outputs=download_btn)
+        btn_1_crawl.click(lambda: Auditor.phan_he_1_sync(auto_crawl=True), outputs=[out_1, title_2]).then(refresh_file_path, outputs=download_btn)
+        btn_manual_save.click(Auditor.process_manual_input, inputs=[manual_date, manual_numbers], outputs=[out_1, title_2]).then(refresh_file_path, outputs=download_btn)
 
         def update_visibility(choice):
             return [
