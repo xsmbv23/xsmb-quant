@@ -194,7 +194,6 @@ class DatabaseManager:
                 if not res_date: continue
                 dt_obj, ngay_str = res_date
                 
-                # Biến dấu phẩy, gạch ngang thành khoảng trắng và chuẩn hóa
                 loto_raw = re.sub(r"[^\d\s]", " ", str(row.iloc[1]))
                 loto_list = [int(x.strip()[-2:]) for x in loto_raw.split() if x.strip().isdigit()]
                 
@@ -205,11 +204,10 @@ class DatabaseManager:
                     if str(row.iloc[0]) != ngay_str or str(row.iloc[1]) != clean_str:
                         needs_rewrite = True
                         
-            # Cưỡng ép chuẩn hóa Form Excel 100% nếu phát hiện file bị rác định dạng
             if needs_rewrite:
                 DatabaseManager.rewrite_clean_db(db)
                 return db, f"🟢 TỰ ĐỘNG DỌN DẸP DB: Đã chuẩn hóa định dạng ngày & số."
-            return db, f"🟢 LOCAL EXCEL: Đồng bộ {len(db)} phiên. Dữ liệu đang sạch sẽ chuẩn form."
+            return db, f"🟢 LOCAL EXCEL: Đồng bộ {len(db)} phiên."
         except Exception as e: 
             backups = sorted(glob.glob(Config.BACKUP_PREFIX + "*.bak"), reverse=True)
             if backups:
@@ -219,7 +217,6 @@ class DatabaseManager:
 
     @staticmethod
     def _push_to_google_sheets(df_final):
-        """BÓNG MA CHẠY NGẦM: Đẩy dữ liệu lên mây mà không chờ phản hồi"""
         try:
             ws, msg = GoogleSheetsManager.get_worksheet()
             if ws is not None:
@@ -232,7 +229,7 @@ class DatabaseManager:
                 except TypeError:
                     ws.update("A1", matrix)
         except Exception:
-            pass # Bỏ qua lỗi kết nối GSheets để không hỏng app chính
+            pass
 
     @staticmethod
     def rewrite_clean_db(db):
@@ -244,7 +241,6 @@ class DatabaseManager:
         df_final = pd.DataFrame(all_rows)
         df_final = df_final.sort_values(by='date_parse', ascending=False).drop(columns=['date_parse'])
         
-        # 1. Lưu Local trên Ổ cứng Render (Nhanh như điện)
         if os.path.exists(Config.DATA_FILE):
             timestamp = Utils.get_vn_time().strftime("%Y%m%d_%H%M%S")
             shutil.copy(Config.DATA_FILE, f"{Config.BACKUP_PREFIX}{timestamp}.bak")
@@ -254,9 +250,8 @@ class DatabaseManager:
                 except Exception: pass
         df_final.to_excel(Config.DATA_FILE, index=False)
 
-        # 2. Triệu hồi "Bóng ma" (Thread phụ) để đẩy dữ liệu lên Google Sheets
         thread = threading.Thread(target=DatabaseManager._push_to_google_sheets, args=(df_final,))
-        thread.daemon = True # Thread sẽ tự hủy nếu Server tắt
+        thread.daemon = True
         thread.start()
 
     @staticmethod
@@ -279,7 +274,6 @@ class DatabaseManager:
         db, _ = DatabaseManager.load_db()
         now_vn = Utils.get_vn_time()
         
-        # Mốc 19:00 hàng ngày (GMT+7)
         end_dt = now_vn.replace(hour=0, minute=0, second=0, microsecond=0)
         if now_vn.hour < 19:
             end_dt -= timedelta(days=1)
@@ -492,8 +486,9 @@ class QuantEngine:
                 c = sl * Config.BASE_PTS * Config.COST_PER_POINT
                 r = nhay * Config.BASE_PTS * Config.WIN_PER_NHAY
                 cost += c
-                pnl += (r - c)
-                if (r - c) > 0: w_mtd += 1
+                p = r - c
+                pnl += p
+                if p > 0: w_mtd += 1
                 else: l_mtd += 1
         roi = (pnl / cost) if cost > 0 else 0.0
         return cost, pnl, roi, w_mtd, l_mtd
@@ -980,30 +975,14 @@ class Auditor:
             _, ngay_str = res
             if ngay_str not in db: return f"🛑 DỮ LIỆU RỖNG: Phiên {ngay_str} chưa tồn tại trên hệ thống."
             
-            prizes = db[ngay_str]["prizes_int"]
-            if len(prizes) < 27: return "🛑 LỖI DỮ LIỆU: Bảng kết quả không đủ 27 giải."
-            
-            lines = [
-                "📑 BẢNG KẾT QUẢ XỔ SỐ MIỀN BẮC",
-                "=======================================================",
-                f"📅 KẾT QUẢ PHIÊN GIAO DỊCH: {ngay_str}",
-                "-------------------------------------------------------",
-            ]
-            
-            lines.append(f"🔴 Đặc Biệt  :  {prizes[0]:02d}")
-            lines.append(f"🟢 Giải Nhất :  {prizes[1]:02d}")
-            lines.append(f"🔵 Giải Nhì  :  {prizes[2]:02d} - {prizes[3]:02d}")
-            lines.append(f"🟣 Giải Ba   :  {prizes[4]:02d} - {prizes[5]:02d} - {prizes[6]:02d} - {prizes[7]:02d} - {prizes[8]:02d} - {prizes[9]:02d}")
-            lines.append(f"🟤 Giải Tư   :  {prizes[10]:02d} - {prizes[11]:02d} - {prizes[12]:02d} - {prizes[13]:02d}")
-            lines.append(f"🟠 Giải Năm  :  {prizes[14]:02d} - {prizes[15]:02d} - {prizes[16]:02d} - {prizes[17]:02d} - {prizes[18]:02d} - {prizes[19]:02d}")
-            lines.append(f"🟡 Giải Sáu  :  {prizes[20]:02d} - {prizes[21]:02d} - {prizes[22]:02d}")
-            lines.append(f"⚪ Giải Bảy  :  {prizes[23]:02d} - {prizes[24]:02d} - {prizes[25]:02d} - {prizes[26]:02d}")
-            
-            lines.extend([
-                "-------------------------------------------------------",
-                "⚠️ Lưu ý: Bảng hiển thị Loto 2 số (Dữ liệu do Crawler phục vụ thuật toán Quant).",
-                "======================================================="
-            ])
+            lo_to_raw = sorted(db[ngay_str]["prizes_int"])
+            lines = ["📑 KẾT QUẢ LOTO THEO NGÀY", "=======================================================", f"📅 BIÊN BẢN KẾT QUẢ PHIÊN GIAO DỊCH: {ngay_str}", "🎰 Danh sách 27 giải ma trận phẳng (Đã sắp xếp tăng dần):"]
+            row_str = ""
+            for idx, lo in enumerate(lo_to_raw):
+                row_str += f"[{lo:02d}] "
+                if (idx + 1) % 9 == 0:
+                    lines.append(row_str.strip())
+                    row_str = ""
             return "\n".join(lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
@@ -1108,8 +1087,8 @@ def create_ui():
             out_1 = gr.Textbox(label="Biên bản Báo cáo Hệ thống", lines=8)
             title_2 = gr.Markdown(f"#### KHUYẾN NGHỊ GIAO DỊCH KỲ TỚI: {next_predict_dt_init.strftime('%d/%m/%Y') if next_predict_dt_init else ''}")
             
-            gr.Markdown("📥 **TRÍCH XUẤT DATABASE TỪ SERVER:**")
-            download_btn = gr.File(label="Tải file Excel Database hiện tại về máy", value=Config.DATA_FILE, interactive=False)
+            gr.Markdown("---")
+            download_btn = gr.DownloadButton("📥 BẤM VÀO ĐÂY ĐỂ TẢI BẢN BACKUP EXCEL VỀ MÁY", value=Config.DATA_FILE, variant="primary")
             
         with gr.Column(visible=False) as col_2:
             with gr.Row():
@@ -1165,7 +1144,7 @@ def create_ui():
             btn_6.click(Auditor.phan_he_6_master_diagnostic_prompt, inputs=[], outputs=out_6)
 
         def update_download():
-            return gr.update(value=Config.DATA_FILE)
+            return gr.DownloadButton(value=Config.DATA_FILE)
 
         btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2]).then(update_download, outputs=download_btn)
         btn_1_crawl.click(lambda: Auditor.phan_he_1_sync(auto_crawl=True), outputs=[out_1, title_2]).then(update_download, outputs=download_btn)
