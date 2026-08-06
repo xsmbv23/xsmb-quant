@@ -9,6 +9,7 @@ import html
 import shutil
 import glob
 import json
+import threading
 import concurrent.futures
 from datetime import datetime, timedelta
 import traceback
@@ -31,7 +32,7 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V5.8 ROBUST TIERED QUANT ENGINE (RISK-PARITY ALLOCATION & CACHE SPEED)" 
+    VERSION = "V5.8 ROBUST TIERED QUANT ENGINE (AUTO-CLEAN DB & BACKGROUND SYNC)" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
@@ -89,45 +90,45 @@ class Utils:
         except: return False, f"🛑 LỖI: '{name}' sai định dạng."
 
 # ==============================================================================
-# 🕸️ BLOCK 3: CRAWLER TỰ ĐỘNG ĐA LUỒNG (KETQUA RADAR)
+# 🕸️ BLOCK 3: CRAWLER TỰ ĐỘNG (KETQUA NỐI TIẾP VỚI TỊNH TIẾN DOMAIN)
 # ==============================================================================
 class Crawler:
+    HEADERS = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+    
     @staticmethod
-    def _fetch_single_domain(domain):
-        url = f"https://{domain}/so-ket-qua-truyen-thong/300"
-        try:
-            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}, timeout=3)
-            if res.status_code == 200:
-                html_text = res.text
-                parts = re.split(r'(\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b)', html_text)
-                parsed_data = {}
-                for i in range(1, len(parts)-1, 2):
-                    res_date = Utils.chuan_hoa_ngay(parts[i])
-                    if res_date:
-                        clean_text = re.sub(r'<[^>]+>', ' ', html.unescape(parts[i+1]))
-                        nums = re.findall(r'\b\d{2,}\b', clean_text)
-                        if len(nums) >= 27:
-                            parsed_data[res_date[1]] = " ".join([x[-2:] for x in nums[:27]])
-                if len(parsed_data) > 10: 
-                    return True, parsed_data, domain
-        except Exception: pass
-        return False, {}, domain
-
-    @staticmethod
-    def fetch_ketqua_radar():
-        if not HAS_REQUESTS: return False, {}, "Thiếu thư viện 'requests'"
-        base_domains = ["ketqua.net", "ketqua.vn", "ketquaxoso.net"]
+    def fetch_single_date(target_date):
+        if not HAS_REQUESTS: return None
+        date_str_url = target_date.strftime("%d-%m-%Y")
+        date_str_db = target_date.strftime("%d/%m/%Y")
+        
         numeric_domains = [f"ketqua{i}.net" for i in range(16, 51)] + [f"ketqua{i}.net" for i in range(1, 16)]
-        domains_to_scan = numeric_domains + base_domains
-        with concurrent.futures.ThreadPoolExecutor(max_workers=60) as executor:
-            future_to_domain = {executor.submit(Crawler._fetch_single_domain, dom): dom for dom in domains_to_scan}
-            for future in concurrent.futures.as_completed(future_to_domain):
-                success, data, domain_name = future.result()
-                if success: return True, data, f"Quét chớp nhoáng đa luồng thành công {len(data)} ngày từ [{domain_name}]"
-        return False, {}, "Toàn bộ mạng lưới Ketqua đã sập hoặc Time-out > 3s."
+        
+        urls = []
+        for dom in numeric_domains:
+            urls.append(f"https://{dom}/xo-so-truyen-thong.php?ngay={date_str_url}")
+            urls.append(f"https://{dom}/xsmb-ngay-{date_str_url}.html")
+        urls.append(f"https://ketqua.net/ngay-{date_str_url}")
+        urls.append(f"https://ketquaxoso.net/ket-qua-xo-so-mien-bac-ngay-{date_str_url}")
+        
+        for url in urls:
+            try:
+                res = requests.get(url, headers=Crawler.HEADERS, timeout=7)
+                if res.status_code == 200:
+                    tables = re.findall(r'<table.*?>(.*?)</table>', res.text, re.IGNORECASE | re.DOTALL)
+                    for t in tables:
+                        clean_text = re.sub(r'<[^>]+>', ' ', html.unescape(t))
+                        nums = re.findall(r'\b\d{2,5}\b', clean_text)
+                        if len(nums) >= 27:
+                            prizes = [x[-2:] for x in nums[:27]]
+                            return {"Ngày": date_str_db, "Kết Quả Loto": " ".join(prizes)}
+            except Exception:
+                pass
+        return None
 
 # ==============================================================================
-# 📊 BLOCK 4: GOOGLE SHEETS & DATABASE MANAGER
+# 📊 BLOCK 4: DATABASE MANAGER (TỰ ĐỘNG CHUẨN HÓA & BACKUP NGẦM LÊN DRIVE)
 # ==============================================================================
 class GoogleSheetsManager:
     @staticmethod
@@ -178,31 +179,7 @@ class DatabaseManager:
     @staticmethod
     def load_db():
         db = {}
-        ws, ws_msg = GoogleSheetsManager.get_worksheet()
-        
-        if ws is not None:
-            try:
-                all_values = ws.get_all_values()
-                if len(all_values) > 1:
-                    for row in all_values[1:]:
-                        if not row or len(row) < 2: continue
-                        res_date = Utils.chuan_hoa_ngay(row[0])
-                        if not res_date: continue
-                        dt_obj, ngay_str = res_date
-                        loto_raw = re.sub(r"[^\d\s]", " ", str(row[1]))
-                        loto_list = [int(x.strip()[-2:]) for x in loto_raw.split() if x.strip().isdigit()]
-                        if len(loto_list) >= 27:
-                            db[ngay_str] = {
-                                "date_obj": dt_obj, 
-                                "prizes_int": loto_list[:27], 
-                                "raw_str": " ".join([f"{x:02d}" for x in loto_list[:27]])
-                            }
-                    if db:
-                        DatabaseManager._save_local_excel_cache(db)
-                    return db, f"🟢 GOOGLE SHEETS: Đồng bộ vĩnh viễn {len(db)} phiên."
-            except Exception as e:
-                ws_msg = f"Lỗi đọc Google Sheets ({e}). Chuyển sang đọc Local Excel."
-
+        ws_msg = "Chạy Local Excel - Cấu trúc chuẩn hóa"
         if not os.path.exists(Config.DATA_FILE):
             backups = sorted(glob.glob(Config.BACKUP_PREFIX + "*.bak"), reverse=True)
             if backups: shutil.copy(backups[0], Config.DATA_FILE)
@@ -211,15 +188,26 @@ class DatabaseManager:
                 return db, f"⚠️ Tệp dữ liệu rỗng. ({ws_msg})"
         try:
             df = pd.read_excel(Config.DATA_FILE, dtype=str)
+            needs_rewrite = False
             for _, row in df.iterrows():
                 res_date = Utils.chuan_hoa_ngay(row.iloc[0])
                 if not res_date: continue
                 dt_obj, ngay_str = res_date
+                
                 loto_raw = re.sub(r"[^\d\s]", " ", str(row.iloc[1]))
                 loto_list = [int(x.strip()[-2:]) for x in loto_raw.split() if x.strip().isdigit()]
+                
                 if len(loto_list) >= 27:
-                    db[ngay_str] = {"date_obj": dt_obj, "prizes_int": loto_list[:27], "raw_str": " ".join([f"{x:02d}" for x in loto_list[:27]])}
-            return db, f"🟢 LOCAL EXCEL: Đồng bộ {len(db)} phiên. [{ws_msg}]"
+                    clean_str = " ".join([f"{x:02d}" for x in loto_list[:27]])
+                    db[ngay_str] = {"date_obj": dt_obj, "prizes_int": loto_list[:27], "raw_str": clean_str}
+                    
+                    if str(row.iloc[0]) != ngay_str or str(row.iloc[1]) != clean_str:
+                        needs_rewrite = True
+                        
+            if needs_rewrite:
+                DatabaseManager.rewrite_clean_db(db)
+                return db, f"🟢 TỰ ĐỘNG DỌN DẸP DB: Đã chuẩn hóa định dạng ngày & số."
+            return db, f"🟢 LOCAL EXCEL: Đồng bộ {len(db)} phiên."
         except Exception as e: 
             backups = sorted(glob.glob(Config.BACKUP_PREFIX + "*.bak"), reverse=True)
             if backups:
@@ -228,16 +216,20 @@ class DatabaseManager:
             return db, f"🛑 LỖI ĐỌC:\n{traceback.format_exc()}"
 
     @staticmethod
-    def _save_local_excel_cache(db):
+    def _push_to_google_sheets(df_final):
         try:
-            all_rows = []
-            for d_str, info in db.items():
-                all_rows.append({"Ngày": d_str, "Kết Quả Loto": info["raw_str"], "date_parse": info["date_obj"]})
-            if all_rows:
-                df_final = pd.DataFrame(all_rows)
-                df_final = df_final.sort_values(by='date_parse', ascending=False).drop(columns=['date_parse'])
-                df_final.to_excel(Config.DATA_FILE, index=False)
-        except Exception: pass
+            ws, msg = GoogleSheetsManager.get_worksheet()
+            if ws is not None:
+                matrix = [["Ngày", "Kết Quả Loto"]]
+                for _, row in df_final.iterrows():
+                    matrix.append([str(row["Ngày"]), str(row["Kết Quả Loto"])])
+                ws.clear()
+                try:
+                    ws.update(values=matrix, range_name="A1")
+                except TypeError:
+                    ws.update("A1", matrix)
+        except Exception:
+            pass
 
     @staticmethod
     def rewrite_clean_db(db):
@@ -258,19 +250,9 @@ class DatabaseManager:
                 except Exception: pass
         df_final.to_excel(Config.DATA_FILE, index=False)
 
-        ws, _ = GoogleSheetsManager.get_worksheet()
-        if ws is not None:
-            try:
-                matrix = [["Ngày", "Kết Quả Loto"]]
-                for _, row in df_final.iterrows():
-                    matrix.append([str(row["Ngày"]), str(row["Kết Quả Loto"])])
-                ws.clear()
-                try:
-                    ws.update(values=matrix, range_name="A1")
-                except TypeError:
-                    ws.update("A1", matrix)
-            except Exception as e:
-                print(f"[!] Lỗi ghi dữ liệu Google Sheets: {e}")
+        thread = threading.Thread(target=DatabaseManager._push_to_google_sheets, args=(df_final,))
+        thread.daemon = True
+        thread.start()
 
     @staticmethod
     def save_manual_data(date_str, numbers_str):
@@ -284,35 +266,59 @@ class DatabaseManager:
             db[std_date] = {"date_obj": dt_obj, "prizes_int": [int(x) for x in nums[:27]], "raw_str": " ".join(nums[:27])}
             DatabaseManager.rewrite_clean_db(db)
             QuantEngine.clear_cache()
-            return f"✅ NHẬP TAY THÀNH CÔNG VÀ ĐÃ BẮN LÊN GOOGLE SHEETS: {std_date}!"
+            return f"✅ NHẬP TAY THÀNH CÔNG (Đã lưu File & Kích hoạt đồng bộ ngầm): {std_date}!"
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
     @staticmethod
     def auto_heal_history():
         db, _ = DatabaseManager.load_db()
         now_vn = Utils.get_vn_time()
-        success, parsed_data, msg = Crawler.fetch_ketqua_radar()
-        if not success: return f"🛑 LỖI CRAWLER:\n{msg}"
+        
+        end_dt = now_vn.replace(hour=0, minute=0, second=0, microsecond=0)
+        if now_vn.hour < 19:
+            end_dt -= timedelta(days=1)
+            
+        min_dt, max_dt, _ = DatabaseManager.get_boundaries(db)
+        if not max_dt:
+            return "🛑 LỖI: Database rỗng. Hãy nạp file Excel trước."
+            
+        if max_dt >= end_dt:
+            return f"✅ Dữ liệu đã đầy đủ đến {max_dt.strftime('%d/%m/%Y')}."
+            
+        missing_dates = [max_dt + timedelta(days=x) for x in range(1, (end_dt - max_dt).days + 1)]
         healed_count = 0
-        for date_str, prizes_str in parsed_data.items():
-            res_date = Utils.chuan_hoa_ngay(date_str)
-            if res_date:
-                dt_obj, std_str = res_date
-                if dt_obj.date() > now_vn.date(): continue
-                if dt_obj.date() == now_vn.date() and now_vn.hour < 19: continue
-                if std_str not in db:
-                    nums = re.findall(r'\d{2}', prizes_str)
-                    if len(nums) >= 27:
-                        db[std_str] = {"date_obj": dt_obj, "prizes_int": [int(x) for x in nums[:27]], "raw_str": " ".join(nums[:27])}
+        msg_log = []
+        
+        if not HAS_REQUESTS:
+            return "🛑 CẢNH BÁO: Thiếu thư viện 'requests', không thể cào dữ liệu."
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(Crawler.fetch_single_date, dt): dt for dt in missing_dates}
+            for future in concurrent.futures.as_completed(futures):
+                dt = futures[future]
+                try:
+                    res = future.result()
+                    if res:
+                        std_str = res["Ngày"]
+                        nums_str = res["Kết Quả Loto"]
+                        nums = [int(x) for x in nums_str.split()]
+                        db[std_str] = {"date_obj": dt, "prizes_int": nums, "raw_str": nums_str}
                         healed_count += 1
-        if healed_count > 0 or len(db) > 0:
+                    else:
+                        msg_log.append(f"Khuyết {dt.strftime('%d/%m')}")
+                except Exception as e:
+                    msg_log.append(f"Lỗi {dt.strftime('%d/%m')}")
+                    
+        if healed_count > 0:
             try:
                 DatabaseManager.rewrite_clean_db(db)
                 QuantEngine.clear_cache()
-                if healed_count > 0: return f"✅ AUTO-HEAL: {msg}. Bổ sung {healed_count} phiên mới vào Google Sheets!"
-                else: return "✅ AUTO-HEAL: Dữ liệu Google Sheets đã đồng bộ liền mạch."
-            except Exception as e: return f"🛑 LỖI GHI FILE:\n{traceback.format_exc()}"
-        return "✅ AUTO-HEAL: Dữ liệu đã liền mạch."
+                return f"✅ THÀNH CÔNG: Đã cào thêm {healed_count} ngày mới (Từ {missing_dates[0].strftime('%d/%m')} đến {end_dt.strftime('%d/%m/%Y')})!"
+            except Exception as e:
+                return f"🛑 LỖI GHI FILE:\n{traceback.format_exc()}"
+                
+        err_str = ", ".join(msg_log[:5])
+        return f"⚠️ KHÔNG THỂ LẤY DỮ LIỆU. Web xổ số bị nghẽn hoặc kết quả chưa ra. ({err_str}...)"
 
     @staticmethod
     def get_boundaries(db):
@@ -419,10 +425,8 @@ class QuantEngine:
         
         final_dan = list(scored_candidates)
 
-        # 1. Bạch Thủ Lô (Rank 0)
         best_btl = final_dan[0] if len(final_dan) > 0 else 0
 
-        # 2. Song Thủ Lô (Rank 1 & 2)
         lon_btl = (best_btl % 10) * 10 + (best_btl // 10)
         if len(final_dan) >= 3:
             stl_pair = (final_dan[1], final_dan[2])
@@ -431,25 +435,21 @@ class QuantEngine:
         else:
             stl_pair = (lon_btl if lon_btl != best_btl else (best_btl + 11) % 100, (best_btl + 22) % 100)
 
-        # 3. Lô Xiên 2
         sec1 = stl_pair[0]
         sec2 = stl_pair[1]
         xien2_pair1 = f"{best_btl:02d} - {sec1:02d}"
         xien2_pair2 = f"{best_btl:02d} - {sec2:02d}"
         loto_xien2 = f"{xien2_pair1} | {xien2_pair2}"
 
-        # 4. Lô 3 Càng (3D)
         top_hundreds = sorted(hundreds_freq.keys(), key=lambda h: -hundreds_freq[h])[:2]
         h1 = top_hundreds[0] if len(top_hundreds) > 0 else 0
         h2 = top_hundreds[1] if len(top_hundreds) > 1 else 1
         loto_3cang = f"{h1}{best_btl:02d} - {h2}{stl_pair[0]:02d}"
 
-        # 5. Lô Kép Bằng
         keps = [0, 11, 22, 33, 44, 55, 66, 77, 88, 99]
         sorted_keps = sorted(keps, key=lambda k: (- (1 if k in final_dan else 0), -freq_14.get(k, 0)))
         lo_kep = f"{sorted_keps[0]:02d} - {sorted_keps[1]:02d}"
 
-        # 6. Dàn Đề 10 Số
         str_t1 = past_dates[0].strftime("%d/%m/%Y")
         gdb_t1 = db[str_t1]["prizes_int"][0]
         de_head, de_tail = gdb_t1 // 10, gdb_t1 % 10
@@ -486,9 +486,8 @@ class QuantEngine:
                 c = sl * Config.BASE_PTS * Config.COST_PER_POINT
                 r = nhay * Config.BASE_PTS * Config.WIN_PER_NHAY
                 cost += c
-                p = r - c
-                pnl += p
-                if p > 0: w_mtd += 1
+                pnl += (r - c)
+                if (r - c) > 0: w_mtd += 1
                 else: l_mtd += 1
         roi = (pnl / cost) if cost > 0 else 0.0
         return cost, pnl, roi, w_mtd, l_mtd
@@ -576,7 +575,6 @@ class QuantEngine:
                 pnl_r = nhay_r * Config.BASE_PTS * Config.WIN_PER_NHAY - len(r_dan) * Config.BASE_PTS * Config.COST_PER_POINT
                 daily_pnls_14.append(pnl_r)
         p_hit_14d = (tot_nhay_14 / tot_codes_14) if tot_codes_14 > 0 else 0.27
-        d_nhay_14d = p_hit_14d
 
         # Micro V1 Base Multiplier
         recent_21 = past_dates[:21]
@@ -1078,9 +1076,6 @@ class Auditor:
             return "\n".join(prompt_lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
-# ==============================================================================
-# 🖥️ BLOCK 7: GRADIO WEB UI (RENDER READY)
-# ==============================================================================
 def create_ui():
     db_init, _ = DatabaseManager.load_db()
     min_dt_init, latest_dt_init, next_predict_dt_init = DatabaseManager.get_boundaries(db_init)
@@ -1105,14 +1100,14 @@ def create_ui():
             gr.Markdown("---")
 
             out_1 = gr.Textbox(label="Biên bản Báo cáo Hệ thống", lines=8)
-            title_2 = gr.Markdown(f"#### KHUYẾN NGHỊ GIAO DỊCH KỲ TỚI: {next_predict_dt_init.strftime('%d/%m/%Y')}")
+            title_2 = gr.Markdown(f"#### KHUYẾN NGHỊ GIAO DỊCH KỲ TỚI: {next_predict_dt_init.strftime('%d/%m/%Y') if next_predict_dt_init else ''}")
             
         with gr.Column(visible=False) as col_2:
             with gr.Row():
                 pts_2 = gr.Number(label="Khối lượng Vốn Cơ sở (Điểm / Mã)", value=10)
             btn_2 = gr.Button("🔍 XUẤT LỆNH GIAO DỊCH CAO CẤP", variant="primary")
             out_2 = gr.Textbox(label="Hồ sơ Lệnh Tác Chiến", lines=25)
-            btn_2.click(lambda pts: Auditor.phan_he_2_predict(pts), inputs=[pts_2], outputs=out_2)
+            btn_2.click(Auditor.phan_he_2_predict, inputs=[pts_2], outputs=out_2)
             
         with gr.Column(visible=False) as col_3:
             gr.Markdown("### 🔍 MODULE KIỂM TOÁN CHUYÊN SÂU & TRUY VẾT")
@@ -1146,7 +1141,7 @@ def create_ui():
                 pts_4 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
             btn_4 = gr.Button("📈 KIỂM TOÁN BIÊN ĐỘ LỢI NHUẬN CHU KỲ", variant="primary")
             out_4 = gr.Textbox(label="Báo cáo Dòng Tiền & Max Drawdown", lines=22)
-            btn_4.click(lambda t1, t2, pts: Auditor.phan_he_4_range(t1, t2, pts), inputs=[t1_4, t2_4, pts_4], outputs=out_4)
+            btn_4.click(Auditor.phan_he_4_range, inputs=[t1_4, t2_4, pts_4], outputs=out_4)
 
         with gr.Column(visible=False) as col_5:
             date_5 = gr.Textbox(label="Phiên Giao dịch Truy xuất (DD/MM/YYYY)", value=latest_dt_init.strftime('%d/%m/%Y') if latest_dt_init else "")
