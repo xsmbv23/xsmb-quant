@@ -385,7 +385,6 @@ class QuantEngine:
                 str_p = p_dt.strftime("%d/%m/%Y")
                 recent_2d_3d.update(db[str_p]["prizes_int"])
         dan_opt = [x for x in so_khuyet_goc if x in recent_2d_3d]
-        trace_log.append(f"[Lõi Số Khuyết Tối Ưu] Lọc số khuyết T-1 + Momentum T-2, T-3. Dàn chuẩn tìm được: {len(dan_opt)} mã.")
         
         res = (sorted(list(dan_opt)), "OK")
         QuantEngine._sig_cache[cache_key] = res
@@ -1063,6 +1062,9 @@ class Auditor:
             return "\n".join(prompt_lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
+# ==============================================================================
+# 🖥️ BLOCK 7: GRADIO WEB UI (RENDER READY)
+# ==============================================================================
 def create_ui():
     db_init, _ = DatabaseManager.load_db()
     min_dt_init, latest_dt_init, next_predict_dt_init = DatabaseManager.get_boundaries(db_init)
@@ -1089,9 +1091,19 @@ def create_ui():
             out_1 = gr.Textbox(label="Biên bản Báo cáo Hệ thống", lines=8)
             title_2 = gr.Markdown(f"#### KHUYẾN NGHỊ GIAO DỊCH KỲ TỚI: {next_predict_dt_init.strftime('%d/%m/%Y') if next_predict_dt_init else ''}")
             
+            # --- VŨ KHÍ MỚI: TÁCH RIÊNG 2 BƯỚC TẢI ĐỂ CHỐNG LỖI CACHE ---
             gr.Markdown("---")
-            download_btn = gr.File(label="Tải file Excel Database hiện tại về máy", value=os.path.abspath(Config.DATA_FILE), interactive=False)
-            btn_refresh_file = gr.Button("🔄 LÀM MỚI FILE TẢI VỀ (NẾU ĐÉO TẢI ĐƯỢC)", variant="secondary")
+            gr.Markdown("### 📥 TẢI DATABASE VỀ MÁY TRỰC TIẾP")
+            gr.Markdown("*(Gradio đôi khi bị lỗi cache link ẩn. Bấm nút số 1 để trích xuất file mới nhất, sau đó bấm vào nút tải ở mục số 2)*")
+            with gr.Row():
+                btn_prepare_dl = gr.Button("1️⃣ BẤM ĐỂ TRÍCH XUẤT FILE TỪ MÁY CHỦ", variant="primary")
+            with gr.Row():
+                dl_output = gr.File(label="2️⃣ FILE EXCEL ĐÃ SẴN SÀNG (Bấm mũi tên để tải)")
+                
+            def get_excel_file():
+                return os.path.abspath(Config.DATA_FILE) if os.path.exists(Config.DATA_FILE) else None
+                
+            btn_prepare_dl.click(fn=get_excel_file, inputs=[], outputs=dl_output)
             
         with gr.Column(visible=False) as col_2:
             with gr.Row():
@@ -1146,14 +1158,9 @@ def create_ui():
             out_6 = gr.Textbox(label="Báo cáo Tổng hợp V5.8", lines=25)
             btn_6.click(Auditor.phan_he_6_master_diagnostic_prompt, inputs=[], outputs=out_6)
 
-        def refresh_file_path():
-            return os.path.abspath(Config.DATA_FILE)
-
-        btn_refresh_file.click(refresh_file_path, inputs=[], outputs=download_btn)
-        
-        btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2]).then(refresh_file_path, outputs=download_btn)
-        btn_1_crawl.click(lambda: Auditor.phan_he_1_sync(auto_crawl=True), outputs=[out_1, title_2]).then(refresh_file_path, outputs=download_btn)
-        btn_manual_save.click(Auditor.process_manual_input, inputs=[manual_date, manual_numbers], outputs=[out_1, title_2]).then(refresh_file_path, outputs=download_btn)
+        btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2])
+        btn_1_crawl.click(lambda: Auditor.phan_he_1_sync(auto_crawl=True), outputs=[out_1, title_2])
+        btn_manual_save.click(Auditor.process_manual_input, inputs=[manual_date, manual_numbers], outputs=[out_1, title_2])
 
         def update_visibility(choice):
             return [
