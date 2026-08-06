@@ -1088,7 +1088,7 @@ def create_ui():
             title_2 = gr.Markdown(f"#### KHUYẾN NGHỊ GIAO DỊCH KỲ TỚI: {next_predict_dt_init.strftime('%d/%m/%Y') if next_predict_dt_init else ''}")
             
             gr.Markdown("---")
-            download_btn = gr.DownloadButton("📥 BẤM VÀO ĐÂY ĐỂ TẢI BẢN BACKUP EXCEL VỀ MÁY", value=Config.DATA_FILE, variant="primary")
+            download_btn = gr.DownloadButton("📥 BẤM VÀO ĐÂY ĐỂ TẢI BẢN BACKUP EXCEL VỀ MÁY", value=os.path.abspath(Config.DATA_FILE), variant="primary")
             
         with gr.Column(visible=False) as col_2:
             with gr.Row():
@@ -1144,7 +1144,7 @@ def create_ui():
             btn_6.click(Auditor.phan_he_6_master_diagnostic_prompt, inputs=[], outputs=out_6)
 
         def update_download():
-            return gr.DownloadButton(value=Config.DATA_FILE)
+            return gr.update(value=os.path.abspath(Config.DATA_FILE))
 
         btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2]).then(update_download, outputs=download_btn)
         btn_1_crawl.click(lambda: Auditor.phan_he_1_sync(auto_crawl=True), outputs=[out_1, title_2]).then(update_download, outputs=download_btn)
