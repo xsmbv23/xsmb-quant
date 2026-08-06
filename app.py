@@ -274,7 +274,6 @@ class DatabaseManager:
         db, _ = DatabaseManager.load_db()
         now_vn = Utils.get_vn_time()
         
-        # Mốc 19:00 hàng ngày (GMT+7)
         end_dt = now_vn.replace(hour=0, minute=0, second=0, microsecond=0)
         if now_vn.hour < 19:
             end_dt -= timedelta(days=1)
@@ -1062,9 +1061,6 @@ class Auditor:
             return "\n".join(prompt_lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
-# ==============================================================================
-# 🖥️ BLOCK 7: GRADIO WEB UI (RENDER READY)
-# ==============================================================================
 def create_ui():
     db_init, _ = DatabaseManager.load_db()
     min_dt_init, latest_dt_init, next_predict_dt_init = DatabaseManager.get_boundaries(db_init)
@@ -1091,17 +1087,21 @@ def create_ui():
             out_1 = gr.Textbox(label="Biên bản Báo cáo Hệ thống", lines=8)
             title_2 = gr.Markdown(f"#### KHUYẾN NGHỊ GIAO DỊCH KỲ TỚI: {next_predict_dt_init.strftime('%d/%m/%Y') if next_predict_dt_init else ''}")
             
-            # --- VŨ KHÍ MỚI: TÁCH RIÊNG 2 BƯỚC TẢI ĐỂ CHỐNG LỖI CACHE ---
+            # --- VŨ KHÍ MỚI: TÁCH RIÊNG BƯỚC TẢI LÊN NÚT TO ĐÙNG ---
             gr.Markdown("---")
             gr.Markdown("### 📥 TẢI DATABASE VỀ MÁY TRỰC TIẾP")
-            gr.Markdown("*(Gradio đôi khi bị lỗi cache link ẩn. Bấm nút số 1 để trích xuất file mới nhất, sau đó bấm vào nút tải ở mục số 2)*")
+            gr.Markdown("*(Gradio đôi khi bị lỗi cache link ẩn. Bấm nút số 1 để trích xuất file mới nhất, sau đó NÚT TẢI TO ĐÙNG sẽ hiện ra)*")
             with gr.Row():
                 btn_prepare_dl = gr.Button("1️⃣ BẤM ĐỂ TRÍCH XUẤT FILE TỪ MÁY CHỦ", variant="primary")
             with gr.Row():
-                dl_output = gr.File(label="2️⃣ FILE EXCEL ĐÃ SẴN SÀNG (Bấm mũi tên để tải)")
+                dl_output = gr.DownloadButton("2️⃣ 📥 BẤM VÀO ĐÂY ĐỂ TẢI FILE XUỐNG", variant="primary", visible=False)
                 
             def get_excel_file():
-                return os.path.abspath(Config.DATA_FILE) if os.path.exists(Config.DATA_FILE) else None
+                path = os.path.abspath(Config.DATA_FILE)
+                if os.path.exists(path):
+                    # Bật cờ cho nút DownloadButton hiện lên cùng với file chuẩn
+                    return gr.update(value=path, visible=True)
+                return gr.update(visible=False)
                 
             btn_prepare_dl.click(fn=get_excel_file, inputs=[], outputs=dl_output)
             
