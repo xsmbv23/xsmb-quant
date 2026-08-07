@@ -13,9 +13,9 @@ import gradio as gr
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG MASTER QUANT ENGINE
 # ==============================================================================
 class Config:
-    VERSION = "V7.3 CLEAN UI QUANT ENGINE (NO GRADIO MENU / GMT+7)" 
+    VERSION = "V7.4 KILLER CLEAN UI (100% NO MENU / NO 3-DOTS / GMT+7)" 
     MASTER_DB_FILE = "Master_Stock_Database.xlsx"
-    ACTIVE_MODE = "🤖 [VERSION 7.3] PRO QUANT ENGINE (HIDDEN SYSTEM MENU UI)"
+    ACTIVE_MODE = "🤖 [VERSION 7.4] PRO QUANT ENGINE (PURE CLEAN DASHBOARD)"
 
 class Utils:
     @staticmethod
@@ -308,40 +308,73 @@ class StockQuantEngine:
             return f"🛑 LỖI ĐỌC MASTER DATABASE: {str(e)}"
 
 # ==============================================================================
-# 🎨 UI & DASHBOARD LAUNCHER (CUSTOM CSS TO HIDE MENU & FOOTER)
+# 🎨 UI & DASHBOARD LAUNCHER (CSS ULTIMATE + JS AUTO-REMOVE GRADIO MENU)
 # ==============================================================================
-# CSS ÉP ẨN NÚT 3 DẤU CHẤM VÀ FOOTER
+# CSS Ép chết hoàn toàn tất cả các thành phần Menu/Footer/Gradio Header
 custom_css = """
-/* Ẩn nút 3 dấu chấm (Header Menu) */
-#component-0 .secondary, button[aria-label="Settings"], .type-button, button.aria-button {
+/* Triệt hạ hoàn toàn Header Bar, Nút 3 chấm, Nút Setting của Gradio */
+#component-0 > div:first-child,
+.gradio-container > header,
+header,
+footer,
+.footer,
+button[title="Settings"],
+button[title="Options"],
+.type-button,
+.aria-button,
+.icon-button,
+.p-button,
+.secondary,
+button.secondary,
+button.tool,
+.gr-button-secondary,
+.gr-button-tool,
+button[aria-label="Settings"],
+button[aria-label="Options"],
+.view-api-button,
+a.built-with {
     display: none !important;
-}
-header button, header .type-button, .header-button {
-    display: none !important;
-}
-.gr-button-secondary, .gr-button-tool {
-    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    height: 0 !important;
+    width: 0 !important;
+    pointer-events: none !important;
 }
 
-/* Ẩn Footer Gradio */
-footer {
-    display: none !important;
-}
-.footer {
-    display: none !important;
-}
-
-/* Tối ưu khung tràn viền */
-.container {
+/* Ép khung ứng dụng tràn full viền đẹp như App Mobile Native */
+.gradio-container {
     max-width: 100% !important;
-    padding: 10px !important;
+    padding: 8px !important;
+}
+.main {
+    padding: 0 !important;
 }
 """
 
+# JS Tự động quét DOM để xóa bỏ nút 3 chấm ngay khi load
+custom_js = """
+function removeGradioMenu() {
+    const selectors = [
+        'footer',
+        'header',
+        'button[title="Settings"]',
+        'button[aria-label="Settings"]',
+        '.type-button',
+        '.view-api-button',
+        'button.secondary'
+    ];
+    selectors.forEach(sel => {
+        document.querySelectorAll(sel).forEach(el => el.remove());
+    });
+}
+document.addEventListener("DOMContentLoaded", removeGradioMenu);
+setInterval(removeGradioMenu, 500);
+"""
+
 def create_ui():
-    with gr.Blocks(title="STOCK QUANT ENGINE V7.3", css=custom_css, theme=gr.themes.Default(primary_hue="orange")) as demo:
+    with gr.Blocks(title="STOCK QUANT ENGINE V7.4", css=custom_css, js=custom_js, theme=gr.themes.Default(primary_hue="orange")) as demo:
         gr.Markdown(f"# 🚀 PRO STOCK QUANT ENGINE {Config.VERSION}")
-        gr.Markdown(f"**Trạng thái Múi Giờ:** GMT+7 (Hà Nội) | **Giao diện:** Sạch sẽ (Ẩn Menu Hệ Thống)")
+        gr.Markdown(f"**Múi Giờ:** GMT+7 (Hà Nội) | **Giao diện:** Ultimate Clean UI (Sạch Bóng Menu)")
 
         with gr.Tabs():
             # TAB 1: OMNI QUANT RADAR
