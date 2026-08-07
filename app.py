@@ -33,7 +33,7 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V6.2 OMNI QUANT ENGINE (DUAL-CORE API BYPASS)" 
+    VERSION = "V6.3 OMNI QUANT ENGINE (LOCAL SERVER DATABASE INTEGRATED)" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
@@ -42,7 +42,7 @@ class Config:
     LOOKBACK_DAYS = 21
     STORM_THRESHOLD = 0.35
     
-    ACTIVE_MODE = "🤖 [VERSION 6.2] V6.2 OMNI TIERED QUANT (LOTO + STOCKS DUAL-API)"
+    ACTIVE_MODE = "🤖 [VERSION 6.3] V6.3 OMNI TIERED QUANT (LOTO + STOCKS SERVER DB)"
     
     MENU_OPTIONS = [
         "🔄 1. ĐỒNG BỘ & CẬP NHẬT DỮ LIỆU LOTO",
@@ -52,7 +52,7 @@ class Config:
         "🎰 5. BẢNG KẾT QUẢ LOTO TRUYỀN THỐNG",
         "🤖 6. BỘ NÃO AI (QUÉT LỊCH SỬ DB)",
         "⚖️ 7. HỆ THỐNG RADAR ARBITRAGE (TỶ LỆ)",
-        "📈 8. CẢM BIẾN DÒNG TIỀN CHỨNG KHOÁN (AUTO-API)"
+        "📈 8. CẢM BIẾN DÒNG TIỀN CHỨNG KHOÁN (OFFLINE & API)"
     ]
 
 # ==============================================================================
@@ -333,7 +333,7 @@ class DatabaseManager:
         return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE (LÕI LOTO V6.2)
+# 🧠 BLOCK 5: QUANT ENGINE (LÕI LOTO V6.3)
 # ==============================================================================
 class QuantEngine:
     _sig_cache = {}
@@ -346,7 +346,7 @@ class QuantEngine:
 
     @staticmethod
     def get_signal(target_dt, db):
-        cache_key = (target_dt, "V6.2_SIGNAL")
+        cache_key = (target_dt, "V6.3_SIGNAL")
         if cache_key in QuantEngine._sig_cache:
             return QuantEngine._sig_cache[cache_key]
 
@@ -419,7 +419,6 @@ class QuantEngine:
 
         prizes_t7 = set(db[past_dates[6].strftime("%d/%m/%Y")]["prizes_int"]) if len(past_dates) >= 7 else set()
         
-        # Scoring logic
         scored_candidates = sorted(
             dan_opt, 
             key=lambda x: (freq_14.get(x, 0) * 1.5 + (2.0 if x in prizes_t7 else 0.0), x), 
@@ -471,7 +470,7 @@ class QuantEngine:
             "kep": lo_kep,
             "dan_de_10": dan_de_10,
             "sorted_dan_scored": final_dan,
-            "sig_trace": f"[Lõi V6.2] Bắt được {len(final_dan)} mã khuyết. Xếp hạng BTL, STL thành công."
+            "sig_trace": f"[Lõi V6.3] Bắt được {len(final_dan)} mã khuyết. Xếp hạng BTL, STL thành công."
         }, "OK"
 
     @staticmethod
@@ -531,7 +530,7 @@ class QuantEngine:
 
     @staticmethod
     def get_mm_multiplier(target_dt, db):
-        cache_key = (target_dt, "V6.2_MM")
+        cache_key = (target_dt, "V6.3_MM")
         if cache_key in QuantEngine._mm_cache:
             return QuantEngine._mm_cache[cache_key]
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
@@ -640,7 +639,7 @@ class QuantEngine:
             mult = v1_base * sigmoid_macro * slope_scale * vol_scale * cppi_scale
             active_ver = f"RISK-PARITY TIERED (Sigmoid={sigmoid_macro:.2f} | Slope_scale={slope_scale:.2f})"
 
-        trace_log.append(f"🤖 [V6.2 ROBUST TIERED] Chế độ: {active_ver}")
+        trace_log.append(f"🤖 [V6.3 ROBUST TIERED] Chế độ: {active_ver}")
         trace_log.append(f"[MM Result] Hệ số vốn cơ sở chuẩn hóa = x{mult:.2f}")
         res = (mult, "\n".join(trace_log))
         QuantEngine._mm_cache[cache_key] = res
@@ -734,7 +733,7 @@ class Auditor:
                 "=======================================================",
                 f"🎯 PHIÊN GIAO DỊCH MỤC TIÊU: {next_dt.strftime('%d/%m/%Y')}",
                 f"🎚️ CHIẾN LƯỢC ĐỘC TÔN  : {Config.ACTIVE_MODE}",
-                f"📋 DÀN SỐ GỐC TỪ LÕI V6.2: [ {dan_goc_str} ] (Đã tìm thấy đúng {so_luong_lo} mã)",
+                f"📋 DÀN SỐ GỐC TỪ LÕI V6.3: [ {dan_goc_str} ] (Đã tìm thấy đúng {so_luong_lo} mã)",
                 "=======================================================",
                 "📊 HỒ SƠ CHỐT SỐ THƯỞNG KÊ (DỰ BÁO KQXS CAO CẤP)",
                 "-------------------------------------------------------",
@@ -843,7 +842,7 @@ class Auditor:
             
             lines = [
                 f"📑 BÁO CÁO CHI TIẾT TỪNG NGÀY: THÁNG {thang:02d}/{nam}",
-                f"🎚️ LÕI ĐỘC TÔN: V6.2 ROBUST TIERED",
+                f"🎚️ LÕI ĐỘC TÔN: V6.3 ROBUST TIERED",
                 "=============================================================================================================================",
                 f"{'NGÀY':<6} | {'MÃ ĐÁNH':<26} | {'VỐN DỒN (k)':<12} | {'THU (k)':<8} | {'LÃI/LỖ (k)':<11} | {'ROI':<8}",
                 "-----------------------------------------------------------------------------------------------------------------------------"
@@ -913,7 +912,7 @@ class Auditor:
             lines = [
                 "📑 BÁO CÁO ĐẠI KẾ TOÁN QUÉT CHU KỲ TỔNG HỢP",
                 "===================================================================================================================",
-                f"📈 KẾT QUẢ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')} (LÕI V6.2 TIERED ĐỘC TÔN)",
+                f"📈 KẾT QUẢ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')} (LÕI V6.3 TIERED ĐỘC TÔN)",
                 "==================================================================================================================="
             ]
             curr = start_dt
@@ -995,10 +994,10 @@ class Auditor:
             total_days_scanned = (end_dt - start_dt).days + 1
             
             prompt_lines = [
-                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG V6.2 ROBUST - DÀNH CHO BÁO CÁO ĐỊNH LƯỢNG CHUẨN TRUY VẾT]",
+                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG V6.3 ROBUST - DÀNH CHO BÁO CÁO ĐỊNH LƯỢNG CHUẨN TRUY VẾT]",
                 f"1. PHIÊN BẢN HỆ THỐNG: {Config.VERSION}",
                 f"2. QUÉT TRỌN VẸN LỊCH SỬ {total_days_scanned} NGÀY QUA ({start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')})\n",
-                "📊 [BÁO CÁO HIỆU SUẤT ĐỘC TÔN V6.2]"
+                "📊 [BÁO CÁO HIỆU SUẤT ĐỘC TÔN V6.3]"
             ]
             
             curr = start_dt
@@ -1050,7 +1049,7 @@ class Auditor:
             ])
 
             prompt_lines.extend([
-                "\n⚠️ XÁC NHẬN BÁO CÁO V6.2 ROBUST TIERED QUANT ENGINE:",
+                "\n⚠️ XÁC NHẬN BÁO CÁO V6.3 ROBUST TIERED QUANT ENGINE:",
                 "1. Tích hợp cơ chế Dồn vốn Bậc thang Risk-Parity chuẩn hóa: Bạch Thủ Lô (1.30x), Song Thủ Lô (1.15x), Lô Dàn Lót (0.85x).",
                 "2. Đã thêm cơ chế Cache (Bộ nhớ đệm) giải quyết triệt để lỗi Load chậm và tràn RAM Menu 6.",
                 "3. Hệ thống chạy 1 lõi toán học thuần túy duy nhất, không rườm rà, đảm bảo minh bạch và tối ưu tuyệt đối."
@@ -1165,15 +1164,15 @@ class ArbitrageEngine:
         return "\n".join(lines)
 
 # ==============================================================================
-# 📈 BLOCK 8: CHỨNG KHOÁN (AUTO-API QUANT SCANNER ĐA TẦNG BYPASS)
+# 📈 BLOCK 8: CHỨNG KHOÁN (AUTO-API & LOCAL SERVER DATABASE ENGINE)
 # ==============================================================================
 class StockQuantEngine:
     @staticmethod
     def fetch_stock_data(ticker, days=120):
-        # ƯU TIÊN 1: THỬ DNSE (ENTRADE) - Máy chủ cực kỳ mở cho Bot, không khóa IP Cloud
+        # 1. THỬ DNSE ENTRADE API
         try:
             end_date = Utils.get_vn_time()
-            start_date = end_date - timedelta(days=days + 60) # Lấy dư ngày nghỉ để đủ nến
+            start_date = end_date - timedelta(days=days + 60)
             from_ts = int(start_date.timestamp())
             to_ts = int(end_date.timestamp())
             
@@ -1187,11 +1186,11 @@ class StockQuantEngine:
                     df['Date'] = df['Date'].dt.strftime('%d/%m/%Y')
                     df = df[['Date', 'Close', 'Volume']].dropna().reset_index(drop=True)
                     if len(df) >= 21:
-                        return df, "DNSE (Entrade Open API)"
+                        return df, "DNSE Open API"
         except Exception:
             pass
 
-        # ƯU TIÊN 2: THỬ YAHOO FINANCE - Server Toàn cầu (Bypass Firewalls VN)
+        # 2. THỬ YAHOO FINANCE GLOBAL
         try:
             yf_ticker = f"{ticker.upper()}.VN"
             url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_ticker}?range=1y&interval=1d"
@@ -1211,41 +1210,33 @@ class StockQuantEngine:
                     df['Date'] = df['Date'].dt.strftime('%d/%m/%Y')
                     df = df[['Date', 'Close', 'Volume']].reset_index(drop=True)
                     if len(df) >= 21:
-                        return df, "Yahoo Finance Global"
+                        return df, "Yahoo Finance Global API"
         except Exception:
             pass
             
-        return None, "🛑 LỖI CẢM BIẾN: Sàn chứng khoán hiện đang bảo trì chặn truy cập API từ Cloud (Render). Vui lòng thử lại sau."
+        return None, "🛑 LỖI API: Sàn chứng khoán hiện đang chặn IP Cloud. Vui lòng sử dụng Tab 2 để đọc Database Excel cố định."
 
     @staticmethod
-    def run_auto_stock_sensors(ticker, days=120):
-        # 1. Tự động Cào Dữ Liệu Đa Tầng
-        df, source_msg = StockQuantEngine.fetch_stock_data(ticker, days)
-        if df is None: 
-            return source_msg, gr.update(visible=False)
+    def process_stock_dataframe(df, source_label, ticker):
+        if len(df) < 21:
+            return f"🛑 THIẾU DỮ LIỆU: Cần ít nhất 21 phiên lịch sử. Hiện tại có {len(df)} phiên.", gr.update(visible=False)
 
-        # Lọc đúng số ngày yêu cầu
-        df = df.tail(days).reset_index(drop=True)
+        # Chuẩn hóa cột
+        df['Close'] = df['Close'].astype(str).str.replace(',', '').astype(float)
+        df['Volume'] = df['Volume'].astype(str).str.replace(',', '').astype(float)
 
-        # 2. Tạo File Excel để Backup
-        filename = f"Data_Quant_{ticker.upper()}_{datetime.now().strftime('%Y%m%d')}.xlsx"
-        df.to_excel(filename, index=False)
-
-        # 3. Tính toán Core Metrics cho Cảm biến
         df['Prev_Close'] = df['Close'].shift(1)
         df['MA20_Price'] = df['Close'].rolling(window=20).mean()
         df['StdDev20_Price'] = df['Close'].rolling(window=20).std()
         df['MA20_Vol'] = df['Volume'].rolling(window=20).mean()
-        
         df['Z_Score'] = (df['Close'] - df['MA20_Price']) / df['StdDev20_Price']
         
         latest = df.iloc[-1]
         alerts = []
         
-        # Cảm biến
         vol_ratio = latest['Volume'] / latest['MA20_Vol'] if latest['MA20_Vol'] > 0 else 0
         if vol_ratio > 2.5 and latest['Close'] > latest['Prev_Close']:
-            alerts.append(f"🟢 [SMART MONEY]: NỔ KHỐI LƯỢNG! Vol gấp {vol_ratio:.1f} lần trung bình. Dòng tiền cá mập vào, MUA BREAKOUT.")
+            alerts.append(f"🟢 [SMART MONEY]: NỔ KHỐI LƯỢNG! Vol gấp {vol_ratio:.1f} lần trung bình. Dòng tiền cá mập vào gom hàng, MUA BREAKOUT.")
         elif vol_ratio > 2.5 and latest['Close'] < latest['Prev_Close']:
             alerts.append(f"🔴 [DUMP]: Bị xả hàng cực mạnh. Vol gấp {vol_ratio:.1f} lần trung bình. NÉ NGAY.")
             
@@ -1262,7 +1253,7 @@ class StockQuantEngine:
         lines = [
             f"📑 BÁO CÁO CẢM BIẾN DÒNG TIỀN MÃ: {ticker.upper()}",
             "=======================================================",
-            f"✅ ĐÃ BẮT THÀNH CÔNG {len(df)} PHIÊN TỪ NGUỒN: {source_msg}",
+            f"✅ ĐÃ XỬ LÝ THÀNH CÔNG {len(df)} PHIÊN TỪ NGUỒN: {source_label}",
             "=======================================================",
             f"📅 Phiên giao dịch gần nhất : {latest['Date']}",
             f"💵 Giá Đóng Cửa             : {latest['Close']:,.2f} VNĐ",
@@ -1276,7 +1267,53 @@ class StockQuantEngine:
         ]
         lines.extend(alerts)
         
+        filename = f"Data_Stock_{ticker.upper()}.xlsx"
+        df[['Date', 'Close', 'Volume']].to_excel(filename, index=False)
+        
         return "\n".join(lines), gr.update(value=filename, visible=True)
+
+    @staticmethod
+    def run_auto_stock_sensors(ticker, days=120):
+        df, source_msg = StockQuantEngine.fetch_stock_data(ticker, days)
+        if df is None: 
+            return source_msg, gr.update(visible=False)
+        return StockQuantEngine.process_stock_dataframe(df.tail(days), source_msg, ticker)
+
+    @staticmethod
+    def run_server_database_sensors(ticker):
+        ticker_clean = ticker.strip().upper()
+        
+        # Tìm file chuẩn dạng Data_Stock_HPG.xlsx hoặc Data_HPG.xlsx
+        possible_files = [
+            f"Data_Stock_{ticker_clean}.xlsx",
+            f"Data_Quant_{ticker_clean}.xlsx",
+            f"Data_{ticker_clean}.xlsx"
+        ]
+        
+        target_file = None
+        for f in possible_files:
+            if os.path.exists(f):
+                target_file = f
+                break
+                
+        if not target_file:
+            matches = glob.glob(f"*{ticker_clean}*.xlsx")
+            if matches:
+                target_file = matches[0]
+                
+        if not target_file:
+            all_excel = glob.glob("*.xlsx")
+            excel_str = ", ".join(all_excel) if all_excel else "Chưa có file .xlsx nào"
+            return f"🛑 KHÔNG TÌM THẤY DATABASE SERVER: Không có file Excel chứa mã '{ticker_clean}' trên máy chủ.\n👉 Các file Excel hiện có trên Server: [{excel_str}]", gr.update(visible=False)
+            
+        try:
+            df = pd.read_excel(target_file)
+            if not set(['Date', 'Close', 'Volume']).issubset(df.columns):
+                return f"🛑 LỖI CẤU TRÚC FILE '{target_file}': File Excel cần chứa đủ 3 cột 'Date', 'Close', 'Volume'.", gr.update(visible=False)
+                
+            return StockQuantEngine.process_stock_dataframe(df, f"DATABASE CỐ ĐỊNH SERVER ({target_file})", ticker_clean)
+        except Exception as e:
+            return f"🛑 LỖI ĐỌC FILE DATABASE SERVER: {str(e)}", gr.update(visible=False)
 
 # ==============================================================================
 # 🎨 UI & APP LAUNCHER
@@ -1375,7 +1412,7 @@ def create_ui():
         with gr.Column(visible=False) as col_6:
             gr.Markdown("### 🤖 BỘ NÃO AI - QUÉT TOÀN BỘ LỊCH SỬ DB")
             btn_6 = gr.Button("🧬 BẮT ĐẦU QUÉT TOÀN DB", variant="primary")
-            out_6 = gr.Textbox(label="Báo cáo Tổng hợp V6.2", lines=25)
+            out_6 = gr.Textbox(label="Báo cáo Tổng hợp V6.3", lines=25)
             btn_6.click(Auditor.phan_he_6_master_diagnostic_prompt, inputs=[], outputs=out_6)
 
         # [Cột 7] HỆ THỐNG RADAR ARBITRAGE
@@ -1416,29 +1453,38 @@ def create_ui():
                 out_ev = gr.Textbox(label="Báo cáo EV", lines=12)
                 btn_ev.click(ArbitrageEngine.calculate_loto_ev, inputs=[cost_loto, payout_loto, rebate_loto], outputs=out_ev)
 
-        # [Cột 8] CẢM BIẾN CHỨNG KHOÁN (AUTO-API EOD)
+        # [Cột 8] CẢM BIẾN CHỨNG KHOÁN (DUAL MODE: OFFLINE SERVER DB & ONLINE API)
         with gr.Column(visible=False) as col_8:
-            gr.Markdown("### 🧠 HỆ THỐNG CẢM BIẾN CHỨNG KHOÁN (DUAL-API SCANNER)")
-            gr.Markdown("**Hướng dẫn:** Nhập mã cổ phiếu. Hệ thống sẽ tự động móc API Đa Tầng (DNSE/Yahoo) để kéo dữ liệu chuẩn xác nhất, phân tích và xuất file Excel cho bạn.")
+            gr.Markdown("### 🧠 HỆ THỐNG CẢM BIẾN CHỨNG KHOÁN (QUANT SCANNER)")
             
-            with gr.Row():
-                stock_ticker = gr.Textbox(label="Mã Cổ Phiếu (Ví dụ: SSI, HPG, FPT)", value="SSI")
-                days_to_fetch = gr.Slider(minimum=30, maximum=365, value=120, step=10, label="Số ngày muốn cào lịch sử")
+            with gr.Tab("1. Đọc Database Server Cố Định (KHÔNG CẦN MẠNG / BẮT CẢM BIẾN SÂU)"):
+                gr.Markdown("**Hướng dẫn:** Nhập mã chứng khoán (Ví dụ: `HPG`). Hệ thống sẽ tự động đọc file Excel đã commit trên GitHub (`Data_Stock_HPG.xlsx`), phân tích Z-Score và Volume Ratio.")
+                with gr.Row():
+                    stock_ticker_db = gr.Textbox(label="Mã Cổ Phiếu Cần Truy Xuất Database", value="HPG")
+                btn_server_db_stock = gr.Button("📊 ĐỌC DATABASE SERVER & QUÉT CẢM BIẾN", variant="primary")
+                out_stock_db_report = gr.Textbox(label="Báo cáo Phân tích từ Database Server", lines=15)
+                dl_stock_db_file = gr.DownloadButton("📥 BẤM VÀO ĐÂY ĐỂ TẢI FILE EXCEL SERVER", variant="primary", visible=False)
                 
-            with gr.Row():
+                btn_server_db_stock.click(
+                    StockQuantEngine.run_server_database_sensors,
+                    inputs=[stock_ticker_db],
+                    outputs=[out_stock_db_report, dl_stock_db_file]
+                )
+
+            with gr.Tab("2. Cào Online Live API (Khi Cần Cập Nhật Dữ Liệu Mới)"):
+                gr.Markdown("**Hướng dẫn:** Nhập mã cổ phiếu. Hệ thống sẽ tự động móc API Đa Tầng (DNSE/Yahoo) để cào dữ liệu mới.")
+                with gr.Row():
+                    stock_ticker_api = gr.Textbox(label="Mã Cổ Phiếu Online (SSI, HPG, FPT)", value="SSI")
+                    days_to_fetch = gr.Slider(minimum=30, maximum=365, value=120, step=10, label="Số ngày muốn cào lịch sử")
                 btn_auto_stock = gr.Button("🚀 CÀO DỮ LIỆU & QUÉT CẢM BIẾN", variant="primary")
+                out_stock_report = gr.Textbox(label="Báo cáo Phân tích Live API", lines=15)
+                dl_stock_file = gr.DownloadButton("📥 BẤM VÀO ĐÂY ĐỂ TẢI FILE EXCEL VỪA CÀO", variant="primary", visible=False)
                 
-            out_stock_report = gr.Textbox(label="Báo cáo Phân tích Phím Lệnh", lines=15)
-            
-            gr.Markdown("---")
-            gr.Markdown("### 📥 XUẤT DATABASE VĨNH VIỄN")
-            dl_stock_file = gr.DownloadButton("📥 BẤM VÀO ĐÂY ĐỂ TẢI FILE EXCEL VỪA CÀO", variant="primary", visible=False)
-            
-            btn_auto_stock.click(
-                StockQuantEngine.run_auto_stock_sensors, 
-                inputs=[stock_ticker, days_to_fetch], 
-                outputs=[out_stock_report, dl_stock_file]
-            )
+                btn_auto_stock.click(
+                    StockQuantEngine.run_auto_stock_sensors, 
+                    inputs=[stock_ticker_api, days_to_fetch], 
+                    outputs=[out_stock_report, dl_stock_file]
+                )
 
         # Mapping Events Loto Cột 1
         btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2])
