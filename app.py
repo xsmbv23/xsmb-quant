@@ -7,18 +7,31 @@ from datetime import datetime, timedelta
 import gradio as gr
 
 # ==============================================================================
-# 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG VÀ MÚI GIỜ (GMT+7)
+# 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG VÀ KHỞI TẠO AN TOÀN (COLD START)
 # ==============================================================================
 class Config:
-    VERSION = "V9.1 HARDENED QUANT TERMINAL (DEEP CHECK PASSED)"
+    VERSION = "V10.0 ZERO-FAIL DEPLOY TERMINAL"
     MASTER_DB_FILE = "Master_Stock_Database.xlsx"
 
 def get_vn_time():
     # Ép chuẩn múi giờ GMT+7 Việt Nam (Hà Nội)
     return datetime.utcnow() + timedelta(hours=7)
 
+def ensure_master_db_exists():
+    """Đảm bảo file Excel luôn tồn tại ngay khi App vừa khởi chạy để Render không bao giờ bị Crash"""
+    f = Config.MASTER_DB_FILE
+    if not os.path.exists(f):
+        try:
+            empty_df = pd.DataFrame(columns=['Ticker', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume'])
+            empty_df.to_excel(f, index=False)
+        except Exception:
+            pass
+
+# Khởi tạo ngay lập tức khi import file
+ensure_master_db_exists()
+
 # ==============================================================================
-# 📈 BLOCK 2: LÕI THU THẬP & TÍNH TOÁN ĐỊNH LƯỢNG (DEEP CHECKED)
+# 📈 BLOCK 2: LÕI THU THẬP & TÍNH TOÁN ĐỊNH LƯỢNG (SAFE QUANT)
 # ==============================================================================
 class StockQuantEngine:
     @staticmethod
@@ -74,7 +87,7 @@ class StockQuantEngine:
         return None
 
     @staticmethod
-    def run_v9_sensors(df):
+    def run_v10_sensors(df):
         if df is None or len(df) < 20:
             return None
         
@@ -85,7 +98,7 @@ class StockQuantEngine:
             df['High'] = df['High'].astype(float)
             df['Low'] = df['Low'].astype(float)
 
-            # 1. CMF (Chaikin Money Flow 20) - An toàn chia 0
+            # CMF
             denom = (df['High'] - df['Low']).replace(0, np.nan)
             mf_mult = ((df['Close'] - df['Low']) - (df['High'] - df['Close'])) / denom
             mf_mult = mf_mult.fillna(0.0)
@@ -94,16 +107,16 @@ class StockQuantEngine:
             cmf_series = (mf_vol.rolling(20).sum() / vol_sum).fillna(0.0)
             df['CMF'] = cmf_series
 
-            # 2. Vol Ratio & Z-Score Volume
+            # Vol Ratio & Z-Score Volume
             ma20_v = df['Volume'].rolling(20).mean().replace(0, np.nan)
             df['Vol_Ratio'] = (df['Volume'] / ma20_v).fillna(1.0)
             
-            # 3. Z-Score Mean Reversion Price
+            # Z-Score Price
             df['MA20_Price'] = df['Close'].rolling(20).mean()
             std20_p = df['Close'].rolling(20).std().replace(0, np.nan)
             df['Z_Score'] = ((df['Close'] - df['MA20_Price']) / std20_p).fillna(0.0)
 
-            # 4. Stochastic RSI Dynamic
+            # Stochastic RSI
             delta = df['Close'].diff()
             gain = delta.where(delta > 0, 0).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean().replace(0, np.nan)
@@ -116,7 +129,7 @@ class StockQuantEngine:
             stoch = ((df['RSI'] - rsi_min) / rsi_diff) * 100
             df['Stoch_RSI'] = stoch.fillna(50.0)
 
-            # 5. ATR 14 Dynamic Stop-Loss Engine
+            # ATR 14
             tr = np.maximum(df['High'] - df['Low'], np.maximum(abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] - df['Close'].shift(1))))
             df['ATR'] = tr.rolling(14).mean().fillna(df['Close'] * 0.03)
 
@@ -160,11 +173,12 @@ class StockQuantEngine:
                 'TP': float(entry_price + (3.0 * atr_val)),
                 'Kelly': kelly
             }
-        except Exception as e:
+        except Exception:
             return None
 
     @staticmethod
     def update_master_db(tickers_str, days=180):
+        ensure_master_db_exists()
         tickers = [t.strip().upper() for t in tickers_str.replace(',', ' ').split() if t.strip()]
         if not tickers:
             return "🛑 Vui lòng nhập ít nhất 1 mã cổ phiếu!", "", "", None
@@ -177,7 +191,7 @@ class StockQuantEngine:
             try:
                 existing_df = pd.read_excel(master_file)
                 if 'Ticker' in existing_df.columns and not existing_df.empty:
-                    old_tickers = existing_df['Ticker'].unique().tolist()
+                    old_tickers = existing_df['Ticker'].dropna().unique().tolist()
             except Exception:
                 pass
 
@@ -198,14 +212,14 @@ class StockQuantEngine:
             return "🛑 Không cào được dữ liệu mã nào!\n" + "\n".join(logs), "", "", None
 
         combined = pd.concat(new_dfs, ignore_index=True)
-        if not existing_df.empty:
+        if not existing_df.empty and 'Ticker' in existing_df.columns:
             final_df = pd.concat([existing_df, combined], ignore_index=True)
             final_df = final_df.drop_duplicates(subset=['Ticker', 'Date'], keep='last')
         else:
             final_df = combined
 
-        final_df['dt_temp'] = pd.to_datetime(final_df['Date'], format='%d/%m/%Y')
-        final_df = final_df.sort_values(by=['Ticker', 'dt_temp']).drop(columns=['dt_temp'])
+        final_df['dt_temp'] = pd.to_datetime(final_df['Date'], format='%d/%m/%Y', errors='coerce')
+        final_df = final_df.dropna(subset=['dt_temp']).sort_values(by=['Ticker', 'dt_temp']).drop(columns=['dt_temp'])
         final_df.to_excel(master_file, index=False)
 
         new_tickers = [t for t in fetched if t not in old_tickers]
@@ -215,22 +229,21 @@ class StockQuantEngine:
 
     @staticmethod
     def run_radar_analytics():
+        ensure_master_db_exists()
         master_file = Config.MASTER_DB_FILE
-        if not os.path.exists(master_file):
-            return pd.DataFrame(), "🛑 CHƯA CÓ MASTER DATABASE! Hãy sang Tab 3 bấm nạp dữ liệu trước."
 
         try:
             df = pd.read_excel(master_file)
             if df.empty or 'Ticker' not in df.columns:
-                return pd.DataFrame(), "🛑 File Master Database rỗng."
+                return pd.DataFrame(), "🛑 Master Database đang rỗng. Hãy sang Tab 3 bấm nạp dữ liệu trước."
 
             results = []
-            for t in df['Ticker'].unique():
+            for t in df['Ticker'].dropna().unique():
                 df_t = df[df['Ticker'] == t].copy()
-                df_t['dt_temp'] = pd.to_datetime(df_t['Date'], format='%d/%m/%Y')
-                df_t = df_t.sort_values('dt_temp').reset_index(drop=True)
+                df_t['dt_temp'] = pd.to_datetime(df_t['Date'], format='%d/%m/%Y', errors='coerce')
+                df_t = df_t.dropna(subset=['dt_temp']).sort_values('dt_temp').reset_index(drop=True)
                 
-                res = StockQuantEngine.run_v9_sensors(df_t)
+                res = StockQuantEngine.run_v10_sensors(df_t)
                 if res:
                     results.append(res)
 
@@ -260,11 +273,11 @@ class StockQuantEngine:
             return pd.DataFrame(), f"🛑 Lỗi phân tích: {str(e)}"
 
 # ==============================================================================
-# 🎨 BLOCK 3: GIAO DIỆN TERMINAL CHUYÊN NGHIỆP (GRADIO NATIVE)
+# 🎨 BLOCK 3: GIAO DIỆN TERMINAL CHUYÊN NGHIỆP
 # ==============================================================================
 def create_ui():
-    with gr.Blocks(title="STOCK QUANT V9.1", theme=gr.themes.Soft(primary_hue="orange")) as demo:
-        gr.Markdown("# 🚀 PRO STOCK QUANT TERMINAL V9.1 (HARDENED)")
+    with gr.Blocks(title="STOCK QUANT V10.0", theme=gr.themes.Soft(primary_hue="orange")) as demo:
+        gr.Markdown("# 🚀 PRO STOCK QUANT TERMINAL V10.0")
         gr.Markdown(f"**Hệ Thống Phân Tích Định Lượng & Quản Trị Vốn ATR/Kelly** | Múi giờ: GMT+7 (Hà Nội)")
 
         with gr.Tabs():
@@ -290,11 +303,15 @@ def create_ui():
                 dl_file = gr.DownloadButton("📥 BẤM VÀO ĐÂY ĐỂ TẢI FILE EXCEL MASTER DATABASE (.XLSX)", visible=False)
 
                 def check_db():
+                    ensure_master_db_exists()
                     f = Config.MASTER_DB_FILE
                     if os.path.exists(f):
-                        df = pd.read_excel(f)
-                        ticks = df['Ticker'].unique().tolist() if 'Ticker' in df.columns and not df.empty else []
-                        return ", ".join(ticks) if ticks else "Chưa có", "Xem nhật ký ở Tab 3", f"✅ DB Tồn tại: {len(df):,} dòng dữ liệu ({len(ticks)} mã cổ phiếu).", gr.update(value=f, visible=True)
+                        try:
+                            df = pd.read_excel(f)
+                            ticks = df['Ticker'].dropna().unique().tolist() if 'Ticker' in df.columns and not df.empty else []
+                            return ", ".join(ticks) if ticks else "Rỗng", "Xem nhật ký ở Tab 3", f"✅ DB Tồn tại: {len(df):,} dòng dữ liệu ({len(ticks)} mã cổ phiếu).", gr.update(value=f, visible=True)
+                        except Exception:
+                            pass
                     return "Rỗng", "Rỗng", "🛑 Chưa có file Master DB.", gr.update(visible=False)
 
                 btn_check.click(check_db, outputs=[out_old, out_new, db_status, dl_file])
