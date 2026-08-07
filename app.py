@@ -2,40 +2,33 @@ import os
 import sys
 import pandas as pd
 import numpy as np
-import glob
-import io
 import requests
 from datetime import datetime, timedelta
-import traceback
 import gradio as gr
 
 # ==============================================================================
-# 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG V12 QUANT ENGINE
+# 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG VÀ MÚI GIỜ
 # ==============================================================================
 class Config:
-    VERSION = "V7.7 OMNI V12 BI-TURBO QUANT ENGINE (7 ADVANCED SENSORS)" 
+    VERSION = "V9.0 REBORN QUANT TERMINAL (CLEAN ARCHITECTURE)"
     MASTER_DB_FILE = "Master_Stock_Database.xlsx"
 
-class Utils:
-    @staticmethod
-    def get_vn_time():
-        return datetime.utcnow() + timedelta(hours=7)
+def get_vn_time():
+    # Ép chuẩn múi giờ GMT+7 Việt Nam (Hà Nội)
+    return datetime.utcnow() + timedelta(hours=7)
 
 # ==============================================================================
-# 📈 BLOCK 2: ĐỘNG CƠ V12 ADVANCED QUANT SENSORS
+# 📈 BLOCK 2: LÕI THU THẬP & TÍNH TOÁN ĐỊNH LƯỢNG (QUANT ENGINE)
 # ==============================================================================
 class StockQuantEngine:
     @staticmethod
     def fetch_stock_data(ticker, days=180):
-        # 1. THỬ DNSE ENTRADE OPEN API
+        # 1. DNSE ENTRADE OPEN API (Ưu tiên)
         try:
-            end_date = Utils.get_vn_time()
+            end_date = get_vn_time()
             start_date = end_date - timedelta(days=days + 60)
-            from_ts = int(start_date.timestamp())
-            to_ts = int(end_date.timestamp())
-            
-            url = f"https://services.entrade.com.vn/chart-api/v2/ohlcs/stock?resolution=D&symbol={ticker.upper()}&from={from_ts}&to={to_ts}"
-            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=7)
+            url = f"https://services.entrade.com.vn/chart-api/v2/ohlcs/stock?resolution=D&symbol={ticker.upper()}&from={int(start_date.timestamp())}&to={int(end_date.timestamp())}"
+            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=6)
             if res.status_code == 200:
                 data = res.json()
                 if 't' in data and len(data['t']) >= 20:
@@ -49,15 +42,14 @@ class StockQuantEngine:
                         'Volume': data['v']
                     })
                     df['Date'] = (pd.to_datetime(df['timestamp'], unit='s') + timedelta(hours=7)).dt.strftime('%d/%m/%Y')
-                    return df[['Ticker', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']].dropna().reset_index(drop=True), "DNSE API"
+                    return df[['Ticker', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']].dropna().reset_index(drop=True)
         except Exception:
             pass
 
-        # 2. THỬ YAHOO FINANCE GLOBAL
+        # 2. YAHOO FINANCE FALLBACK
         try:
-            yf_ticker = f"{ticker.upper()}.VN"
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_ticker}?range=1y&interval=1d"
-            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=7)
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker.upper()}.VN?range=1y&interval=1d"
+            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=6)
             if res.status_code == 200:
                 data = res.json()
                 if data.get('chart', {}).get('result'):
@@ -74,354 +66,261 @@ class StockQuantEngine:
                         'Volume': quote['volume']
                     }).dropna()
                     df['Date'] = (pd.to_datetime(df['timestamp'], unit='s') + timedelta(hours=7)).dt.strftime('%d/%m/%Y')
-                    return df[['Ticker', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']].reset_index(drop=True), "Yahoo API"
+                    return df[['Ticker', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']].reset_index(drop=True)
         except Exception:
             pass
             
-        return None, "🛑 LỖI API"
+        return None
 
     @staticmethod
-    def run_v12_sensors(df):
-        if len(df) < 25: return None
+    def run_v9_sensors(df):
+        if len(df) < 20:
+            return None
         
-        df = df.copy()
-        df['Close'] = df['Close'].astype(float)
-        df['Volume'] = df['Volume'].astype(float)
-        df['High'] = df['High'].astype(float)
-        df['Low'] = df['Low'].astype(float)
-        df['Open'] = df['Open'].astype(float)
+        try:
+            df = df.copy()
+            df['Close'] = df['Close'].astype(float)
+            df['Volume'] = df['Volume'].astype(float)
+            df['High'] = df['High'].astype(float)
+            df['Low'] = df['Low'].astype(float)
 
-        # ----------------------------------------------------------------------
-        # CẢM BIẾN 1: CHAIKIN MONEY FLOW (CMF 20) - ĐO DÒNG TIỀN THẬT NẠP VÀO
-        # ----------------------------------------------------------------------
-        mf_multiplier = np.where((df['High'] - df['Low']) != 0, ((df['Close'] - df['Low']) - (df['High'] - df['Close'])) / (df['High'] - df['Low']), 0)
-        mf_volume = mf_multiplier * df['Volume']
-        df['CMF'] = mf_volume.rolling(20).sum() / df['Volume'].rolling(20).sum()
+            # 1. CMF (Chaikin Money Flow 20) - Đo Dòng Tiền Thật
+            denom = (df['High'] - df['Low']).replace(0, np.nan)
+            mf_mult = ((df['Close'] - df['Low']) - (df['High'] - df['Close'])) / denom
+            mf_mult = mf_mult.fillna(0)
+            mf_vol = mf_mult * df['Volume']
+            cmf_series = mf_vol.rolling(20).sum() / df['Volume'].rolling(20).sum().replace(0, np.nan)
+            df['CMF'] = cmf_series.fillna(0)
 
-        # ----------------------------------------------------------------------
-        # CẢM BIẾN 2: SMART MONEY VOLATILITY Z-SCORE
-        # ----------------------------------------------------------------------
-        df['MA20_Vol'] = df['Volume'].rolling(20).mean()
-        df['Std20_Vol'] = df['Volume'].rolling(20).std()
-        df['Vol_ZScore'] = (df['Volume'] - df['MA20_Vol']) / df['Std20_Vol']
-        df['Vol_Ratio'] = df['Volume'] / df['MA20_Vol']
+            # 2. Vol Ratio & Z-Score Volume
+            df['MA20_Vol'] = df['Volume'].rolling(20).mean().replace(0, np.nan)
+            df['Vol_Ratio'] = (df['Volume'] / df['MA20_Vol']).fillna(1.0)
+            
+            # 3. Z-Score Mean Reversion Price
+            df['MA20_Price'] = df['Close'].rolling(20).mean()
+            df['Std20_Price'] = df['Close'].rolling(20).std().replace(0, np.nan)
+            df['Z_Score'] = ((df['Close'] - df['MA20_Price']) / df['Std20_Price']).fillna(0)
 
-        # ----------------------------------------------------------------------
-        # CẢM BIẾN 3: Z-SCORE PRICE MULTI-FRAME (MA20 & EMA50)
-        # ----------------------------------------------------------------------
-        df['MA20_Price'] = df['Close'].rolling(20).mean()
-        df['Std20_Price'] = df['Close'].rolling(20).std()
-        df['Z_Score_20'] = (df['Close'] - df['MA20_Price']) / df['Std20_Price']
+            # 4. Stochastic RSI Dynamic
+            delta = df['Close'].diff()
+            gain = delta.where(delta > 0, 0).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean().replace(0, np.nan)
+            rsi = 100 - (100 / (1 + (gain / loss)))
+            df['RSI'] = rsi.fillna(50)
+            
+            rsi_min = df['RSI'].rolling(14).min()
+            rsi_max = df['RSI'].rolling(14).max()
+            stoch = ((df['RSI'] - rsi_min) / (rsi_max - rsi_min).replace(0, np.nan)) * 100
+            df['Stoch_RSI'] = stoch.fillna(50)
 
-        # ----------------------------------------------------------------------
-        # CẢM BIẾN 4: STOCHASTIC RSI HYBRID (ĐỌC ĐIỂM ĐẢO CHIỀU TỪNG PHIÊN)
-        # ----------------------------------------------------------------------
-        delta = df['Close'].diff()
-        gain = delta.where(delta > 0, 0).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        df['RSI'] = 100 - (100 / (1 + (gain / loss.replace(0, np.nan))))
-        
-        rsi_min = df['RSI'].rolling(14).min()
-        rsi_max = df['RSI'].rolling(14).max()
-        df['Stoch_RSI'] = np.where((rsi_max - rsi_min) != 0, (df['RSI'] - rsi_min) / (rsi_max - rsi_min), 0) * 100
+            # 5. ATR 14 Dynamic Stop-Loss Engine
+            tr = np.maximum(df['High'] - df['Low'], np.maximum(abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] - df['Close'].shift(1))))
+            df['ATR'] = tr.rolling(14).mean().fillna(df['Close'] * 0.03)
 
-        # ----------------------------------------------------------------------
-        # CẢM BIẾN 5: ATR & KELTNER CHANNEL SQUEEZE (NÉN NĂNG LƯỢNG)
-        # ----------------------------------------------------------------------
-        tr = np.maximum(df['High'] - df['Low'], np.maximum(abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] - df['Close'].shift(1))))
-        df['ATR'] = tr.rolling(14).mean()
-        df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
-        df['KC_Upper'] = df['EMA20'] + (1.5 * df['ATR'])
-        df['KC_Lower'] = df['EMA20'] - (1.5 * df['ATR'])
-        df['BB_Upper'] = df['MA20_Price'] + (2.0 * df['Std20_Price'])
-        df['BB_Lower'] = df['MA20_Price'] - (2.0 * df['Std20_Price'])
-        
-        # Squeeze = BB nằm hoàn toàn trong Keltner Channel
-        df['KC_Squeeze'] = (df['BB_Upper'] < df['KC_Upper']) & (df['BB_Lower'] > df['KC_Lower'])
+            latest = df.iloc[-1]
+            prev = df.iloc[-2] if len(df) > 1 else latest
 
-        # ----------------------------------------------------------------------
-        # CẢM BIẾN 6: MACD HISTOGRAM VELOCITY (TỐC ĐỘ TĂNG TỐC ĐỘNG LƯỢNG)
-        # ----------------------------------------------------------------------
-        ema12 = df['Close'].ewm(span=12, adjust=False).mean()
-        ema26 = df['Close'].ewm(span=26, adjust=False).mean()
-        df['MACD'] = ema12 - ema26
-        df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-        df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
-        df['Hist_Accel'] = df['MACD_Hist'] - df['MACD_Hist'].shift(1)
+            score = 50.0
+            signals = []
 
-        # ----------------------------------------------------------------------
-        # CẢM BIẾN 7: DYNAMIC EMA TREND (EMA50 vs EMA200)
-        # ----------------------------------------------------------------------
-        df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
-        df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
+            if latest['CMF'] > 0.10: score += 20; signals.append("🟢 CMF Tiền Vào Mạnh")
+            elif latest['CMF'] < -0.10: score -= 15; signals.append("🔴 CMF Áp Lực Xả")
 
-        latest = df.iloc[-1]
-        prev = df.iloc[-2] if len(df) > 1 else latest
+            if latest['Vol_Ratio'] > 1.8 and latest['Close'] > prev['Close']:
+                score += 15; signals.append("🟢 Smart Money Nổ Vol")
 
-        # ==============================================================================
-        # 🧠 CHẤM ĐIỂM TỔNG HỢP LÕI V12 (0 - 100 ĐIỂM)
-        # ==============================================================================
-        score = 50.0
-        signals = []
+            if latest['Z_Score'] < -1.8: score += 20; signals.append("🟣 Bắt Đáy Z-Score (< -1.8)")
+            elif latest['Z_Score'] > 2.0: score -= 20; signals.append("🔴 Rủi Ro Quá Mua (Z > +2.0)")
 
-        # CMF Check (Cực kỳ quan trọng về Dòng tiền)
-        if latest['CMF'] > 0.15:
-            score += 20; signals.append("🔥 CMF Tiền Vào Cực Mạnh (>0.15)")
-        elif latest['CMF'] < -0.15:
-            score -= 20; signals.append("🔴 CMF Áp Lực Xả Hàng")
+            if latest['Stoch_RSI'] < 20: score += 10; signals.append("🟢 Stoch RSI Đáy")
 
-        # Smart Money Vol Z-Score Check
-        if latest['Vol_ZScore'] > 2.0 and latest['Close'] > prev['Close']:
-            score += 15; signals.append("🟢 Smart Money Gom Hàng (Vol Z > +2)")
-        elif latest['Vol_ZScore'] > 2.0 and latest['Close'] < prev['Close']:
-            score -= 15; signals.append("🔴 Cá Mập Xả Hàng (Vol Z > +2)")
+            final_score = int(min(100, max(0, score)))
+            atr_val = latest['ATR'] if latest['ATR'] > 0 else latest['Close'] * 0.03
+            entry_price = latest['Close']
 
-        # Z-Score Price Check
-        if latest['Z_Score_20'] < -2.0:
-            score += 25; signals.append("🟣 Bắt Đáy Lệch Chuẩn Z-Score (< -2.0)")
-        elif latest['Z_Score_20'] > 2.0:
-            score -= 20; signals.append("🔴 Rủi Ro Quá Mua Z-Score (> +2.0)")
+            if final_score >= 80: kelly = "35% - 40% NAV (Tối Đa)"
+            elif final_score >= 65: kelly = "20% - 25% NAV (Trung Bình)"
+            elif final_score >= 50: kelly = "10% - 15% NAV (Thăm Dò)"
+            else: kelly = "0% (Đứng Ngoài Quản Trị)"
 
-        # Stoch RSI Check
-        if latest['Stoch_RSI'] < 20 and latest['Stoch_RSI'] > prev['Stoch_RSI']:
-            score += 15; signals.append("🟢 Stoch RSI Đảo Chiều Đáy")
+            return {
+                'Ticker': latest['Ticker'],
+                'Date': latest['Date'],
+                'Close': float(entry_price),
+                'Vol_Ratio': round(float(latest['Vol_Ratio']), 2),
+                'Z_Score': round(float(latest['Z_Score']), 2),
+                'CMF': round(float(latest['CMF']), 2),
+                'Stoch_RSI': round(float(latest['Stoch_RSI']), 1),
+                'Score': final_score,
+                'Signals': ", ".join(signals) if signals else "Tích lũy bình ổn",
+                'SL': float(entry_price - (1.5 * atr_val)),
+                'TP': float(entry_price + (3.0 * atr_val)),
+                'Kelly': kelly
+            }
+        except Exception:
+            return None
 
-        # KC Squeeze Check (Nén dồn nổ sóng)
-        if latest['KC_Squeeze']:
-            score += 10; signals.append("⚡ Keltner Squeeze (Nén Tích Lũy Bùng Nổ)")
-
-        # MACD Acceleration Check
-        if latest['Hist_Accel'] > 0 and prev['Hist_Accel'] <= 0:
-            score += 10; signals.append("🚀 MACD Tăng Tốc Động Lượng")
-
-        # Trend Check
-        if latest['Close'] > latest['EMA50'] and latest['EMA50'] > latest['EMA200']:
-            score += 10; signals.append("📈 Cấu Trúc Uptrend Vững Chắc")
-
-        final_score = min(100, max(0, score))
-        atr_val = latest['ATR'] if pd.notna(latest['ATR']) else latest['Close'] * 0.03
-        entry_price = latest['Close']
-
-        # Risk Engine ATR & Kelly
-        stop_loss = entry_price - (1.5 * atr_val)
-        take_profit = entry_price + (3.0 * atr_val)
-
-        if final_score >= 80: kelly_alloc = "35% - 40% NAV (Tối Đa Lệnh)"
-        elif final_score >= 65: kelly_alloc = "20% - 25% NAV (Trung Bình)"
-        elif final_score >= 50: kelly_alloc = "10% - 15% NAV (Thăm Dò)"
-        else: kelly_alloc = "0% (Đứng Ngoài Quản Trị Rủi Ro)"
-
-        return {
-            'Date': latest['Date'], 'Close': entry_price, 'Volume': latest['Volume'],
-            'Z_Score': latest['Z_Score_20'], 'Vol_Ratio': latest['Vol_Ratio'],
-            'CMF': latest['CMF'], 'Stoch_RSI': latest['Stoch_RSI'], 'ATR': atr_val,
-            'Score': final_score, 'Signals': " | ".join(signals) if signals else "Dòng tiền bình ổn",
-            'SL': stop_loss, 'TP': take_profit, 'Kelly': kelly_alloc
-        }
-
-    # ==============================================================================
-    # 🗄️ MASTER DATABASE LOGIC
-    # ==============================================================================
     @staticmethod
-    def create_or_update_master_db(raw_ticker_list, days_history=180):
-        input_tickers = [t.strip().upper() for t in raw_ticker_list.replace(',', ' ').split() if t.strip()]
-        if not input_tickers: 
-            return "🛑 Vui lòng nhập ít nhất 1 mã cổ phiếu.", "", "", gr.update(visible=False)
+    def update_master_db(tickers_str, days=180):
+        tickers = [t.strip().upper() for t in tickers_str.replace(',', ' ').split() if t.strip()]
+        if not tickers:
+            return "🛑 Vui lòng nhập ít nhất 1 mã cổ phiếu!", "", "", None
 
         master_file = Config.MASTER_DB_FILE
         existing_df = pd.DataFrame()
         old_tickers = []
-        
+
         if os.path.exists(master_file):
             try:
                 existing_df = pd.read_excel(master_file)
                 if 'Ticker' in existing_df.columns:
                     old_tickers = existing_df['Ticker'].unique().tolist()
-            except Exception: pass
+            except Exception:
+                pass
 
         new_dfs = []
-        log_msgs = []
-        successfully_fetched_tickers = []
+        logs = []
+        fetched = []
 
-        for t in input_tickers:
-            df_new, src = StockQuantEngine.fetch_stock_data(t, days_history)
-            if df_new is not None and not df_new.empty:
-                new_dfs.append(df_new)
-                successfully_fetched_tickers.append(t)
-                log_msgs.append(f"✅ {t}: Nạp thành công {len(df_new)} phiên từ {src}")
+        for t in tickers:
+            df = StockQuantEngine.fetch_stock_data(t, days)
+            if df is not None and not df.empty:
+                new_dfs.append(df)
+                fetched.append(t)
+                logs.append(f"✅ {t}: Nạp thành công {len(df)} phiên")
             else:
-                log_msgs.append(f"❌ {t}: Lỗi kết nối API")
+                logs.append(f"❌ {t}: Lỗi kết nối API")
 
         if not new_dfs:
-            return "🛑 KHÔNG LẤY ĐƯỢC DỮ LIỆU MÃ NÀO.\n" + "\n".join(log_msgs), "", "", gr.update(visible=False)
+            return "🛑 Không cào được dữ liệu mã nào!\n" + "\n".join(logs), "", "", None
 
-        combined_new = pd.concat(new_dfs, ignore_index=True)
-
+        combined = pd.concat(new_dfs, ignore_index=True)
         if not existing_df.empty:
-            final_df = pd.concat([existing_df, combined_new], ignore_index=True)
+            final_df = pd.concat([existing_df, combined], ignore_index=True)
             final_df = final_df.drop_duplicates(subset=['Ticker', 'Date'], keep='last')
         else:
-            final_df = combined_new
+            final_df = combined
 
         final_df['dt_temp'] = pd.to_datetime(final_df['Date'], format='%d/%m/%Y')
-        final_df = final_df.sort_values(by=['Ticker', 'dt_temp'], ascending=[True, True]).drop(columns=['dt_temp'])
+        final_df = final_df.sort_values(by=['Ticker', 'dt_temp']).drop(columns=['dt_temp'])
         final_df.to_excel(master_file, index=False)
 
-        all_current_tickers = final_df['Ticker'].unique().tolist()
-        newly_added_tickers = [t for t in successfully_fetched_tickers if t not in old_tickers]
+        new_tickers = [t for t in fetched if t not in old_tickers]
 
-        str_old = ", ".join(old_tickers) if old_tickers else "Chưa có (Lần đầu khởi tạo)"
-        str_new = ", ".join(newly_added_tickers) if newly_added_tickers else "Không có mã mới"
-
-        summary_log = (
-            f"📑 BÁO CÁO BƠM DỮ LIỆU ĐỘNG CƠ V12 VÀO MASTER DATABASE\n"
-            f"=========================================================\n"
-            f"⏱️ Múi giờ thực thi (GMT+7 Hà Nội) : {Utils.get_vn_time().strftime('%d/%m/%Y %H:%M:%S')}\n"
-            f"💾 File Master Database             : {master_file}\n"
-            f"📊 Quy mô Database                 : {len(final_df):,} dòng dữ liệu ({len(all_current_tickers)} mã)\n"
-            f"=========================================================\n"
-            f"CHI TIẾT TIẾN TRÌNH CÀO:\n" + "\n".join(log_msgs)
-        )
-
-        return summary_log, str_old, str_new, gr.update(value=master_file, visible=True)
+        summary = f"✅ BƠM DỮ LIỆU THÀNH CÔNG LÚC {get_vn_time().strftime('%H:%M:%S %d/%m/%Y')}\n" + "\n".join(logs)
+        return summary, ", ".join(old_tickers), ", ".join(new_tickers) if new_tickers else "Không có mã mới", master_file
 
     @staticmethod
-    def run_omni_radar_scanner():
+    def run_radar_analytics():
         master_file = Config.MASTER_DB_FILE
         if not os.path.exists(master_file):
-            return "🛑 CHƯA CÓ MASTER DATABASE TRÊN SERVER. Vui lòng sang Tab 3 bấm nạp dữ liệu trước."
+            return pd.DataFrame(), "🛑 CHƯA CÓ MASTER DATABASE! Hãy sang Tab 3 bấm nạp dữ liệu trước."
 
         try:
-            full_df = pd.read_excel(master_file)
-            if full_df.empty or 'Ticker' not in full_df.columns:
-                return "🛑 FILE MASTER DATABASE RỖNG HOẶC SAI CẤU TRÚC."
+            df = pd.read_excel(master_file)
+            if df.empty or 'Ticker' not in df.columns:
+                return pd.DataFrame(), "🛑 File Master Database rỗng."
 
-            tickers = full_df['Ticker'].unique().tolist()
             results = []
-
-            for t in tickers:
-                df_t = full_df[full_df['Ticker'] == t].copy()
+            for t in df['Ticker'].unique():
+                df_t = df[df['Ticker'] == t].copy()
                 df_t['dt_temp'] = pd.to_datetime(df_t['Date'], format='%d/%m/%Y')
                 df_t = df_t.sort_values('dt_temp').reset_index(drop=True)
                 
-                if len(df_t) >= 20:
-                    m = StockQuantEngine.run_v12_sensors(df_t)
-                    if m:
-                        results.append({
-                            'Mã': t, 'Giá': m['Close'], 'Z-Score': m['Z_Score'],
-                            'Vol Ratio': m['Vol_Ratio'], 'CMF': m['CMF'], 'Stoch RSI': m['Stoch_RSI'],
-                            'Điểm Quant': m['Score'], 'Tín Hiệu': m['Signals'],
-                            'SL': m['SL'], 'TP': m['TP'], 'Kelly': m['Kelly'], 'Date': m['Date']
-                        })
+                res = StockQuantEngine.run_v9_sensors(df_t)
+                if res:
+                    results.append(res)
 
-            if not results: return "🛑 KHÔNG ĐỦ DỮ LIỆU PHÂN TÍCH (Cần ít nhất 20 phiên/mã)."
+            if not results:
+                return pd.DataFrame(), "🛑 Không đủ dữ liệu tính toán (Cần >= 20 phiên)."
 
-            res_df = pd.DataFrame(results).sort_values(by='Điểm Quant', ascending=False).reset_index(drop=True)
-
-            lines = [
-                "📑 BÁO CÁO QUÉT CẢM BIẾN V12 BI-TURBO TỪ MASTER DATABASE (OMNI-QUANT RADAR)",
-                "======================================================================================================",
-                f"⏱️ Thời gian quét (GMT+7 Hà Nội) : {Utils.get_vn_time().strftime('%d/%m/%Y %H:%M:%S')}",
-                f"🎯 Danh mục đã quét             : {len(results)} mã từ File Master Database",
-                "======================================================================================================",
-                f"{'TOP':<3} | {'MÃ':<5} | {'GIÁ (k)':<8} | {'Z-SCORE':<8} | {'VOL RATIO':<9} | {'CMF':<6} | {'STOCH_RSI':<9} | {'ĐIỂM':<5} | TÍN HIỆU CẢM BIẾN V12 KÍCH HOẠT",
-                "------------------------------------------------------------------------------------------------------"
-            ]
-
-            for idx, r in res_df.iterrows():
-                lines.append(
-                    f"#{idx+1:<2} | {r['Mã']:<5} | {r['Giá']/1000:>8,.1f} | {r['Z-Score']:>+8.2f} | x{r['Vol Ratio']:>7.2f} | {r['CMF']:>+6.2f} | {r['Stoch RSI']:>9.1f} | {r['Điểm Quant']:>5.0f} | {r['Tín Hiệu']}"
-                )
+            res_df = pd.DataFrame(results).sort_values(by='Score', ascending=False).reset_index(drop=True)
 
             top1 = res_df.iloc[0]
-            lines.extend([
-                "======================================================================================================",
-                f"🚀 KHUYẾN NGHỊ LỆNH TÁC CHIẾN TỐI ƯU NHẤT: MÃ [{top1['Mã']}] (ĐIỂM QUANT V12: {top1['Điểm Quant']:.0f}/100)",
-                "------------------------------------------------------------------------------------------------------",
-                f" • 💵 Vùng Giá Mua Giải Ngân : {top1['Giá']:,.0f} VNĐ (Phiên {top1['Date']})",
-                f" • 🎯 Mục Tiêu Chốt Lời (TP)  : {top1['TP']:,.0f} VNĐ (+{((top1['TP']-top1['Giá'])/top1['Giá']*100):.1f}%)",
-                f" • 🛡️ Cắt Lỗ Tự Động (SL)    : {top1['SL']:,.0f} VNĐ (-{((top1['Giá']-top1['SL'])/top1['Giá']*100):.1f}%)",
-                f" • 💰 Phân Bổ Vốn Kelly     : {top1['Kelly']}",
-                "======================================================================================================"
-            ])
+            top_info = (
+                f"🏆 MÃ TỐI ƯU NHẤT THỜI ĐIỂM HIỆN TẠI: [{top1['Ticker']}] | Điểm Quant: {top1['Score']}/100\n"
+                f"---------------------------------------------------------------------------------\n"
+                f"• 💵 Vùng Giá Mua Giải Ngân : {top1['Close']:,.0f} VNĐ (Phiên {top1['Date']})\n"
+                f"• 🎯 Mục tiêu Chốt Lời (TP) : {top1['TP']:,.0f} VNĐ (+{((top1['TP']-top1['Close'])/top1['Close']*100):.1f}%)\n"
+                f"• 🛡️ Cắt Lỗ Tự Động (SL)   : {top1['SL']:,.0f} VNĐ (-{((top1['Close']-top1['SL'])/top1['Close']*100):.1f}%)\n"
+                f"• 💰 Tỷ lệ Đi Tiền Kelly   : {top1['Kelly']}"
+            )
 
-            return "\n".join(lines)
+            display_df = res_df[['Ticker', 'Score', 'Close', 'Z_Score', 'Vol_Ratio', 'CMF', 'Stoch_RSI', 'Signals']].copy()
+            display_df.columns = ['Mã', 'Điểm Quant', 'Giá Đóng (VNĐ)', 'Z-Score', 'Vol Ratio', 'CMF', 'Stoch RSI', 'Tín Hiệu Kích Hoạt']
+
+            return display_df, top_info
         except Exception as e:
-            return f"🛑 LỖI ĐỌC MASTER DATABASE: {str(e)}"
+            return pd.DataFrame(), f"🛑 Lỗi phân tích: {str(e)}"
 
 # ==============================================================================
-# 🎨 UI & DASHBOARD LAUNCHER
+# 🎨 BLOCK 3: GIAO DIỆN TERMINAL CHUYÊN NGHIỆP (GRADIO NATIVE)
 # ==============================================================================
 def create_ui():
-    with gr.Blocks(title="STOCK QUANT ENGINE V7.7 V12", theme=gr.themes.Default(primary_hue="orange")) as demo:
-        gr.Markdown(f"# 🚀 PRO STOCK QUANT ENGINE {Config.VERSION}")
-        gr.Markdown(f"**Trạng thái Múi Giờ:** GMT+7 (Hà Nội) | **Động Cơ:** V12 Bi-Turbo Advanced Analytics")
+    with gr.Blocks(title="STOCK QUANT V9.0", theme=gr.themes.Soft(primary_hue="orange")) as demo:
+        gr.Markdown("# 🚀 PRO STOCK QUANT TERMINAL V9.0 (REBORN)")
+        gr.Markdown(f"**Hệ Thống Phân Tích Định Lượng & Quản Trị Vốn ATR/Kelly** | Múi giờ: GMT+7 (Hà Nội)")
 
         with gr.Tabs():
-            # TAB 1: OMNI QUANT RADAR
-            with gr.TabItem("🔥 1. OMNI QUANT RADAR (Quét Cảm Biến V12 Master DB)"):
-                gr.Markdown("### 📡 CHẠY 7 SIÊU CẢM BIẾN V12 TRÊN TOÀN BỘ MASTER DATABASE")
-                gr.Markdown("Bấm nút để quét toàn bộ các mã đang lưu trong file Database tổng (`Master_Stock_Database.xlsx`).")
-                
-                btn_run_omni_radar = gr.Button("🚀 CHẠY CẢM BIẾN V12 QUÉT MASTER DATABASE", variant="primary")
-                out_omni_report = gr.Textbox(label="Báo Cáo Siêu Phân Tích Quant V12 & Lệnh Tác Chiến Tối Ưu", lines=20)
-                
-                btn_run_omni_radar.click(
-                    StockQuantEngine.run_omni_radar_scanner,
+            # TAB 1: RADAR TERMINAL
+            with gr.TabItem("🔥 1. OMNI QUANT RADAR (Quét Cảm Biến DB)"):
+                btn_radar = gr.Button("🚀 KÍCH HOẠT CẢM BIẾN QUÉT MASTER DATABASE", variant="primary")
+                top_highlight = gr.Textbox(label="🎯 Khuyến Nghị Lệnh Tác Chiến Tối Ưu Nhất", lines=6)
+                radar_table = gr.Dataframe(label="Bảng Dữ Liệu Xếp Hạng Điểm Quant Toàn Danh Mục", interactive=False)
+
+                btn_radar.click(
+                    StockQuantEngine.run_radar_analytics,
                     inputs=[],
-                    outputs=[out_omni_report]
+                    outputs=[radar_table, top_highlight]
                 )
 
-            # TAB 2: QUẢN LÝ MASTER DATABASE & KIỂM TRA MÃ CŨ / MỚI
+            # TAB 2: QUẢN LÝ DATABASE
             with gr.TabItem("📊 2. XEM & TẢI MASTER DATABASE SERVER"):
-                gr.Markdown("### 💾 QUẢN LÝ TỆP DATABASE TỔNG (`Master_Stock_Database.xlsx`)")
-                
-                btn_check_db = gr.Button("🔍 KIỂM TRA QUY MÔ DATABASE SERVER", variant="primary")
+                btn_check = gr.Button("🔍 KIỂM TRA QUY MÔ MASTER DATABASE")
                 with gr.Row():
-                    out_old_tickers_db = gr.Textbox(label="📌 Danh Mục Mã Cũ Đã Có Trong DB", lines=2)
-                    out_new_tickers_db = gr.Textbox(label="🆕 Mã Mới Vừa Được Thêm Gần Đây", lines=2)
-                out_db_info = gr.Textbox(label="Thông Tin Master Database Hiện Tại", lines=8)
-                dl_master_file = gr.DownloadButton("📥 BẤM VÀO ĐÂY ĐỂ TẢI MASTER DATABASE (.XLSX)", variant="primary", visible=False)
-                
-                def check_master():
+                    out_old = gr.Textbox(label="📌 Danh Mục Mã Cũ Đã Có Trong DB", lines=2)
+                    out_new = gr.Textbox(label="🆕 Danh Sách Mã Mới Thêm Gần Đây", lines=2)
+                db_status = gr.Textbox(label="Trạng Thái File Master Database", lines=3)
+                dl_file = gr.DownloadButton("📥 BẤM VÀO ĐÂY ĐỂ TẢI FILE EXCEL MASTER DATABASE (.XLSX)", visible=False)
+
+                def check_db():
                     f = Config.MASTER_DB_FILE
                     if os.path.exists(f):
                         df = pd.read_excel(f)
                         ticks = df['Ticker'].unique().tolist() if 'Ticker' in df.columns else []
-                        return ", ".join(ticks), "Bấm Tab 3 để xem mã mới thêm", f"✅ Master DB tồn tại ({len(df):,} dòng dữ liệu).\n📌 Tổng cộng: {len(ticks)} mã cổ phiếu.", gr.update(value=f, visible=True)
-                    return "Chưa có", "Chưa có", "🛑 Chưa có file Master DB.", gr.update(visible=False)
+                        return ", ".join(ticks), "Xem nhật ký ở Tab 3", f"✅ DB Tồn tại: {len(df):,} dòng dữ liệu ({len(ticks)} mã cổ phiếu).", gr.update(value=f, visible=True)
+                    return "Rỗng", "Rỗng", "🛑 Chưa có file Master DB.", gr.update(visible=False)
 
-                btn_check_db.click(check_master, inputs=[], outputs=[out_old_tickers_db, out_new_tickers_db, out_db_info, dl_master_file])
+                btn_check.click(check_db, outputs=[out_old, out_new, db_status, dl_file])
 
-            # TAB 3: TRẠM BƠM DATABASE & PHÂN BIỆT MÃ MỚI / MÃ CŨ
+            # TAB 3: TRẠM BƠM DỮ LIỆU LŨY TIẾN
             with gr.TabItem("🌐 3. TRẠM BƠM & CẬP NHẬT DATABASE LŨY TIẾN"):
-                gr.Markdown("### 🕸️ KẾT NỐI API -> NẠP LŨY TIẾN VÀO FILE MASTER DATABASE")
-                gr.Markdown("Nhập danh sách mã cổ phiếu. Bot sẽ tự đối soát: **Mã cũ** sẽ được cập nhật phiên mới, **Mã mới** sẽ được tạo lịch sử và nộp gộp vào Database.")
+                gr.Markdown("### 🕸️ KẾT NỐI API -> NẠP DỮ LIỆU LŨY TIẾN HẰNG NGÀY")
+                gr.Markdown("Nhập danh sách mã. Sau 15:00 hằng ngày, bấm nút để bot **nạp nối đuôi phiên mới** vào file `Master_Stock_Database.xlsx`.")
                 
-                ticker_targets = gr.Textbox(
-                    label="Danh sách Mã Cổ Phiếu Cần Cào/Cập Nhật (Cách nhau bằng dấu phẩy)", 
+                ticker_input = gr.Textbox(
+                    label="Danh sách Mã Cổ Phiếu Cần Cào/Cập Nhật (Phân tách bằng dấu phẩy)",
                     value="SSI, HPG, TCB, FPT, DIG, MWG, VND, MBB, HSG, STB, VCI, VHM, NVL, PDR, VCB"
                 )
-                days_slider = gr.Slider(minimum=30, maximum=365, value=180, step=10, label="Số ngày cào lịch sử (Dành cho mã mới)")
-                
-                btn_update_db = gr.Button("🔄 CHẠY BƠM/CẬP NHẬT DỮ LIỆU VÀO MASTER DATABASE", variant="primary")
-                
+                days_slider = gr.Slider(minimum=30, maximum=365, value=180, step=10, label="Số ngày cào lịch sử (Dành cho mã mới thêm lần đầu)")
+                btn_pump = gr.Button("🔄 CHẠY BƠM / CẬP NHẬT DỮ LIỆU VÀO MASTER DB", variant="primary")
+
                 with gr.Row():
-                    out_old_tickers_pump = gr.Textbox(label="📌 Danh Mục Mã Cũ Đã Có Trong DB", lines=2)
-                    out_new_tickers_pump = gr.Textbox(label="🆕 Danh Sách Mã MỚI VỪA BỔ SUNG LẦN ĐẦU", lines=2)
-                    
-                out_pump_log = gr.Textbox(label="Nhật Ký Tiến Trình Bơm Dữ Liệu Lũy Tiến", lines=12)
-                dl_pump_file = gr.DownloadButton("📥 TẢI MASTER DATABASE MỚI NHẤT VỀ MÁY", variant="primary", visible=False)
-                
-                btn_update_db.click(
-                    StockQuantEngine.create_or_update_master_db,
-                    inputs=[ticker_targets, days_slider],
-                    outputs=[out_pump_log, out_old_tickers_pump, out_new_tickers_pump, dl_pump_file]
+                    pump_old = gr.Textbox(label="📌 Danh Mục Mã Cũ Đã Có", lines=2)
+                    pump_new = gr.Textbox(label="🆕 Danh Sách Mã Mới Vừa Bổ Sung", lines=2)
+                pump_log = gr.Textbox(label="Nhật Ký Tiến Trình Bơm Dữ Liệu Lũy Tiến", lines=10)
+                pump_dl = gr.DownloadButton("📥 TẢI MASTER DATABASE MỚI NHẤT VỀ MÁY", visible=False)
+
+                btn_pump.click(
+                    StockQuantEngine.update_master_db,
+                    inputs=[ticker_input, days_slider],
+                    outputs=[pump_log, pump_old, pump_new, pump_dl]
                 )
 
     return demo
 
 if __name__ == '__main__':
     demo = create_ui()
+    # Cấu hình Port Dynamic cho Render Deploy
     port = int(os.environ.get('PORT', 10000))
     demo.launch(server_name='0.0.0.0', server_port=port, show_api=False)
