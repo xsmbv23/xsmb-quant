@@ -33,7 +33,7 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V6.0 ROBUST QUANT ENGINE (MULTI-MARKET INTEGRATION)" 
+    VERSION = "V6.1 ROBUST QUANT ENGINE (MULTI-MARKET INTEGRATION)" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
@@ -42,7 +42,7 @@ class Config:
     LOOKBACK_DAYS = 21
     STORM_THRESHOLD = 0.35
     
-    ACTIVE_MODE = "🤖 [VERSION 6.0] V6.0 ROBUST TIERED QUANT ENGINE (LOTO & STOCKS & ARBITRAGE)"
+    ACTIVE_MODE = "🤖 [VERSION 6.1] V6.1 ROBUST TIERED QUANT ENGINE (LOTO & STOCKS & ARBITRAGE)"
     
     MENU_OPTIONS = [
         "🔄 1. ĐỒNG BỘ & CẬP NHẬT DỮ LIỆU LOTO",
@@ -333,7 +333,7 @@ class DatabaseManager:
         return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE (LÕI LOTO V6.0)
+# 🧠 BLOCK 5: QUANT ENGINE (LÕI LOTO V6.1)
 # ==============================================================================
 class QuantEngine:
     _sig_cache = {}
@@ -346,7 +346,7 @@ class QuantEngine:
 
     @staticmethod
     def get_signal(target_dt, db):
-        cache_key = (target_dt, "V5.8_SIGNAL")
+        cache_key = (target_dt, "V6.1_SIGNAL")
         if cache_key in QuantEngine._sig_cache:
             return QuantEngine._sig_cache[cache_key]
 
@@ -471,7 +471,7 @@ class QuantEngine:
             "kep": lo_kep,
             "dan_de_10": dan_de_10,
             "sorted_dan_scored": final_dan,
-            "sig_trace": f"[Lõi V6.0] Bắt được {len(final_dan)} mã khuyết. Xếp hạng BTL, STL thành công."
+            "sig_trace": f"[Lõi V6.1] Bắt được {len(final_dan)} mã khuyết. Xếp hạng BTL, STL thành công."
         }, "OK"
 
     @staticmethod
@@ -531,7 +531,7 @@ class QuantEngine:
 
     @staticmethod
     def get_mm_multiplier(target_dt, db):
-        cache_key = (target_dt, "V5.8_MM")
+        cache_key = (target_dt, "V6.1_MM")
         if cache_key in QuantEngine._mm_cache:
             return QuantEngine._mm_cache[cache_key]
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
@@ -640,7 +640,7 @@ class QuantEngine:
             mult = v1_base * sigmoid_macro * slope_scale * vol_scale * cppi_scale
             active_ver = f"RISK-PARITY TIERED (Sigmoid={sigmoid_macro:.2f} | Slope_scale={slope_scale:.2f})"
 
-        trace_log.append(f"🤖 [V6.0 ROBUST TIERED] Chế độ: {active_ver}")
+        trace_log.append(f"🤖 [V6.1 ROBUST TIERED] Chế độ: {active_ver}")
         trace_log.append(f"[MM Result] Hệ số vốn cơ sở chuẩn hóa = x{mult:.2f}")
         res = (mult, "\n".join(trace_log))
         QuantEngine._mm_cache[cache_key] = res
@@ -734,7 +734,7 @@ class Auditor:
                 "=======================================================",
                 f"🎯 PHIÊN GIAO DỊCH MỤC TIÊU: {next_dt.strftime('%d/%m/%Y')}",
                 f"🎚️ CHIẾN LƯỢC ĐỘC TÔN  : {Config.ACTIVE_MODE}",
-                f"📋 DÀN SỐ GỐC TỪ LÕI V6.0: [ {dan_goc_str} ] (Đã tìm thấy đúng {so_luong_lo} mã)",
+                f"📋 DÀN SỐ GỐC TỪ LÕI V6.1: [ {dan_goc_str} ] (Đã tìm thấy đúng {so_luong_lo} mã)",
                 "=======================================================",
                 "📊 HỒ SƠ CHỐT SỐ THƯỞNG KÊ (DỰ BÁO KQXS CAO CẤP)",
                 "-------------------------------------------------------",
@@ -843,7 +843,7 @@ class Auditor:
             
             lines = [
                 f"📑 BÁO CÁO CHI TIẾT TỪNG NGÀY: THÁNG {thang:02d}/{nam}",
-                f"🎚️ LÕI ĐỘC TÔN: V6.0 ROBUST TIERED",
+                f"🎚️ LÕI ĐỘC TÔN: V6.1 ROBUST TIERED",
                 "=============================================================================================================================",
                 f"{'NGÀY':<6} | {'MÃ ĐÁNH':<26} | {'VỐN DỒN (k)':<12} | {'THU (k)':<8} | {'LÃI/LỖ (k)':<11} | {'ROI':<8}",
                 "-----------------------------------------------------------------------------------------------------------------------------"
@@ -913,7 +913,7 @@ class Auditor:
             lines = [
                 "📑 BÁO CÁO ĐẠI KẾ TOÁN QUÉT CHU KỲ TỔNG HỢP",
                 "===================================================================================================================",
-                f"📈 KẾT QUẢ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')} (LÕI V6.0 TIERED ĐỘC TÔN)",
+                f"📈 KẾT QUẢ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')} (LÕI V6.1 TIERED ĐỘC TÔN)",
                 "==================================================================================================================="
             ]
             curr = start_dt
@@ -995,10 +995,10 @@ class Auditor:
             total_days_scanned = (end_dt - start_dt).days + 1
             
             prompt_lines = [
-                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG V6.0 ROBUST - DÀNH CHO BÁO CÁO ĐỊNH LƯỢNG CHUẨN TRUY VẾT]",
+                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG V6.1 ROBUST - DÀNH CHO BÁO CÁO ĐỊNH LƯỢNG CHUẨN TRUY VẾT]",
                 f"1. PHIÊN BẢN HỆ THỐNG: {Config.VERSION}",
                 f"2. QUÉT TRỌN VẸN LỊCH SỬ {total_days_scanned} NGÀY QUA ({start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')})\n",
-                "📊 [BÁO CÁO HIỆU SUẤT ĐỘC TÔN V6.0]"
+                "📊 [BÁO CÁO HIỆU SUẤT ĐỘC TÔN V6.1]"
             ]
             
             curr = start_dt
@@ -1050,7 +1050,7 @@ class Auditor:
             ])
 
             prompt_lines.extend([
-                "\n⚠️ XÁC NHẬN BÁO CÁO V6.0 ROBUST TIERED QUANT ENGINE:",
+                "\n⚠️ XÁC NHẬN BÁO CÁO V6.1 ROBUST TIERED QUANT ENGINE:",
                 "1. Tích hợp cơ chế Dồn vốn Bậc thang Risk-Parity chuẩn hóa: Bạch Thủ Lô (1.30x), Song Thủ Lô (1.15x), Lô Dàn Lót (0.85x).",
                 "2. Đã thêm cơ chế Cache (Bộ nhớ đệm) giải quyết triệt để lỗi Load chậm và tràn RAM Menu 6.",
                 "3. Hệ thống chạy 1 lõi toán học thuần túy duy nhất, không rườm rà, đảm bảo minh bạch và tối ưu tuyệt đối."
@@ -1165,50 +1165,53 @@ class ArbitrageEngine:
         return "\n".join(lines)
 
 # ==============================================================================
-# 📈 BLOCK 8: CHỨNG KHOÁN (AUTO-API QUANT SCANNER & EXCEL EXPORTER)
+# 📈 BLOCK 8: CHỨNG KHOÁN (AUTO-API QUANT SCANNER - API VNDIRECT MỞ)
 # ==============================================================================
 class StockQuantEngine:
     @staticmethod
-    def fetch_tcbs_api(ticker, days=120):
+    def fetch_vndirect_api(ticker, days=120):
         try:
             end_date = datetime.now()
             start_date = end_date - timedelta(days=days)
             
-            from_ts = int(start_date.timestamp())
-            to_ts = int(end_date.timestamp())
+            start_str = start_date.strftime('%Y-%m-%d')
+            end_str = end_date.strftime('%Y-%m-%d')
             
-            url = f"https://apipubaws.tcbs.com.vn/stock-insight/v1/stock/bars-long-term?ticker={ticker.upper()}&type=stock&resolution=D&from={from_ts}&to={to_ts}"
+            # Sử dụng API VNDirect mở (Không chặn Render, không chặn Cloudflare)
+            url = f"https://finfo-api.vndirect.com.vn/v4/stock_prices?sort=date&q=code:{ticker.upper()}~date:gte:{start_str}~date:lte:{end_str}&size={days+50}"
             
-            # Mặt nạ trình duyệt để vượt tường lửa 403 TCBS
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
-                'Origin': 'https://tcinvest.tcbs.com.vn',
-                'Referer': 'https://tcinvest.tcbs.com.vn/'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json'
             }
             
             res = requests.get(url, headers=headers, timeout=10)
             if res.status_code != 200:
-                return None, f"🛑 LỖI API: Sàn từ chối kết nối (Mã lỗi {res.status_code})"
+                return None, f"🛑 LỖI API: Sàn VNDirect từ chối (Mã lỗi {res.status_code})"
                 
-            data = res.json()
-            if not data.get('data'):
-                return None, f"🛑 LỖI DỮ LIỆU: Không tìm thấy mã {ticker.upper()} hoặc sàn chưa trả data."
+            data = res.json().get('data', [])
+            if not data:
+                return None, f"🛑 LỖI DỮ LIỆU: Không tìm thấy mã {ticker.upper()} hoặc sàn chưa có dữ liệu."
                 
-            df = pd.DataFrame(data['data'])
+            df = pd.DataFrame(data)
             
-            df['Date'] = pd.to_datetime(df['tradingDate']).dt.strftime('%d/%m/%Y')
-            df['Close'] = df['close']
-            df['Volume'] = df['volume']
+            # VNDirect trả về chuỗi JSON mảng từ ngày mới đến cũ, ta cần đưa về Date Format
+            df['dt_obj'] = pd.to_datetime(df['date'])
+            # Sắp xếp từ ngày quá khứ đến hiện tại để tính Moving Average
+            df = df.sort_values(by='dt_obj', ascending=True)
             
-            df = df[['Date', 'Close', 'Volume']].sort_index(ascending=True).reset_index(drop=True)
+            df['Date'] = df['dt_obj'].dt.strftime('%d/%m/%Y')
+            df['Close'] = df['adClose'] # Giá đã điều chỉnh (Chuẩn để soi Quant)
+            df['Volume'] = df['nmVolume'] # Khối lượng khớp lệnh
+            
+            df = df[['Date', 'Close', 'Volume']].reset_index(drop=True)
             return df, "OK"
         except Exception as e:
             return None, f"🛑 LỖI TRUY VẾT API: {str(e)}"
 
     @staticmethod
     def run_auto_stock_sensors(ticker, days=120):
-        df, msg = StockQuantEngine.fetch_tcbs_api(ticker, days)
+        df, msg = StockQuantEngine.fetch_vndirect_api(ticker, days)
         if df is None: 
             return msg, gr.update(visible=False)
         
@@ -1230,7 +1233,7 @@ class StockQuantEngine:
         
         vol_ratio = latest['Volume'] / latest['MA20_Vol'] if latest['MA20_Vol'] > 0 else 0
         if vol_ratio > 2.5 and latest['Close'] > latest['Prev_Close']:
-            alerts.append(f"🟢 [SMART MONEY]: NỔ KHỐI LƯỢNG! Vol gấp {vol_ratio:.1f} lần trung bình. MUA BREAKOUT.")
+            alerts.append(f"🟢 [SMART MONEY]: NỔ KHỐI LƯỢNG! Vol gấp {vol_ratio:.1f} lần trung bình. Tiền lớn đang gom hàng, MUA BREAKOUT.")
             
         z = latest['Z_Score']
         if pd.notna(z):
@@ -1245,13 +1248,13 @@ class StockQuantEngine:
         lines = [
             f"📑 BÁO CÁO CẢM BIẾN DÒNG TIỀN MÃ: {ticker.upper()}",
             "=======================================================",
-            f"✅ ĐÃ TỰ ĐỘNG CÀO {len(df)} PHIÊN TỪ API NGẦM TCBS",
+            f"✅ ĐÃ TỰ ĐỘNG CÀO {len(df)} PHIÊN TỪ API MỞ VNDIRECT",
             "=======================================================",
             f"📅 Phiên giao dịch gần nhất : {latest['Date']}",
-            f"💵 Giá Đóng Cửa             : {latest['Close']:,.0f} VNĐ",
+            f"💵 Giá Đóng Cửa             : {latest['Close']:,.2f} VNĐ",
             f"📊 Khối Lượng               : {latest['Volume']:,.0f} Cổ phiếu",
             "-------------------------------------------------------",
-            f"• MA20 Giá                  : {latest['MA20_Price']:,.0f}",
+            f"• MA20 Giá                  : {latest['MA20_Price']:,.2f}",
             f"• Chỉ số Z-Score            : {latest['Z_Score']:+.2f}",
             f"• Đột biến Vol (Vol Ratio)  : x{vol_ratio:.2f}",
             "=======================================================",
@@ -1358,7 +1361,7 @@ def create_ui():
         with gr.Column(visible=False) as col_6:
             gr.Markdown("### 🤖 BỘ NÃO AI - QUÉT TOÀN BỘ LỊCH SỬ DB")
             btn_6 = gr.Button("🧬 BẮT ĐẦU QUÉT TOÀN DB", variant="primary")
-            out_6 = gr.Textbox(label="Báo cáo Tổng hợp V6.0", lines=25)
+            out_6 = gr.Textbox(label="Báo cáo Tổng hợp V6.1", lines=25)
             btn_6.click(Auditor.phan_he_6_master_diagnostic_prompt, inputs=[], outputs=out_6)
 
         # [Cột 7] HỆ THỐNG RADAR ARBITRAGE
@@ -1402,7 +1405,7 @@ def create_ui():
         # [Cột 8] CẢM BIẾN CHỨNG KHOÁN (AUTO-API EOD)
         with gr.Column(visible=False) as col_8:
             gr.Markdown("### 🧠 HỆ THỐNG CẢM BIẾN CHỨNG KHOÁN (AUTO-API SCANNER)")
-            gr.Markdown("**Hướng dẫn:** Nhập mã cổ phiếu. Hệ thống sẽ tự động móc API ngầm của Sàn để kéo dữ liệu chuẩn xác nhất, phân tích và xuất file Excel cho bạn.")
+            gr.Markdown("**Hướng dẫn:** Nhập mã cổ phiếu. Hệ thống sẽ tự động móc API MỞ của VNDirect để kéo dữ liệu chuẩn xác nhất, phân tích và xuất file Excel cho bạn.")
             
             with gr.Row():
                 stock_ticker = gr.Textbox(label="Mã Cổ Phiếu (Ví dụ: SSI, HPG, FPT)", value="SSI")
