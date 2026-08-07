@@ -32,14 +32,14 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V8.0 QUANTUM ARBITRAGE (MOMENTUM & REGIME FILTER)" 
+    VERSION = "V9.0 MEAN REVERSION (BẮT ĐẢO CHIỀU TỪ ĐÁY LÔ GAN)" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
     WIN_PER_NHAY = 80000
     BASE_PTS = 10.0
     
-    ACTIVE_MODE = "🤖 [VERSION 8.0] QUANTUM ARBITRAGE (ĐỘNG LƯỢNG KẾT HỢP)"
+    ACTIVE_MODE = "🤖 [VERSION 9.0] MEAN REVERSION (BẮT ĐẢO CHIỀU LÔ RƠI)"
     
     MENU_OPTIONS = [
         "🔄 1. ĐỒNG BỘ & CẬP NHẬT DỮ LIỆU",
@@ -47,7 +47,7 @@ class Config:
         "🔍 3. KIỂM TOÁN CHUYÊN SÂU",
         "📈 4. PHÂN TÍCH CHU KỲ TỔNG HỢP",
         "🎰 5. BẢNG KẾT QUẢ LOTO TRUYỀN THỐNG",
-        "🤖 6. BỘ NÃO AI (QUÉT LỊCH SỬ QUANTUM)"
+        "🤖 6. BỘ NÃO AI (QUÉT LỊCH SỬ V9.0 ĐẢO CHIỀU)"
     ]
 
 # ==============================================================================
@@ -88,7 +88,7 @@ class Utils:
         except: return False, f"🛑 LỖI: '{name}' sai định dạng."
 
 # ==============================================================================
-# 🕸️ BLOCK 3: CRAWLER TỰ ĐỘNG (KETQUA NỐI TIẾP VỚI TỊNH TIẾN DOMAIN)
+# 🕸️ BLOCK 3: CRAWLER TỰ ĐỘNG
 # ==============================================================================
 class Crawler:
     HEADERS = {
@@ -126,52 +126,30 @@ class Crawler:
         return None
 
 # ==============================================================================
-# 📊 BLOCK 4: DATABASE MANAGER (TỰ ĐỘNG CHUẨN HÓA & BACKUP NGẦM LÊN DRIVE)
+# 📊 BLOCK 4: DATABASE MANAGER
 # ==============================================================================
 class GoogleSheetsManager:
     @staticmethod
     def get_worksheet():
-        if not HAS_GSPREAD:
-            return None, "Thiếu thư viện 'gspread' hoặc 'google-auth'."
-            
+        if not HAS_GSPREAD: return None, "Thiếu thư viện 'gspread' hoặc 'google-auth'."
         sheet_name = os.environ.get("GOOGLE_SHEET_NAME", "Ket_Qua_Loto27").strip()
         sheet_id = os.environ.get("GOOGLE_SHEET_ID", "").strip()
         creds_json_str = os.environ.get("GOOGLE_CREDENTIALS", "").strip() or os.environ.get("GOOGLE_SHEETS_JSON", "").strip()
-        
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = None
         if creds_json_str:
-            try:
-                creds_dict = json.loads(creds_json_str)
-                creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-            except Exception:
-                pass
-                
+            try: creds = Credentials.from_service_account_info(json.loads(creds_json_str), scopes=scopes)
+            except Exception: pass
         if not creds:
             for fname in ["google_credentials.json", "credentials.json", "service_account.json"]:
                 if os.path.exists(fname):
-                    try:
-                        creds = Credentials.from_service_account_file(fname, scopes=scopes)
-                        break
-                    except Exception:
-                        pass
-                        
-        if not creds:
-            return None, "Chưa cấu hình Google Credentials."
-            
+                    try: creds = Credentials.from_service_account_file(fname, scopes=scopes); break
+                    except Exception: pass
+        if not creds: return None, "Chưa cấu hình Google Credentials."
         try:
             gc = gspread.authorize(creds)
-            if sheet_id:
-                ws = gc.open_by_key(sheet_id).sheet1
-            else:
-                ws = gc.open(sheet_name).sheet1
-            return ws, "OK"
-        except Exception as e:
-            return None, f"Lỗi kết nối Google Sheets: {str(e)}"
+            return gc.open_by_key(sheet_id).sheet1 if sheet_id else gc.open(sheet_name).sheet1, "OK"
+        except Exception as e: return None, f"Lỗi kết nối Google Sheets: {str(e)}"
 
 class DatabaseManager:
     @staticmethod
@@ -191,17 +169,12 @@ class DatabaseManager:
                 res_date = Utils.chuan_hoa_ngay(row.iloc[0])
                 if not res_date: continue
                 dt_obj, ngay_str = res_date
-                
                 loto_raw = re.sub(r"[^\d\s]", " ", str(row.iloc[1]))
                 loto_list = [int(x.strip()[-2:]) for x in loto_raw.split() if x.strip().isdigit()]
-                
                 if len(loto_list) >= 27:
                     clean_str = " ".join([f"{x:02d}" for x in loto_list[:27]])
                     db[ngay_str] = {"date_obj": dt_obj, "prizes_int": loto_list[:27], "raw_str": clean_str}
-                    
-                    if str(row.iloc[0]) != ngay_str or str(row.iloc[1]) != clean_str:
-                        needs_rewrite = True
-                        
+                    if str(row.iloc[0]) != ngay_str or str(row.iloc[1]) != clean_str: needs_rewrite = True
             if needs_rewrite:
                 DatabaseManager.rewrite_clean_db(db)
                 return db, f"🟢 TỰ ĐỘNG DỌN DẸP DB: Đã chuẩn hóa định dạng ngày & số."
@@ -219,104 +192,68 @@ class DatabaseManager:
             ws, msg = GoogleSheetsManager.get_worksheet()
             if ws is not None:
                 matrix = [["Ngày", "Kết Quả Loto"]]
-                for _, row in df_final.iterrows():
-                    matrix.append([str(row["Ngày"]), str(row["Kết Quả Loto"])])
+                for _, row in df_final.iterrows(): matrix.append([str(row["Ngày"]), str(row["Kết Quả Loto"])])
                 ws.clear()
-                try:
-                    ws.update(values=matrix, range_name="A1")
-                except TypeError:
-                    ws.update("A1", matrix)
-        except Exception:
-            pass
+                try: ws.update(values=matrix, range_name="A1")
+                except TypeError: ws.update("A1", matrix)
+        except Exception: pass
 
     @staticmethod
     def rewrite_clean_db(db):
-        all_rows = []
-        for d_str, info in db.items():
-            all_rows.append({"Ngày": d_str, "Kết Quả Loto": info["raw_str"], "date_parse": info["date_obj"]})
+        all_rows = [{"Ngày": d_str, "Kết Quả Loto": info["raw_str"], "date_parse": info["date_obj"]} for d_str, info in db.items()]
         if not all_rows: return
-
-        df_final = pd.DataFrame(all_rows)
-        df_final = df_final.sort_values(by='date_parse', ascending=False).drop(columns=['date_parse'])
-        
+        df_final = pd.DataFrame(all_rows).sort_values(by='date_parse', ascending=False).drop(columns=['date_parse'])
         if os.path.exists(Config.DATA_FILE):
             timestamp = Utils.get_vn_time().strftime("%Y%m%d_%H%M%S")
             shutil.copy(Config.DATA_FILE, f"{Config.BACKUP_PREFIX}{timestamp}.bak")
-            existing_backups = sorted(glob.glob(Config.BACKUP_PREFIX + "*.bak"), reverse=True)
-            for old_bak in existing_backups[3:]: 
+            for old_bak in sorted(glob.glob(Config.BACKUP_PREFIX + "*.bak"), reverse=True)[3:]: 
                 try: os.remove(old_bak)
                 except Exception: pass
         df_final.to_excel(Config.DATA_FILE, index=False)
-
-        thread = threading.Thread(target=DatabaseManager._push_to_google_sheets, args=(df_final,))
-        thread.daemon = True
-        thread.start()
+        threading.Thread(target=DatabaseManager._push_to_google_sheets, args=(df_final,), daemon=True).start()
 
     @staticmethod
     def save_manual_data(date_str, numbers_str):
         res_date = Utils.chuan_hoa_ngay(date_str)
-        if not res_date: return "🛑 LỖI NHẬP LIỆU: Ngày không đúng định dạng (DD/MM/YYYY)."
+        if not res_date: return "🛑 LỖI NHẬP LIỆU: Ngày sai định dạng (DD/MM/YYYY)."
         dt_obj, std_date = res_date
         nums = re.findall(r'\d{2}', str(numbers_str))
-        if len(nums) < 27: return f"🛑 LỖI NHẬP LIỆU: Chỉ tìm thấy {len(nums)}/27 con số."
+        if len(nums) < 27: return f"🛑 LỖI NHẬP LIỆU: Thiếu số ({len(nums)}/27)."
         try:
             db, _ = DatabaseManager.load_db()
             db[std_date] = {"date_obj": dt_obj, "prizes_int": [int(x) for x in nums[:27]], "raw_str": " ".join(nums[:27])}
             DatabaseManager.rewrite_clean_db(db)
             QuantEngine.clear_cache()
-            return f"✅ NHẬP TAY THÀNH CÔNG (Đã lưu File & Kích hoạt đồng bộ ngầm): {std_date}!"
+            return f"✅ LƯU THÀNH CÔNG: {std_date}!"
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
     @staticmethod
     def auto_heal_history():
         db, _ = DatabaseManager.load_db()
         now_vn = Utils.get_vn_time()
-        
         end_dt = now_vn.replace(hour=0, minute=0, second=0, microsecond=0)
-        if now_vn.hour < 19:
-            end_dt -= timedelta(days=1)
-            
+        if now_vn.hour < 19: end_dt -= timedelta(days=1)
         min_dt, max_dt, _ = DatabaseManager.get_boundaries(db)
-        if not max_dt:
-            return "🛑 LỖI: Database rỗng. Hãy nạp file Excel trước."
-            
-        if max_dt >= end_dt:
-            return f"✅ Dữ liệu đã đồng bộ tuyệt đối đến {max_dt.strftime('%d/%m/%Y')}."
-            
+        if not max_dt: return "🛑 LỖI: Database rỗng."
+        if max_dt >= end_dt: return f"✅ Dữ liệu đã đồng bộ tuyệt đối."
         missing_dates = [max_dt + timedelta(days=x) for x in range(1, (end_dt - max_dt).days + 1)]
         healed_count = 0
-        msg_log = []
-        
-        if not HAS_REQUESTS:
-            return "🛑 CẢNH BÁO: Thiếu thư viện 'requests', không thể cào dữ liệu."
+        if not HAS_REQUESTS: return "🛑 THIẾU THƯ VIỆN REQUESTS."
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             futures = {executor.submit(Crawler.fetch_single_date, dt): dt for dt in missing_dates}
             for future in concurrent.futures.as_completed(futures):
-                dt = futures[future]
                 try:
                     res = future.result()
                     if res:
-                        std_str = res["Ngày"]
-                        nums_str = res["Kết Quả Loto"]
-                        nums = [int(x) for x in nums_str.split()]
-                        db[std_str] = {"date_obj": dt, "prizes_int": nums, "raw_str": nums_str}
+                        db[res["Ngày"]] = {"date_obj": futures[future], "prizes_int": [int(x) for x in res["Kết Quả Loto"].split()], "raw_str": res["Kết Quả Loto"]}
                         healed_count += 1
-                    else:
-                        msg_log.append(f"Khuyết {dt.strftime('%d/%m')}")
-                except Exception as e:
-                    msg_log.append(f"Lỗi {dt.strftime('%d/%m')}")
-                    
+                except Exception: pass
         if healed_count > 0:
-            try:
-                DatabaseManager.rewrite_clean_db(db)
-                QuantEngine.clear_cache()
-                return f"✅ THÀNH CÔNG: Đã cào thêm {healed_count} ngày mới!"
-            except Exception as e:
-                return f"🛑 LỖI GHI FILE:\n{traceback.format_exc()}"
-                
-        err_str = ", ".join(msg_log[:5])
-        return f"⚠️ KHÔNG THỂ LẤY DỮ LIỆU. Web xổ số bị nghẽn hoặc kết quả chưa ra. ({err_str}...)"
+            DatabaseManager.rewrite_clean_db(db)
+            QuantEngine.clear_cache()
+            return f"✅ THÀNH CÔNG: Đã cào thêm {healed_count} ngày mới!"
+        return f"⚠️ WEB XỔ SỐ CHƯA CẬP NHẬT HOẶC BỊ NGHẼN."
 
     @staticmethod
     def get_boundaries(db):
@@ -328,7 +265,7 @@ class DatabaseManager:
         return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE (LÕI V8.0 QUANTUM ARBITRAGE - CẢM BIẾN ĐỘNG LƯỢNG)
+# 🧠 BLOCK 5: QUANT ENGINE (LÕI V9.0 - MEAN REVERSION / BẮT ĐẢO CHIỀU TỪ ĐÁY)
 # ==============================================================================
 class QuantEngine:
     _sig_cache = {}
@@ -341,42 +278,38 @@ class QuantEngine:
 
     @staticmethod
     def get_signal(target_dt, db):
-        cache_key = (target_dt, "V8.0_SIGNAL")
+        """
+        THUẬT TOÁN V9.0 ĐẢO CHIỀU:
+        1. Tìm các số VỪA NỔ hôm qua (T-1).
+        2. Quét 10 ngày trước đó (T-2 đến T-11).
+        3. Nếu số đó KHÔNG XUẤT HIỆN trong 10 ngày kia -> Đây là bóng Lô Gan vừa được nhả (Điểm nổ Breakout).
+        4. Bắt Lô Rơi của bóng này.
+        """
+        cache_key = (target_dt, "V9.0_SIGNAL")
         if cache_key in QuantEngine._sig_cache:
             return QuantEngine._sig_cache[cache_key]
 
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
-        if len(past_dates) < 14: 
-            res = ([], "[THIẾU DỮ LIỆU ĐỂ TÍNH ĐỘNG LƯỢNG]")
+        if len(past_dates) < 12: 
+            res = ([], "[THIẾU DỮ LIỆU ĐỂ TÍNH ĐẢO CHIỀU]")
             QuantEngine._sig_cache[cache_key] = res
             return res
 
-        # 1. TÍNH ĐIỂM ĐỘNG LƯỢNG (MOMENTUM SCORING) GIA QUYỀN THỜI GIAN
-        freq_3d = {i: 0 for i in range(100)}
-        freq_7d = {i: 0 for i in range(100)}
-        freq_14d = {i: 0 for i in range(100)}
+        # Ngày T-1 (Hôm qua)
+        str_t1 = past_dates[0].strftime("%d/%m/%Y")
+        kq_t1 = set(db[str_t1]["prizes_int"])
 
-        for i, p_dt in enumerate(past_dates[:14]):
-            prizes = db[p_dt.strftime("%d/%m/%Y")]["prizes_int"]
-            for num in prizes:
-                freq_14d[num] += 1
-                if i < 7: freq_7d[num] += 1
-                if i < 3: freq_3d[num] += 1
+        # Tập hợp các số đã nổ từ T-2 đến T-11 (Vùng kìm hãm)
+        giam_10d = set()
+        for p_dt in past_dates[1:11]:
+            str_p = p_dt.strftime("%d/%m/%Y")
+            giam_10d.update(db[str_p]["prizes_int"])
 
-        scores = {}
-        for i in range(100):
-            # Màng lọc Lô Gan: Không ra trong 14 ngày -> Loại ngay lập tức (Score = 0)
-            if freq_14d[i] == 0:
-                scores[i] = -999
-            else:
-                # Xung lực ngắn hạn (3 ngày) x3 + Trung hạn (7 ngày) x2 + Dài hạn (14 ngày) x1
-                scores[i] = (freq_3d[i] * 3.0) + (freq_7d[i] * 2.0) + (freq_14d[i] * 1.0)
+        # Tín hiệu: Số vừa nhả hôm qua NHƯNG bị giam 10 ngày trước đó
+        dan_opt = [x for x in kq_t1 if x not in giam_10d]
 
-        # Lọc ra 4 con số có điểm Động lượng cao nhất
-        sorted_nums = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
-        best_nums = [x for x in sorted_nums[:4] if scores[x] > 0]
-        
-        res = (sorted(best_nums), "OK")
+        # Sắp xếp và ưu tiên lấy tối đa 3 số mạnh nhất
+        res = (sorted(dan_opt)[:3], "OK")
         QuantEngine._sig_cache[cache_key] = res
         return res
 
@@ -384,107 +317,82 @@ class QuantEngine:
     def get_full_prediction(target_dt, db):
         dan_opt, msg = QuantEngine.get_signal(target_dt, db)
         if not dan_opt:
-            return None, f"{msg}\n👉 Động lượng nhiễu loạn, không tìm thấy mã chuẩn."
+            return None, f"{msg}\n👉 Không có mã Breakout Đảo chiều nào từ đáy lồng cầu. HỆ THỐNG YÊU CẦU ĐỨNG NGOÀI."
 
         best_btl = dan_opt[0] if len(dan_opt) > 0 else 0
         lon_btl = (best_btl % 10) * 10 + (best_btl // 10)
         
-        if len(dan_opt) >= 3: stl_pair = (dan_opt[1], dan_opt[2])
-        elif len(dan_opt) == 2: stl_pair = (dan_opt[1], lon_btl if lon_btl != best_btl and lon_btl != dan_opt[1] else (best_btl + 11) % 100)
-        else: stl_pair = (lon_btl if lon_btl != best_btl else (best_btl + 11) % 100, (best_btl + 22) % 100)
+        if len(dan_opt) >= 2: stl_pair = (dan_opt[0], dan_opt[1])
+        else: stl_pair = (best_btl, lon_btl if lon_btl != best_btl else (best_btl + 11) % 100)
 
-        xien2 = f"{best_btl:02d} - {stl_pair[0]:02d} | {best_btl:02d} - {stl_pair[1]:02d}"
+        xien2 = f"{stl_pair[0]:02d} - {stl_pair[1]:02d}"
 
-        # Tìm càng
-        hundreds_freq = {i: 0 for i in range(10)}
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
-        for p_dt in past_dates[:7]:
-            raw_tokens = db[p_dt.strftime("%d/%m/%Y")]["raw_str"].split()
-            for token in raw_tokens:
-                if len(token) >= 3:
-                    hundreds_freq[int(token[-3])] += 1
+        hundreds_freq = {i: 0 for i in range(10)}
+        for p_dt in past_dates[:5]:
+            for token in db[p_dt.strftime("%d/%m/%Y")]["raw_str"].split():
+                if len(token) >= 3: hundreds_freq[int(token[-3])] += 1
         top_h = sorted(hundreds_freq.keys(), key=lambda h: -hundreds_freq[h])
         h1 = top_h[0] if len(top_h) > 0 else 0
-        h2 = top_h[1] if len(top_h) > 1 else 1
-        loto_3cang = f"{h1}{best_btl:02d} - {h2}{stl_pair[0]:02d}"
+        loto_3cang = f"{h1}{best_btl:02d}"
 
         keps = [0, 11, 22, 33, 44, 55, 66, 77, 88, 99]
-        lo_kep = f"{keps[target_dt.day % 10]:02d} - {keps[(target_dt.day+5) % 10]:02d}"
+        lo_kep = f"{keps[target_dt.day % 10]:02d}"
         
         de_set = set([best_btl, lon_btl, stl_pair[0], stl_pair[1]])
-        for i in range(10): 
-            de_set.add(i*10 + (best_btl%10))
-            if len(de_set) >= 10: break
+        for i in range(10): de_set.add(i*10 + (best_btl%10))
         dan_de_10 = ", ".join([f"{x:02d}" for x in sorted(list(de_set))[:10]])
 
         return {
             "btl": f"{best_btl:02d}", "stl": f"{stl_pair[0]:02d} - {stl_pair[1]:02d}", "xien2": xien2,
             "cang3d": loto_3cang, "kep": lo_kep, "dan_de_10": dan_de_10, "sorted_dan_scored": dan_opt,
-            "sig_trace": f"[Lõi V8.0] Phân tích Động Lượng Xung Lực (Trọng số 3-7-14 ngày). Lọc được {len(dan_opt)} mã Breakout."
+            "sig_trace": f"[Lõi V9.0] Tìm thấy {len(dan_opt)} mã Lô Gan vừa được nhả (Điểm nổ Breakout đảo chiều)."
         }, "OK"
 
     @staticmethod
     def get_mm_multiplier(target_dt, db):
-        cache_key = (target_dt, "V8.0_MM")
+        cache_key = (target_dt, "V9.0_MM")
         if cache_key in QuantEngine._mm_cache:
             return QuantEngine._mm_cache[cache_key]
             
         past_dates = sorted([info["date_obj"] for info in db.values() if info["date_obj"] < target_dt], reverse=True)
-        if len(past_dates) < 20: 
-            res = (0.0, "Không đủ dữ liệu lịch sử để đo lường Market Regime.")
+        if len(past_dates) < 15: 
+            res = (0.0, "Không đủ dữ liệu lịch sử để quản trị vốn.")
             QuantEngine._mm_cache[cache_key] = res
             return res
 
-        trace_log = []
-        
-        # 1. MARKET REGIME FILTER: ĐO LƯỜNG TỶ LỆ WIN ẢO TRONG 10 NGÀY QUA
-        virtual_wins_10d = 0
-        virtual_played_10d = 0
-        for r_dt in past_dates[:10]:
-            r_dan, _ = QuantEngine.get_signal(r_dt, db)
-            if r_dan and len(r_dan) > 0:
-                virtual_played_10d += 1
-                str_r = r_dt.strftime("%d/%m/%Y")
-                nhay = sum(db[str_r]["prizes_int"].count(x) for x in r_dan)
-                if (nhay * Config.WIN_PER_NHAY - len(r_dan) * Config.COST_PER_POINT) > 0:
-                    virtual_wins_10d += 1
-                    
-        regime_winrate = (virtual_wins_10d / virtual_played_10d) if virtual_played_10d > 0 else 0.0
-        
-        # 2. XÁC ĐỊNH CHUỖI GẦN NHẤT ĐỂ QUẢN TRỊ VỐN BẤT ĐỐI XỨNG
-        win_streak = 0
+        # XÁC ĐỊNH CHUỖI WIN/LOSS CỦA NHỮNG NGÀY "CÓ ĐÁNH" GẦN NHẤT
         loss_streak = 0
-        for curr_dt in past_dates[:10]: 
+        last_played_result = None # 'WIN' or 'LOSS'
+        
+        for curr_dt in past_dates: 
             dan, _ = QuantEngine.get_signal(curr_dt, db)
-            if dan and len(dan) > 0:
+            if dan and len(dan) > 0: # Chỉ đếm những ngày hệ thống có xuất lệnh
                 str_curr = curr_dt.strftime("%d/%m/%Y")
                 nhay = sum(db[str_curr]["prizes_int"].count(x) for x in dan)
-                if (nhay * Config.WIN_PER_NHAY - len(dan) * Config.COST_PER_POINT) > 0:
-                    if loss_streak > 0: break
-                    win_streak += 1
+                pnl = nhay * Config.WIN_PER_NHAY - len(dan) * Config.COST_PER_POINT
+                if pnl > 0:
+                    if last_played_result is None: last_played_result = 'WIN'
+                    break # Gặp ngày Win thì dừng đếm chuỗi Loss
                 else:
-                    if win_streak > 0: break
+                    if last_played_result is None: last_played_result = 'LOSS'
                     loss_streak += 1
 
-        # 3. QUY TRÌNH XUỐNG TIỀN V8.0 (ANTI-MARTINGALE)
-        if regime_winrate < 0.30:
+        trace_log = []
+        
+        # QUẢN TRỊ RỦI RO BẢO TOÀN VỐN TUYỆT ĐỐI
+        if loss_streak >= 3:
             final_mult = 0.0
-            action_log = f"WinRate 10 ngày = {regime_winrate*100:.0f}% < 30% -> ĐỨNG NGOÀI (Cảm biến báo nhiễu động lượng)."
-        elif loss_streak >= 3:
-            final_mult = 0.0
-            action_log = f"Chuỗi thua = {loss_streak} -> ĐỨNG NGOÀI (Ngắt cầu dao cắt lỗ tuyệt đối)."
-        elif loss_streak > 0:
-            final_mult = 0.5
-            action_log = f"Vừa thua {loss_streak} ngày -> BÓP VỐN (0.5x). Chống cháy tài khoản, dò đường."
-        elif win_streak >= 1:
+            action_log = f"🔴 NGẮT CẦU DAO: Đã thua 3 lệnh Đảo chiều liên tiếp. Băng thông nhiễu. KHÓA LỆNH (0.0x)."
+        elif last_played_result == 'WIN':
             final_mult = 1.5
-            action_log = f"Đang thắng {win_streak} ngày -> BƠM VỐN (1.5x). Động lượng vào form, gồng lời mạnh."
+            action_log = f"🟢 XUNG LỰC TỐT: Lệnh gần nhất chiến thắng. Bơm nhẹ Margin gồng lời (1.5x)."
         else:
             final_mult = 1.0
-            action_log = "Hệ số Bình chuẩn (1.0x). Khởi tạo chuỗi mới."
+            action_log = f"🟡 BÌNH CHUẨN: Xuống tiền Flat Betting (1.0x) tóm đáy."
 
-        trace_log.append(f"🤖 [V8.0 QUANTUM] Market Regime (10 ngày): {virtual_wins_10d}W / {virtual_played_10d}L ({regime_winrate*100:.0f}%)")
-        trace_log.append(f"👉 LỆNH: {action_log}")
+        trace_log.append(f"🤖 [V9.0 MEAN REVERSION] Theo dõi chuỗi lệnh thực tế: Gãy {loss_streak} lệnh.")
+        trace_log.append(f"👉 HÀNH ĐỘNG: {action_log}")
         
         res = (final_mult, "\n".join(trace_log))
         QuantEngine._mm_cache[cache_key] = res
@@ -543,7 +451,8 @@ class Auditor:
                     f"🎯 PHIÊN GIAO DỊCH MỤC TIÊU: {next_dt.strftime('%d/%m/%Y')}",
                     f"🎚️ CHIẾN LƯỢC ĐỘC TÔN  : {Config.ACTIVE_MODE}",
                     "=======================================================",
-                    "👉 HỆ THỐNG XÁC NHẬN KHÓA LỆNH (0 ĐIỂM) - BẢO TOÀN VỐN",
+                    "👉 HỆ THỐNG XÁC NHẬN ĐỨNG NGOÀI (BẢO TOÀN VỐN $100\%$)",
+                    "💡 Lý do: Đang nhiễu sóng hoặc Không có mã Lô gan nào vừa Breakout.",
                     "\n--- BẢN GHI TRUY VẾT CẢM BIẾN ---",
                     mm_trace
                 ]
@@ -555,36 +464,28 @@ class Auditor:
             allocated_items = []
 
             for idx_code, code_val in enumerate(sorted_dan):
-                k_tier = 1.30 if idx_code == 0 else (1.15 if idx_code in [1, 2] else 0.85)
-                tag = "Mã Động Lượng" 
-                pts_this = int(round(base_pts * multiplier * k_tier))
+                tag = "BẠCH THỦ ĐẢO CHIỀU" if idx_code == 0 else "SONG THỦ LÓT"
+                pts_this = int(round(base_pts * multiplier))
                 cost_this = pts_this * Config.COST_PER_POINT
                 total_von += cost_this
                 allocated_items.append((code_val, tag, pts_this, cost_this))
                 if pts_this > 0:
-                    dan_alloc_lines.append(f"   + Mã [{code_val:02d}] ({tag:<14}) : {pts_this:>3} điểm | Vốn: {cost_this:,.0f} VND")
+                    dan_alloc_lines.append(f"   + Mã [{code_val:02d}] ({tag:<18}) : {pts_this:>3} điểm | Vốn: {cost_this:,.0f} VND")
 
-            alloc_detail_str = "\n".join(dan_alloc_lines) if total_von > 0 else "   👉 HỆ THỐNG XÁC NHẬN KHÓA LỆNH (BẢO TOÀN VỐN)"
+            alloc_detail_str = "\n".join(dan_alloc_lines)
 
             if total_von > 0:
                 pts_needed = math.ceil(total_von / Config.WIN_PER_NHAY)
-                low_p = allocated_items[-1][2]
-                nhay_low_needed = math.ceil(pts_needed / low_p) if low_p > 0 else 0
-                btl_p = allocated_items[0][2]
-                rem_p = max(0, pts_needed - btl_p)
-                breakeven_explanation = (
-                    f"💡 MỤC TIÊU HÒA VỐN       : Cần tổng tối thiểu {pts_needed} ĐIỂM LÔ nổ (Thu về >= {pts_needed * Config.WIN_PER_NHAY:,.0f} VND)\n"
-                    f"   👉 Tương đương khoảng {nhay_low_needed} nháy nổ để hòa/lãi."
-                )
+                breakeven_explanation = f"💡 MỤC TIÊU HÒA VỐN       : Cần {pts_needed} nháy nổ để hòa vốn và bắt đầu lãi."
             else:
-                breakeven_explanation = "💡 MỤC TIÊU HÒA VỐN       : Không khả dụng do Đứng Ngoài."
+                breakeven_explanation = "💡 MỤC TIÊU HÒA VỐN       : Không khả dụng."
 
             lines = [
                 "📑 BÁO CÁO KHUYẾN NGHỊ GIAO DỊCH QUANT CAO CẤP",
                 "=======================================================",
                 f"🎯 PHIÊN GIAO DỊCH MỤC TIÊU: {next_dt.strftime('%d/%m/%Y')}",
                 f"🎚️ CHIẾN LƯỢC ĐỘC TÔN  : {Config.ACTIVE_MODE}",
-                f"📋 DÀN XUNG LỰC TOP V8: [ {dan_goc_str} ]",
+                f"📋 DÀN ĐẢO CHIỀU TOP V9: [ {dan_goc_str} ]",
                 "=======================================================",
                 "📊 HỒ SƠ CHỐT SỐ THƯỞNG KÊ (DỰ BÁO KQXS CAO CẤP)",
                 "-------------------------------------------------------",
@@ -594,12 +495,13 @@ class Auditor:
                 f"{'Lô Kép Bằng':<22} | {pred_data['kep']}",
                 f"{'Dàn Đề 10 Số':<22} | {pred_data['dan_de_10']}",
                 "-------------------------------------------------------",
-                f"💰 QUẢN TRỊ VỐN & CHI TIẾT PHÂN BỔ BẤT ĐỐI XỨNG:",
+                f"💰 QUẢN TRỊ VỐN & CHI TIẾT TÁC CHIẾN:",
                 alloc_detail_str,
                 "-------------------------------------------------------",
                 f"💰 TỔNG VỐN TÁC CHIẾN   : {total_von:,.0f} VNĐ",
                 breakeven_explanation,
                 "\n--- BẢN GHI TRUY VẾT CẢM BIẾN ---",
+                pred_data['sig_trace'],
                 mm_trace
             ]
             return "\n".join(lines)
@@ -639,7 +541,7 @@ class Auditor:
                 sorted_dan = pred_data["sorted_dan_scored"]
                 sl = len(sorted_dan)
                 if sl == 0 or mult <= 0:
-                    lines.append(f"🛑 [{mode_name}] 👉 HỆ THỐNG XÁC NHẬN ĐỨNG NGOÀI")
+                    lines.append(f"🛑 [{mode_name}] 👉 HỆ THỐNG XÁC NHẬN ĐỨNG NGOÀI TỊNH TIẾN")
                     lines.extend(["   --- LOG TRUY VẾT CẢM BIẾN ---", "   " + mm_trace.replace("\n", "\n   ")])
                     return "\n".join(lines)
                     
@@ -649,8 +551,7 @@ class Auditor:
                 hit_details = []
                 
                 for idx_code, code_val in enumerate(sorted_dan):
-                    k_tier = 1.30 if idx_code == 0 else (1.15 if idx_code in [1, 2] else 0.85)
-                    pts_code = int(round(float(pts_per_code_base) * mult * k_tier))
+                    pts_code = int(round(float(pts_per_code_base) * mult))
                     if pts_code > 0:
                         c_code = pts_code * Config.COST_PER_POINT
                         nhay_code = prizes_today.count(code_val)
@@ -665,11 +566,11 @@ class Auditor:
                 lines.extend([
                     f"📌 [{mode_name}]",
                     f" • Danh mục {sl} mã: " + " ".join([f"{x:02d}" for x in sorted_dan]),
-                    f" • Chi tiết trúng: " + (", ".join(hit_details) if hit_details else "🚫 Không trúng mã nào"),
+                    f" • Chi tiết trúng: " + (", ".join(hit_details) if hit_details else "🚫 Không trúng mã nào (hoặc không đánh)"),
                     f" • Tổng vốn: {day_cost/1000:,.0f}k | Thu về: {day_rev/1000:,.0f}k",
                     f" 👉 PnL RÒNG: {lai:+,.0f} VNĐ ({st})\n"
                 ])
-                lines.extend(["   --- LOG TRUY VẾT CẢM BIẾN ---", "   " + mm_trace.replace("\n", "\n   ")])
+                lines.extend(["   --- LOG TRUY VẾT CẢM BIẾN ---", "   " + pred_data['sig_trace'], "   " + mm_trace.replace("\n", "\n   ")])
             lines.append("------------------------------------------------------------------------")
             return "\n".join(lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
@@ -690,7 +591,7 @@ class Auditor:
             
             lines = [
                 f"📑 BÁO CÁO CHI TIẾT TỪNG NGÀY: THÁNG {thang:02d}/{nam}",
-                f"🎚️ LÕI ĐỘC TÔN: V8.0 QUANTUM ARBITRAGE",
+                f"🎚️ LÕI ĐỘC TÔN: V9.0 MEAN REVERSION",
                 "=============================================================================================================================",
                 f"{'NGÀY':<6} | {'MÃ ĐÁNH':<26} | {'VỐN DỒN (k)':<12} | {'THU (k)':<8} | {'LÃI/LỖ (k)':<11} | {'ROI':<8}",
                 "-----------------------------------------------------------------------------------------------------------------------------"
@@ -703,7 +604,7 @@ class Auditor:
                 if ngay_str in db:
                     pred_data, _ = QuantEngine.get_full_prediction(curr, db)
                     mult, _ = QuantEngine.get_mm_multiplier(curr, db)
-                    if pred_data and pred_data["sorted_dan_scored"]:
+                    if pred_data and pred_data["sorted_dan_scored"] and mult > 0:
                         sorted_dan = pred_data["sorted_dan_scored"]
                         sl = len(sorted_dan)
                         dan_str = " ".join([f"{x:02d}" for x in sorted_dan])
@@ -713,8 +614,7 @@ class Auditor:
                         prizes_today = db[ngay_str]["prizes_int"]
                         day_cost, day_rev = 0.0, 0.0
                         for idx_code, code_val in enumerate(sorted_dan):
-                            k_tier = 1.30 if idx_code == 0 else (1.15 if idx_code in [1, 2] else 0.85)
-                            pts_code = int(round(base_pts * mult * k_tier))
+                            pts_code = int(round(base_pts * mult))
                             if pts_code > 0:
                                 c_c = pts_code * Config.COST_PER_POINT
                                 nh_c = prizes_today.count(code_val)
@@ -760,7 +660,7 @@ class Auditor:
             lines = [
                 "📑 BÁO CÁO ĐẠI KẾ TOÁN QUÉT CHU KỲ TỔNG HỢP",
                 "===================================================================================================================",
-                f"📈 KẾT QUẢ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')} (LÕI V8.0 QUANTUM)",
+                f"📈 KẾT QUẢ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')} (LÕI V9.0 MEAN REVERSION)",
                 "==================================================================================================================="
             ]
             curr = start_dt
@@ -770,13 +670,12 @@ class Auditor:
                 if ngay_str in db:
                     pred_data, _ = QuantEngine.get_full_prediction(curr, db)
                     mult, _ = QuantEngine.get_mm_multiplier(curr, db)
-                    if pred_data and pred_data["sorted_dan_scored"]:
+                    if pred_data and pred_data["sorted_dan_scored"] and mult > 0:
                         sorted_dan = pred_data["sorted_dan_scored"]
                         prizes_today = db[ngay_str]["prizes_int"]
                         day_cost, day_rev = 0.0, 0.0
                         for idx_code, code_val in enumerate(sorted_dan):
-                            k_tier = 1.30 if idx_code == 0 else (1.15 if idx_code in [1, 2] else 0.85)
-                            pts_code = int(round(base_pts * mult * k_tier))
+                            pts_code = int(round(base_pts * mult))
                             if pts_code > 0:
                                 c_c = pts_code * Config.COST_PER_POINT
                                 nh_c = prizes_today.count(code_val)
@@ -842,10 +741,10 @@ class Auditor:
             total_days_scanned = (end_dt - start_dt).days + 1
             
             prompt_lines = [
-                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG V8.0 QUANTUM ARBITRAGE]",
+                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG V9.0 MEAN REVERSION]",
                 f"1. PHIÊN BẢN HỆ THỐNG: {Config.VERSION}",
                 f"2. QUÉT TRỌN VẸN LỊCH SỬ {total_days_scanned} NGÀY QUA ({start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')})\n",
-                "📊 [BÁO CÁO CỤ THỂ CHIẾN LƯỢC ĐỘNG LƯỢNG KẾT HỢP]"
+                "📊 [BÁO CÁO CỤ THỂ CHIẾN LƯỢC BẮT ĐÁY LÔ GAN ĐẢO CHIỀU]"
             ]
             
             curr = start_dt
@@ -860,14 +759,13 @@ class Auditor:
                     pred_data, _ = QuantEngine.get_full_prediction(curr, db)
                     mult, _ = QuantEngine.get_mm_multiplier(curr, db)
                     
-                    if pred_data and pred_data["sorted_dan_scored"]:
+                    if pred_data and pred_data["sorted_dan_scored"] and mult > 0:
                         sorted_dan = pred_data["sorted_dan_scored"]
                         prizes_today = db[str_dt]["prizes_int"]
                         day_cost, day_rev = 0.0, 0.0
                         
                         for idx_code, code_val in enumerate(sorted_dan):
-                            k_tier = 1.30 if idx_code == 0 else (1.15 if idx_code in [1, 2] else 0.85)
-                            pts_code = int(round(Config.BASE_PTS * mult * k_tier))
+                            pts_code = int(round(Config.BASE_PTS * mult))
                             if pts_code > 0:
                                 c_c = pts_code * Config.COST_PER_POINT
                                 nh_c = prizes_today.count(code_val)
@@ -884,8 +782,9 @@ class Auditor:
                             if lai > 0: wins += 1
                             else: losses += 1
                         else:
-                            if len(sorted_dan) > 0:
-                                days_skipped += 1
+                            days_skipped += 1
+                    else:
+                        days_skipped += 1
 
                 curr += timedelta(days=1)
 
@@ -898,8 +797,8 @@ class Auditor:
             prompt_lines.extend([
                 f"➤ TỔNG QUAN LÕI ĐỘC TÔN: {Config.ACTIVE_MODE}",
                 f"   - Tổng số ngày quét : {total_days_scanned} ngày",
-                f"   - Số ngày Đứng ngoài: {days_skipped} ngày (Thị trường rác, chặn lệnh để bảo toàn vốn)",
-                f"   - Số ngày Xuống tiền: {days_traded} ngày (Bắn nhồi Vol khi có Trend)",
+                f"   - Số ngày Đứng ngoài: {days_skipped} ngày (Chưa xuất hiện điểm nổ Lô Gan / Khóa lệnh)",
+                f"   - Số ngày Xuống tiền: {days_traded} ngày (Chỉ rải đạn khi có Lô Rơi đảo chiều)",
                 f"   - Win/Loss (Thực)   : {wins}W / {losses}L",
                 "-" * 65,
                 f"💰 KẾT QUẢ ĐẦU TƯ THỰC TẾ TRÊN {days_traded} NGÀY ĐÁNH:",
@@ -912,10 +811,10 @@ class Auditor:
             ])
 
             prompt_lines.extend([
-                "\n⚠️ XÁC NHẬN CƠ CHẾ V8.0 QUANTUM ARBITRAGE (100% MINH BẠCH, KHÔNG OVERFIT):",
-                "1. CHỈ BÁO XUNG LỰC (MOMENTUM): Cảm biến quét gia quyền thời gian 3-7-14 ngày. Trọng tâm vào các con số đang có nhịp rơi nóng. Tự động trảm sạch Lô gan.",
-                "2. CHỈ BÁO THỊ TRƯỜNG (MARKET REGIME): Nếu test ngược 10 ngày cho thấy EV quá thấp (<30% Win), thuật toán chốt cứng hệ số 0.0, ép người chơi ĐỨNG NGOÀI.",
-                "3. QUẢN TRỊ RỦI RO BẤT ĐỐI XỨNG: Khi thua (đứt nhịp), tự động bóp vốn về 0.5x để giảm thiểu sát thương. Khi thắng, nhồi lệnh x1.5x để tối đa hóa Lợi nhuận (Gồng Lời)."
+                "\n⚠️ XÁC NHẬN CƠ CHẾ V9.0 ĐẢO CHIỀU (MEAN REVERSION) - CỰC ĐOAN MINH BẠCH:",
+                "1. DIỆT TRỪ CƯỢC RÁC: Chỉ xuất lệnh TỐI ĐA 1-3 mã. Không đánh dàn dàn trải để triệt tiêu lợi thế EV Âm của nhà cái.",
+                "2. CHỈ BÁO ĐẢO CHIỀU: Đéo đánh số hot nữa. Quét tìm Lô Gan bị nhốt 10 ngày, VỪA NỔ đúng hôm qua -> Nhảy vào bắt ngay Lô Rơi trong 48h.",
+                "3. HARD STOP-LOSS: Chạm chuỗi 3 lệnh gãy liên tiếp tự động ngắt cầu dao (Multiplier = 0) cho đến khi bắt đầu chu kỳ mới."
             ])
             return "\n".join(prompt_lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
@@ -1012,7 +911,7 @@ def create_ui():
         with gr.Column(visible=False) as col_6:
             gr.Markdown("### 🤖 BỘ NÃO AI - QUÉT TOÀN BỘ LỊCH SỬ DB")
             btn_6 = gr.Button("🧬 BẮT ĐẦU QUÉT TOÀN DB", variant="primary")
-            out_6 = gr.Textbox(label="Báo cáo Tổng hợp V8.0", lines=25)
+            out_6 = gr.Textbox(label="Báo cáo Tổng hợp V9.0", lines=25)
             btn_6.click(Auditor.phan_he_6_master_diagnostic_prompt, inputs=[], outputs=out_6)
 
         btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2])
