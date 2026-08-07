@@ -11,10 +11,10 @@ import glob
 import json
 import threading
 import concurrent.futures
+import io
 from datetime import datetime, timedelta
 import traceback
 import gradio as gr
-import io
 
 try:
     import requests
@@ -52,7 +52,7 @@ class Config:
         "🎰 5. BẢNG KẾT QUẢ LOTO TRUYỀN THỐNG",
         "🤖 6. BỘ NÃO AI (QUÉT LỊCH SỬ DB)",
         "⚖️ 7. HỆ THỐNG RADAR ARBITRAGE (TỶ LỆ)",
-        "📈 8. CẢM BIẾN DÒNG TIỀN CHỨNG KHOÁN (EOD)"
+        "📈 8. CẢM BIẾN DÒNG TIỀN CHỨNG KHOÁN (AUTO-API)"
     ]
 
 # ==============================================================================
@@ -333,7 +333,7 @@ class DatabaseManager:
         return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE (LÕI LOTO V5.8)
+# 🧠 BLOCK 5: QUANT ENGINE (LÕI LOTO V6.0)
 # ==============================================================================
 class QuantEngine:
     _sig_cache = {}
@@ -471,7 +471,7 @@ class QuantEngine:
             "kep": lo_kep,
             "dan_de_10": dan_de_10,
             "sorted_dan_scored": final_dan,
-            "sig_trace": f"[Lõi V5.6] Bắt được {len(final_dan)} mã khuyết. Xếp hạng BTL, STL thành công."
+            "sig_trace": f"[Lõi V6.0] Bắt được {len(final_dan)} mã khuyết. Xếp hạng BTL, STL thành công."
         }, "OK"
 
     @staticmethod
@@ -640,7 +640,7 @@ class QuantEngine:
             mult = v1_base * sigmoid_macro * slope_scale * vol_scale * cppi_scale
             active_ver = f"RISK-PARITY TIERED (Sigmoid={sigmoid_macro:.2f} | Slope_scale={slope_scale:.2f})"
 
-        trace_log.append(f"🤖 [V5.8 ROBUST TIERED] Chế độ: {active_ver}")
+        trace_log.append(f"🤖 [V6.0 ROBUST TIERED] Chế độ: {active_ver}")
         trace_log.append(f"[MM Result] Hệ số vốn cơ sở chuẩn hóa = x{mult:.2f}")
         res = (mult, "\n".join(trace_log))
         QuantEngine._mm_cache[cache_key] = res
@@ -734,7 +734,7 @@ class Auditor:
                 "=======================================================",
                 f"🎯 PHIÊN GIAO DỊCH MỤC TIÊU: {next_dt.strftime('%d/%m/%Y')}",
                 f"🎚️ CHIẾN LƯỢC ĐỘC TÔN  : {Config.ACTIVE_MODE}",
-                f"📋 DÀN SỐ GỐC TỪ LÕI V5.6: [ {dan_goc_str} ] (Đã tìm thấy đúng {so_luong_lo} mã)",
+                f"📋 DÀN SỐ GỐC TỪ LÕI V6.0: [ {dan_goc_str} ] (Đã tìm thấy đúng {so_luong_lo} mã)",
                 "=======================================================",
                 "📊 HỒ SƠ CHỐT SỐ THƯỞNG KÊ (DỰ BÁO KQXS CAO CẤP)",
                 "-------------------------------------------------------",
@@ -843,7 +843,7 @@ class Auditor:
             
             lines = [
                 f"📑 BÁO CÁO CHI TIẾT TỪNG NGÀY: THÁNG {thang:02d}/{nam}",
-                f"🎚️ LÕI ĐỘC TÔN: V5.8 ROBUST TIERED",
+                f"🎚️ LÕI ĐỘC TÔN: V6.0 ROBUST TIERED",
                 "=============================================================================================================================",
                 f"{'NGÀY':<6} | {'MÃ ĐÁNH':<26} | {'VỐN DỒN (k)':<12} | {'THU (k)':<8} | {'LÃI/LỖ (k)':<11} | {'ROI':<8}",
                 "-----------------------------------------------------------------------------------------------------------------------------"
@@ -913,7 +913,7 @@ class Auditor:
             lines = [
                 "📑 BÁO CÁO ĐẠI KẾ TOÁN QUÉT CHU KỲ TỔNG HỢP",
                 "===================================================================================================================",
-                f"📈 KẾT QUẢ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')} (LÕI V5.8 TIERED ĐỘC TÔN)",
+                f"📈 KẾT QUẢ TỪ {start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')} (LÕI V6.0 TIERED ĐỘC TÔN)",
                 "==================================================================================================================="
             ]
             curr = start_dt
@@ -995,10 +995,10 @@ class Auditor:
             total_days_scanned = (end_dt - start_dt).days + 1
             
             prompt_lines = [
-                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG V5.8 ROBUST - DÀNH CHO BÁO CÁO ĐỊNH LƯỢNG CHUẨN TRUY VẾT]",
+                f"[HỒ SƠ SINH HỌC TOÀN HỆ THỐNG V6.0 ROBUST - DÀNH CHO BÁO CÁO ĐỊNH LƯỢNG CHUẨN TRUY VẾT]",
                 f"1. PHIÊN BẢN HỆ THỐNG: {Config.VERSION}",
                 f"2. QUÉT TRỌN VẸN LỊCH SỬ {total_days_scanned} NGÀY QUA ({start_dt.strftime('%d/%m/%Y')} ĐẾN {end_dt.strftime('%d/%m/%Y')})\n",
-                "📊 [BÁO CÁO HIỆU SUẤT ĐỘC TÔN V5.8]"
+                "📊 [BÁO CÁO HIỆU SUẤT ĐỘC TÔN V6.0]"
             ]
             
             curr = start_dt
@@ -1050,7 +1050,7 @@ class Auditor:
             ])
 
             prompt_lines.extend([
-                "\n⚠️ XÁC NHẬN BÁO CÁO V5.8 ROBUST TIERED QUANT ENGINE:",
+                "\n⚠️ XÁC NHẬN BÁO CÁO V6.0 ROBUST TIERED QUANT ENGINE:",
                 "1. Tích hợp cơ chế Dồn vốn Bậc thang Risk-Parity chuẩn hóa: Bạch Thủ Lô (1.30x), Song Thủ Lô (1.15x), Lô Dàn Lót (0.85x).",
                 "2. Đã thêm cơ chế Cache (Bộ nhớ đệm) giải quyết triệt để lỗi Load chậm và tràn RAM Menu 6.",
                 "3. Hệ thống chạy 1 lõi toán học thuần túy duy nhất, không rườm rà, đảm bảo minh bạch và tối ưu tuyệt đối."
@@ -1069,7 +1069,6 @@ class OddsCrawler:
     
     @staticmethod
     def crawl_bookie_a():
-        # Dành cho các trang web fetch data bằng API (XHR/Fetch)
         try:
             return {"name": "Sàn A (Mẫu Crawl API)", "payout": 99.0, "rebate_percent": 1.0}
         except Exception as e:
@@ -1077,7 +1076,6 @@ class OddsCrawler:
 
     @staticmethod
     def crawl_bookie_b():
-        # Dành cho cào HTML trực tiếp bằng Regex
         try:
             return {"name": "Sàn B (Mẫu Crawl HTML)", "payout": 99.5, "rebate_percent": 0.5}
         except Exception as e:
@@ -1167,69 +1165,93 @@ class ArbitrageEngine:
         return "\n".join(lines)
 
 # ==============================================================================
-# 📈 BLOCK 8: CHỨNG KHOÁN (MANUAL EOD QUANT SCANNER)
+# 📈 BLOCK 8: CHỨNG KHOÁN (AUTO-API QUANT SCANNER & EXCEL EXPORTER)
 # ==============================================================================
 class StockQuantEngine:
     @staticmethod
-    def parse_manual_data(raw_text):
+    def fetch_tcbs_api(ticker, days=120):
         try:
-            df = pd.read_csv(io.StringIO(raw_text.strip()), sep=r'\s+|,|\t', engine='python')
-            if len(df.columns) < 3:
-                return None, "🛑 LỖI: Yêu cầu ít nhất 3 cột (Ngày, Giá, KhốiLượng)."
-                
-            df.columns = ['Date', 'Close', 'Volume'] + list(df.columns[3:])
-            df['Close'] = df['Close'].astype(str).str.replace(',', '').astype(float)
-            df['Volume'] = df['Volume'].astype(str).str.replace(',', '').astype(float)
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days)
             
+            from_ts = int(start_date.timestamp())
+            to_ts = int(end_date.timestamp())
+            
+            url = f"https://apipubaws.tcbs.com.vn/stock-insight/v1/stock/bars-long-term?ticker={ticker.upper()}&type=stock&resolution=D&from={from_ts}&to={to_ts}"
+            
+            res = requests.get(url, timeout=10)
+            if res.status_code != 200:
+                return None, f"🛑 LỖI API: Sàn từ chối kết nối (Mã lỗi {res.status_code})"
+                
+            data = res.json()
+            if not data.get('data'):
+                return None, f"🛑 LỖI DỮ LIỆU: Không tìm thấy mã {ticker.upper()} hoặc sàn chưa trả data."
+                
+            df = pd.DataFrame(data['data'])
+            
+            df['Date'] = pd.to_datetime(df['tradingDate']).dt.strftime('%d/%m/%Y')
+            df['Close'] = df['close']
+            df['Volume'] = df['volume']
+            
+            df = df[['Date', 'Close', 'Volume']].sort_index(ascending=True).reset_index(drop=True)
             return df, "OK"
         except Exception as e:
-            return None, f"🛑 LỖI PARSE DỮ LIỆU: {str(e)}"
+            return None, f"🛑 LỖI TRUY VẾT API: {str(e)}"
 
     @staticmethod
-    def run_single_stock_sensors(raw_text, ticker):
-        df, msg = StockQuantEngine.parse_manual_data(raw_text)
-        if df is None: return msg
+    def run_auto_stock_sensors(ticker, days=120):
+        df, msg = StockQuantEngine.fetch_tcbs_api(ticker, days)
+        if df is None: 
+            return msg, gr.update(visible=False)
         
         if len(df) < 21:
-            return f"🛑 THIẾU DỮ LIỆU: Cần ít nhất 21 phiên để tính MA20 và Z-Score. Hiện tại có {len(df)} phiên."
+            return f"🛑 THIẾU DỮ LIỆU: Cần ít nhất 21 phiên. API chỉ trả về {len(df)} phiên.", gr.update(visible=False)
+
+        filename = f"Data_Quant_{ticker.upper()}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+        df.to_excel(filename, index=False)
 
         df['Prev_Close'] = df['Close'].shift(1)
         df['MA20_Price'] = df['Close'].rolling(window=20).mean()
         df['StdDev20_Price'] = df['Close'].rolling(window=20).std()
         df['MA20_Vol'] = df['Volume'].rolling(window=20).mean()
+        
         df['Z_Score'] = (df['Close'] - df['MA20_Price']) / df['StdDev20_Price']
         
         latest = df.iloc[-1]
         alerts = []
         
-        vol_ratio = latest['Volume'] / latest['MA20_Vol']
+        vol_ratio = latest['Volume'] / latest['MA20_Vol'] if latest['MA20_Vol'] > 0 else 0
         if vol_ratio > 2.5 and latest['Close'] > latest['Prev_Close']:
-            alerts.append(f"🟢 [SMART MONEY]: NỔ KHỐI LƯỢNG! Vol gấp {vol_ratio:.1f} lần trung bình. Tiền lớn đang gom hàng, cân nhắc MUA BREAKOUT.")
+            alerts.append(f"🟢 [SMART MONEY]: NỔ KHỐI LƯỢNG! Vol gấp {vol_ratio:.1f} lần trung bình. MUA BREAKOUT.")
             
         z = latest['Z_Score']
-        if z < -2.0:
-            alerts.append(f"🟣 [QUÁ BÁN]: Z-Score = {z:.2f}. Giá rơi tự do vượt mốc 2 độ lệch chuẩn. Chờ nến đảo chiều để BẮT ĐÁY.")
-        elif z > 2.0:
-            alerts.append(f"🔴 [QUÁ MUA]: Z-Score = {z:.2f}. Cổ phiếu kéo hưng phấn ảo, rủi ro điều chỉnh rất cao. Khuyến nghị CHỐT LỜI.")
+        if pd.notna(z):
+            if z < -2.0:
+                alerts.append(f"🟣 [QUÁ BÁN]: Z-Score = {z:.2f}. Giá rơi quá mốc 2 độ lệch chuẩn. CHUẨN BỊ BẮT ĐÁY.")
+            elif z > 2.0:
+                alerts.append(f"🔴 [QUÁ MUA]: Z-Score = {z:.2f}. Hưng phấn ảo, rủi ro cực cao. CHỐT LỜI.")
             
         if not alerts:
-            alerts.append("⚪ [TRẠNG THÁI BÌNH THƯỜNG]: Cổ phiếu dao động trong vùng an toàn, không có tín hiệu bất thường.")
+            alerts.append("⚪ [TRẠNG THÁI BÌNH THƯỜNG]: Dao động an toàn, không có tín hiệu bất thường.")
             
         lines = [
             f"📑 BÁO CÁO CẢM BIẾN DÒNG TIỀN MÃ: {ticker.upper()}",
             "=======================================================",
+            f"✅ ĐÃ TỰ ĐỘNG CÀO {len(df)} PHIÊN TỪ API NGẦM TCBS",
+            "=======================================================",
             f"📅 Phiên giao dịch gần nhất : {latest['Date']}",
-            f"💵 Giá Đóng Cửa             : {latest['Close']:,.2f}",
-            f"📊 Khối Lượng               : {latest['Volume']:,.0f}",
+            f"💵 Giá Đóng Cửa             : {latest['Close']:,.0f} VNĐ",
+            f"📊 Khối Lượng               : {latest['Volume']:,.0f} Cổ phiếu",
             "-------------------------------------------------------",
-            f"• MA20 Giá                  : {latest['MA20_Price']:,.2f}",
+            f"• MA20 Giá                  : {latest['MA20_Price']:,.0f}",
             f"• Chỉ số Z-Score            : {latest['Z_Score']:+.2f}",
             f"• Đột biến Vol (Vol Ratio)  : x{vol_ratio:.2f}",
             "=======================================================",
             "🤖 KHUYẾN NGHỊ TỪ LÕI QUANT:"
         ]
         lines.extend(alerts)
-        return "\n".join(lines)
+        
+        return "\n".join(lines), gr.update(value=filename, visible=True)
 
 # ==============================================================================
 # 🎨 UI & APP LAUNCHER
@@ -1262,7 +1284,7 @@ def create_ui():
             title_2 = gr.Markdown(f"#### KHUYẾN NGHỊ GIAO DỊCH KỲ TỚI: {next_predict_dt_init.strftime('%d/%m/%Y') if next_predict_dt_init else ''}")
             
             gr.Markdown("---")
-            gr.Markdown("### 📥 TẢI DATABASE VỀ MÁY TRỰC TIẾP")
+            gr.Markdown("### 📥 TẢI DATABASE LOTO VỀ MÁY TRỰC TIẾP")
             with gr.Row():
                 btn_prepare_dl = gr.Button("1️⃣ BẤM ĐỂ TRÍCH XUẤT FILE TỪ MÁY CHỦ", variant="primary")
             with gr.Row():
@@ -1328,7 +1350,7 @@ def create_ui():
         with gr.Column(visible=False) as col_6:
             gr.Markdown("### 🤖 BỘ NÃO AI - QUÉT TOÀN BỘ LỊCH SỬ DB")
             btn_6 = gr.Button("🧬 BẮT ĐẦU QUÉT TOÀN DB", variant="primary")
-            out_6 = gr.Textbox(label="Báo cáo Tổng hợp V5.8", lines=25)
+            out_6 = gr.Textbox(label="Báo cáo Tổng hợp V6.0", lines=25)
             btn_6.click(Auditor.phan_he_6_master_diagnostic_prompt, inputs=[], outputs=out_6)
 
         # [Cột 7] HỆ THỐNG RADAR ARBITRAGE
@@ -1369,23 +1391,29 @@ def create_ui():
                 out_ev = gr.Textbox(label="Báo cáo EV", lines=12)
                 btn_ev.click(ArbitrageEngine.calculate_loto_ev, inputs=[cost_loto, payout_loto, rebate_loto], outputs=out_ev)
 
-        # [Cột 8] CẢM BIẾN CHỨNG KHOÁN (MANUAL EOD)
+        # [Cột 8] CẢM BIẾN CHỨNG KHOÁN (AUTO-API EOD)
         with gr.Column(visible=False) as col_8:
-            gr.Markdown("### 🧠 HỆ THỐNG CẢM BIẾN DÒNG TIỀN CHỨNG KHOÁN (EOD SCANNER)")
-            gr.Markdown("**Hướng dẫn:** Copy ít nhất 21 dòng dữ liệu từ Excel/FireAnt và Paste vào đây. Cột bắt buộc (Cách nhau bằng Tab hoặc Dấu phẩy): `Ngày   Giá_Đóng_Cửa   Khối_Lượng`")
+            gr.Markdown("### 🧠 HỆ THỐNG CẢM BIẾN CHỨNG KHOÁN (AUTO-API SCANNER)")
+            gr.Markdown("**Hướng dẫn:** Nhập mã cổ phiếu. Hệ thống sẽ tự động móc API ngầm của Sàn để kéo dữ liệu chuẩn xác nhất, phân tích và xuất file Excel cho bạn.")
             
             with gr.Row():
-                stock_ticker = gr.Textbox(label="Mã Cổ Phiếu (Ví dụ: SSI, HPG)", value="SSI")
+                stock_ticker = gr.Textbox(label="Mã Cổ Phiếu (Ví dụ: SSI, HPG, FPT)", value="SSI")
+                days_to_fetch = gr.Slider(minimum=30, maximum=365, value=120, step=10, label="Số ngày muốn cào lịch sử")
                 
-            raw_stock_data = gr.Textbox(
-                label="Dán Dữ Liệu Lịch Sử", 
-                lines=10, 
-                placeholder="20/07/2026   32.5   1500000\n21/07/2026   33.0   4500000\n..."
-            )
-            
-            btn_scan_stock = gr.Button("🚀 QUÉT CẢM BIẾN ĐỊNH LƯỢNG", variant="primary")
+            with gr.Row():
+                btn_auto_stock = gr.Button("🚀 CÀO DỮ LIỆU & QUÉT CẢM BIẾN", variant="primary")
+                
             out_stock_report = gr.Textbox(label="Báo cáo Phân tích Phím Lệnh", lines=15)
-            btn_scan_stock.click(StockQuantEngine.run_single_stock_sensors, inputs=[raw_stock_data, stock_ticker], outputs=out_stock_report)
+            
+            gr.Markdown("---")
+            gr.Markdown("### 📥 XUẤT DATABASE VĨNH VIỄN")
+            dl_stock_file = gr.DownloadButton("📥 BẤM VÀO ĐÂY ĐỂ TẢI FILE EXCEL VỪA CÀO", variant="primary", visible=False)
+            
+            btn_auto_stock.click(
+                StockQuantEngine.run_auto_stock_sensors, 
+                inputs=[stock_ticker, days_to_fetch], 
+                outputs=[out_stock_report, dl_stock_file]
+            )
 
         # Mapping Events Loto Cột 1
         btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2])
