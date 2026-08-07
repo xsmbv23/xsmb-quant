@@ -1179,7 +1179,15 @@ class StockQuantEngine:
             
             url = f"https://apipubaws.tcbs.com.vn/stock-insight/v1/stock/bars-long-term?ticker={ticker.upper()}&type=stock&resolution=D&from={from_ts}&to={to_ts}"
             
-            res = requests.get(url, timeout=10)
+            # Mặt nạ trình duyệt để vượt tường lửa 403 TCBS
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/plain, */*',
+                'Origin': 'https://tcinvest.tcbs.com.vn',
+                'Referer': 'https://tcinvest.tcbs.com.vn/'
+            }
+            
+            res = requests.get(url, headers=headers, timeout=10)
             if res.status_code != 200:
                 return None, f"🛑 LỖI API: Sàn từ chối kết nối (Mã lỗi {res.status_code})"
                 
