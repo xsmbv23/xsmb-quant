@@ -13,23 +13,22 @@ import gradio as gr
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG MASTER QUANT ENGINE
 # ==============================================================================
 class Config:
-    VERSION = "V7.1 MASTER QUANT ENGINE (PANEL DATABASE & GMT+7 AUTO-APPEND)" 
+    VERSION = "V7.3 CLEAN UI QUANT ENGINE (NO GRADIO MENU / GMT+7)" 
     MASTER_DB_FILE = "Master_Stock_Database.xlsx"
-    ACTIVE_MODE = "🤖 [VERSION 7.1] PRO QUANT ENGINE (SINGLE MASTER DATABASE & 7 SENSORS)"
+    ACTIVE_MODE = "🤖 [VERSION 7.3] PRO QUANT ENGINE (HIDDEN SYSTEM MENU UI)"
 
 class Utils:
     @staticmethod
     def get_vn_time():
-        # Ép chuẩn múi giờ GMT+7 Việt Nam tuyệt đối dù Server đặt ở Mỹ/Sing
         return datetime.utcnow() + timedelta(hours=7)
 
 # ==============================================================================
-# 📈 BLOCK 2: CHỨNG KHOÁN QUANT ENGINE (CÀO GỘP & CẬP NHẬT LŨY TIẾN)
+# 📈 BLOCK 2: CHỨNG KHOÁN QUANT ENGINE (PHÂN BIỆT MÃ MỚI / MÃ CŨ)
 # ==============================================================================
 class StockQuantEngine:
     @staticmethod
     def fetch_stock_data(ticker, days=180):
-        # 1. THỬ DNSE ENTRADE OPEN API (Mở rộng cho Cloud)
+        # 1. THỬ DNSE ENTRADE OPEN API
         try:
             end_date = Utils.get_vn_time()
             start_date = end_date - timedelta(days=days + 60)
@@ -55,7 +54,7 @@ class StockQuantEngine:
         except Exception:
             pass
 
-        # 2. THỬ YAHOO FINANCE GLOBAL (Fallback)
+        # 2. THỬ YAHOO FINANCE GLOBAL
         try:
             yf_ticker = f"{ticker.upper()}.VN"
             url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_ticker}?range=1y&interval=1d"
@@ -179,69 +178,76 @@ class StockQuantEngine:
         }
 
     # ==============================================================================
-    # 🗄️ QUẢN LÝ DATABASE MASTER GỘP TẤT CẢ CÁC MÃ (MASTER_STOCK_DATABASE.XLSX)
+    # 🗄️ MASTER DATABASE LOGIC & TICKER TRACKER
     # ==============================================================================
     @staticmethod
     def create_or_update_master_db(raw_ticker_list, days_history=180):
-        tickers = [t.strip().upper() for t in raw_ticker_list.replace(',', ' ').split() if t.strip()]
-        if not tickers: return "🛑 Nhập ít nhất 1 mã cổ phiếu.", gr.update(visible=False)
+        input_tickers = [t.strip().upper() for t in raw_ticker_list.replace(',', ' ').split() if t.strip()]
+        if not input_tickers: 
+            return "🛑 Vui lòng nhập ít nhất 1 mã cổ phiếu.", "", "", gr.update(visible=False)
 
         master_file = Config.MASTER_DB_FILE
         existing_df = pd.DataFrame()
+        old_tickers = []
         
         if os.path.exists(master_file):
             try:
                 existing_df = pd.read_excel(master_file)
+                if 'Ticker' in existing_df.columns:
+                    old_tickers = existing_df['Ticker'].unique().tolist()
             except Exception: pass
 
         new_dfs = []
         log_msgs = []
+        successfully_fetched_tickers = []
 
-        for t in tickers:
+        for t in input_tickers:
             df_new, src = StockQuantEngine.fetch_stock_data(t, days_history)
             if df_new is not None and not df_new.empty:
                 new_dfs.append(df_new)
-                log_msgs.append(f"✅ {t}: Lấy {len(df_new)} phiên từ {src}")
+                successfully_fetched_tickers.append(t)
+                log_msgs.append(f"✅ {t}: Lấy thành công {len(df_new)} phiên từ {src}")
             else:
                 log_msgs.append(f"❌ {t}: Lỗi kết nối API")
 
         if not new_dfs:
-            return "🛑 KHÔNG LẤY ĐƯỢC DỮ LIỆU MÃ NÀO.\n" + "\n".join(log_msgs), gr.update(visible=False)
+            return "🛑 KHÔNG LẤY ĐƯỢC DỮ LIỆU MÃ NÀO.\n" + "\n".join(log_msgs), "", "", gr.update(visible=False)
 
         combined_new = pd.concat(new_dfs, ignore_index=True)
 
         if not existing_df.empty:
-            # Gộp dữ liệu cũ và mới, xóa bỏ trùng lặp dựa trên [Ticker, Date]
             final_df = pd.concat([existing_df, combined_new], ignore_index=True)
             final_df = final_df.drop_duplicates(subset=['Ticker', 'Date'], keep='last')
         else:
             final_df = combined_new
 
-        # Sắp xếp lại dữ liệu cho chuẩn hóa
         final_df['dt_temp'] = pd.to_datetime(final_df['Date'], format='%d/%m/%Y')
         final_df = final_df.sort_values(by=['Ticker', 'dt_temp'], ascending=[True, True]).drop(columns=['dt_temp'])
-
         final_df.to_excel(master_file, index=False)
 
-        unique_tickers = final_df['Ticker'].unique().tolist()
-        summary = (
-            f"📑 BÁO CÁO BƠM DỮ LIỆU VÀO MASTER DATABASE SERVER\n"
+        all_current_tickers = final_df['Ticker'].unique().tolist()
+        newly_added_tickers = [t for t in successfully_fetched_tickers if t not in old_tickers]
+
+        str_old = ", ".join(old_tickers) if old_tickers else "Chưa có (Lần đầu khởi tạo)"
+        str_new = ", ".join(newly_added_tickers) if newly_added_tickers else "Không có mã mới (Chỉ cập nhật mã cũ)"
+
+        summary_log = (
+            f"📑 BÁO CÁO CẬP NHẬT TRẠM BƠM DATABASE SERVER\n"
             f"=========================================================\n"
-            f"⏱️ Múi giờ thực thi (GMT+7) : {Utils.get_vn_time().strftime('%d/%m/%Y %H:%M:%S')}\n"
-            f"💾 File Database Tổng       : {master_file}\n"
-            f"📊 Tổng số dòng dữ liệu      : {len(final_df):,} dòng\n"
-            f"📌 Danh mục mã đang lưu     : {', '.join(unique_tickers)}\n"
+            f"⏱️ Múi giờ thực thi (GMT+7 Hà Nội) : {Utils.get_vn_time().strftime('%d/%m/%Y %H:%M:%S')}\n"
+            f"💾 File Database Tổng               : {master_file}\n"
+            f"📊 Tổng quy mô Database            : {len(final_df):,} dòng dữ liệu ({len(all_current_tickers)} mã)\n"
             f"=========================================================\n"
-            f"CHI TIẾT TIẾN TRÌNH CÀO:\n" + "\n".join(log_msgs)
+            f"CHI TIẾT LỊCH SỬ BƠM DỮ LIỆU:\n" + "\n".join(log_msgs)
         )
 
-        return summary, gr.update(value=master_file, visible=True)
+        return summary_log, str_old, str_new, gr.update(value=master_file, visible=True)
 
     @staticmethod
     def run_omni_radar_scanner():
         master_file = Config.MASTER_DB_FILE
         if not os.path.exists(master_file):
-            return "🛑 CHƯA CÓ MASTER DATABASE TRÊN SERVER. Vui lòng sang Tab 3 bấm khởi tạo Database trước."
+            return "🛑 CHƯA CÓ MASTER DATABASE TRÊN SERVER. Vui lòng sang Tab 3 bấm nạp dữ liệu trước."
 
         try:
             full_df = pd.read_excel(master_file)
@@ -302,18 +308,46 @@ class StockQuantEngine:
             return f"🛑 LỖI ĐỌC MASTER DATABASE: {str(e)}"
 
 # ==============================================================================
-# 🎨 UI & DASHBOARD LAUNCHER
+# 🎨 UI & DASHBOARD LAUNCHER (CUSTOM CSS TO HIDE MENU & FOOTER)
 # ==============================================================================
+# CSS ÉP ẨN NÚT 3 DẤU CHẤM VÀ FOOTER
+custom_css = """
+/* Ẩn nút 3 dấu chấm (Header Menu) */
+#component-0 .secondary, button[aria-label="Settings"], .type-button, button.aria-button {
+    display: none !important;
+}
+header button, header .type-button, .header-button {
+    display: none !important;
+}
+.gr-button-secondary, .gr-button-tool {
+    display: none !important;
+}
+
+/* Ẩn Footer Gradio */
+footer {
+    display: none !important;
+}
+.footer {
+    display: none !important;
+}
+
+/* Tối ưu khung tràn viền */
+.container {
+    max-width: 100% !important;
+    padding: 10px !important;
+}
+"""
+
 def create_ui():
-    with gr.Blocks(title="STOCK QUANT ENGINE V7.1", theme=gr.themes.Default(primary_hue="orange")) as demo:
+    with gr.Blocks(title="STOCK QUANT ENGINE V7.3", css=custom_css, theme=gr.themes.Default(primary_hue="orange")) as demo:
         gr.Markdown(f"# 🚀 PRO STOCK QUANT ENGINE {Config.VERSION}")
-        gr.Markdown(f"**Trạng thái Múi Giờ:** GMT+7 (Hà Nội) | **Chế độ:** Master Panel Database Lũy Tiến")
+        gr.Markdown(f"**Trạng thái Múi Giờ:** GMT+7 (Hà Nội) | **Giao diện:** Sạch sẽ (Ẩn Menu Hệ Thống)")
 
         with gr.Tabs():
-            # TAB 1: OMNI QUANT RADAR QUÉT TỪ MASTER DB
+            # TAB 1: OMNI QUANT RADAR
             with gr.TabItem("🔥 1. OMNI QUANT RADAR (Quét Cảm Biến Danh Mục Master DB)"):
                 gr.Markdown("### 📡 CHẠY 7 SIÊU CẢM BIẾN TRÊN TOÀN BỘ MASTER DATABASE")
-                gr.Markdown("Bấm nút để quét toàn bộ các mã đang lưu trong file Database tổng (`Master_Stock_Database.xlsx`), phân tích 7 Cảm Biến và xuất Bảng Lệnh Tác Chiến.")
+                gr.Markdown("Bấm nút để quét toàn bộ các mã đang lưu trong file Database tổng (`Master_Stock_Database.xlsx`).")
                 
                 btn_run_omni_radar = gr.Button("🚀 CHẠY SIÊU CẢM BIẾN QUÉT MASTER DATABASE", variant="primary")
                 out_omni_report = gr.Textbox(label="Báo Cáo Siêu Phân Tích Quant & Lệnh Tác Chiến Tối Ưu", lines=20)
@@ -324,13 +358,15 @@ def create_ui():
                     outputs=[out_omni_report]
                 )
 
-            # TAB 2: QUẢN LÝ MASTER DATABASE FILE
+            # TAB 2: QUẢN LÝ MASTER DATABASE & KIỂM TRA MÃ CŨ / MỚI
             with gr.TabItem("📊 2. XEM & TẢI MASTER DATABASE SERVER"):
                 gr.Markdown("### 💾 QUẢN LÝ TỆP DATABASE TỔNG (`Master_Stock_Database.xlsx`)")
-                gr.Markdown("File này chứa toàn bộ dữ liệu giá & khối lượng gộp của tất cả các mã mục tiêu mày đã cào.")
                 
-                btn_check_db = gr.Button("🔍 KIỂM TRA & XUẤT FILE MASTER DATABASE", variant="primary")
-                out_db_info = gr.Textbox(label="Thông Tin Master Database Hiện Tại", lines=10)
+                btn_check_db = gr.Button("🔍 KIỂM TRA QUY MÔ DATABASE SERVER", variant="primary")
+                with gr.Row():
+                    out_old_tickers_db = gr.Textbox(label="📌 Danh Mục Mã Cũ Đã Có Trong DB", lines=2)
+                    out_new_tickers_db = gr.Textbox(label="🆕 Mã Mới Vừa Được Thêm Gần Đây", lines=2)
+                out_db_info = gr.Textbox(label="Thông Tin Master Database Hiện Tại", lines=8)
                 dl_master_file = gr.DownloadButton("📥 BẤM VÀO ĐÂY ĐỂ TẢI MASTER DATABASE (.XLSX)", variant="primary", visible=False)
                 
                 def check_master():
@@ -338,30 +374,35 @@ def create_ui():
                     if os.path.exists(f):
                         df = pd.read_excel(f)
                         ticks = df['Ticker'].unique().tolist() if 'Ticker' in df.columns else []
-                        return f"✅ Master DB tồn tại ({len(df):,} dòng).\n📌 Danh mục mã: {', '.join(ticks)}", gr.update(value=f, visible=True)
-                    return "🛑 Chưa có file Master DB.", gr.update(visible=False)
+                        return ", ".join(ticks), "Bấm Tab 3 để xem mã mới thêm", f"✅ Master DB tồn tại ({len(df):,} dòng dữ liệu).\n📌 Tổng cộng: {len(ticks)} mã cổ phiếu.", gr.update(value=f, visible=True)
+                    return "Chưa có", "Chưa có", "🛑 Chưa có file Master DB.", gr.update(visible=False)
 
-                btn_check_db.click(check_master, inputs=[], outputs=[out_db_info, dl_master_file])
+                btn_check_db.click(check_master, inputs=[], outputs=[out_old_tickers_db, out_new_tickers_db, out_db_info, dl_master_file])
 
-            # TAB 3: TRẠM BƠM VÀ CẬP NHẬT DỮ LIỆU LŨY TIẾN HẰNG NGÀY
+            # TAB 3: TRẠM BƠM DATABASE & PHÂN BIỆT MÃ MỚI / MÃ CŨ
             with gr.TabItem("🌐 3. TRẠM BƠM & CẬP NHẬT DATABASE LŨY TIẾN"):
                 gr.Markdown("### 🕸️ KẾT NỐI API -> NẠP LŨY TIẾN VÀO FILE MASTER DATABASE")
-                gr.Markdown("**Hướng dẫn:** Nhập danh mục mã mục tiêu. Mỗi ngày sau 15:00 giờ VN, mày chỉ cần bấm nút, bot sẽ tự cào nến mới nhất và **BƠM NỐI ĐUÔI** vào file `Master_Stock_Database.xlsx`.")
+                gr.Markdown("Nhập danh sách mã cổ phiếu. Bot sẽ tự đối soát: **Mã cũ** sẽ được cập nhật phiên mới, **Mã mới** sẽ được tạo lịch sử và nộp gộp vào Database.")
                 
                 ticker_targets = gr.Textbox(
-                    label="Danh sách Mã Cổ Phiếu Mụa Tiêu Cần Cào/Cập Nhật", 
+                    label="Danh sách Mã Cổ Phiếu Cần Cào/Cập Nhật (Cách nhau bằng dấu phẩy)", 
                     value="SSI, HPG, TCB, FPT, DIG, MWG, VND, MBB, HSG, STB, VCI, VHM, NVL, PDR, VCB"
                 )
-                days_slider = gr.Slider(minimum=30, maximum=365, value=180, step=10, label="Số ngày cào lịch sử (Nếu tạo mới)")
+                days_slider = gr.Slider(minimum=30, maximum=365, value=180, step=10, label="Số ngày cào lịch sử (Dành cho mã mới)")
                 
                 btn_update_db = gr.Button("🔄 CHẠY BƠM/CẬP NHẬT DỮ LIỆU VÀO MASTER DATABASE", variant="primary")
-                out_pump_log = gr.Textbox(label="Nhật Ký Bơm Dữ Liệu Lũy Tiến", lines=15)
+                
+                with gr.Row():
+                    out_old_tickers_pump = gr.Textbox(label="📌 Danh Mục Mã Cũ Đã Có Trong DB", lines=2)
+                    out_new_tickers_pump = gr.Textbox(label="🆕 Danh Sách Mã MỚI VỪA BỔ SUNG LẦN ĐẦU", lines=2)
+                    
+                out_pump_log = gr.Textbox(label="Nhật Ký Tiến Trình Bơm Dữ Liệu Lũy Tiến", lines=12)
                 dl_pump_file = gr.DownloadButton("📥 TẢI MASTER DATABASE MỚI NHẤT VỀ MÁY", variant="primary", visible=False)
                 
                 btn_update_db.click(
                     StockQuantEngine.create_or_update_master_db,
                     inputs=[ticker_targets, days_slider],
-                    outputs=[out_pump_log, dl_pump_file]
+                    outputs=[out_pump_log, out_old_tickers_pump, out_new_tickers_pump, dl_pump_file]
                 )
 
     return demo
