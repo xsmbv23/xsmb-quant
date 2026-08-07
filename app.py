@@ -14,6 +14,7 @@ import concurrent.futures
 from datetime import datetime, timedelta
 import traceback
 import gradio as gr
+import io
 
 try:
     import requests
@@ -32,7 +33,7 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V5.8 ROBUST TIERED QUANT ENGINE (AUTO-CLEAN DB & BACKGROUND SYNC)" 
+    VERSION = "V6.0 ROBUST QUANT ENGINE (MULTI-MARKET INTEGRATION)" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
@@ -41,15 +42,17 @@ class Config:
     LOOKBACK_DAYS = 21
     STORM_THRESHOLD = 0.35
     
-    ACTIVE_MODE = "🤖 [VERSION 5.8] V5.8 ROBUST TIERED QUANT ENGINE (RISK-PARITY ALLOCATION & TANH SLOPE)"
+    ACTIVE_MODE = "🤖 [VERSION 6.0] V6.0 ROBUST TIERED QUANT ENGINE (LOTO & STOCKS & ARBITRAGE)"
     
     MENU_OPTIONS = [
-        "🔄 1. ĐỒNG BỘ & CẬP NHẬT DỮ LIỆU",
+        "🔄 1. ĐỒNG BỘ & CẬP NHẬT DỮ LIỆU LOTO",
         "🎯 2. KHUYẾN NGHỊ LỆNH GIAO DỊCH",
         "🔍 3. KIỂM TOÁN CHUYÊN SÂU",
         "📈 4. PHÂN TÍCH CHU KỲ TỔNG HỢP",
         "🎰 5. BẢNG KẾT QUẢ LOTO TRUYỀN THỐNG",
-        "🤖 6. BỘ NÃO AI (QUÉT LỊCH SỬ DB)"
+        "🤖 6. BỘ NÃO AI (QUÉT LỊCH SỬ DB)",
+        "⚖️ 7. HỆ THỐNG RADAR ARBITRAGE (TỶ LỆ)",
+        "📈 8. CẢM BIẾN DÒNG TIỀN CHỨNG KHOÁN (EOD)"
     ]
 
 # ==============================================================================
@@ -90,7 +93,7 @@ class Utils:
         except: return False, f"🛑 LỖI: '{name}' sai định dạng."
 
 # ==============================================================================
-# 🕸️ BLOCK 3: CRAWLER TỰ ĐỘNG (KETQUA NỐI TIẾP VỚI TỊNH TIẾN DOMAIN)
+# 🕸️ BLOCK 3: CRAWLER TỰ ĐỘNG LOTO
 # ==============================================================================
 class Crawler:
     HEADERS = {
@@ -128,7 +131,7 @@ class Crawler:
         return None
 
 # ==============================================================================
-# 📊 BLOCK 4: DATABASE MANAGER (TỰ ĐỘNG CHUẨN HÓA & BACKUP NGẦM LÊN DRIVE)
+# 📊 BLOCK 4: DATABASE MANAGER (TỰ ĐỘNG CHUẨN HÓA & BACKUP NGẦM)
 # ==============================================================================
 class GoogleSheetsManager:
     @staticmethod
@@ -330,7 +333,7 @@ class DatabaseManager:
         return min(all_dates), max(all_dates), max(all_dates) + timedelta(days=1)
 
 # ==============================================================================
-# 🧠 BLOCK 5: QUANT ENGINE (LÕI ĐỘC TÔN V5.8 ROBUST TIERED)
+# 🧠 BLOCK 5: QUANT ENGINE (LÕI LOTO V5.8)
 # ==============================================================================
 class QuantEngine:
     _sig_cache = {}
@@ -424,7 +427,6 @@ class QuantEngine:
         )
         
         final_dan = list(scored_candidates)
-
         best_btl = final_dan[0] if len(final_dan) > 0 else 0
 
         lon_btl = (best_btl % 10) * 10 + (best_btl // 10)
@@ -562,7 +564,6 @@ class QuantEngine:
         cost_ytd, pnl_ytd, roi_ytd = QuantEngine._get_ytd_stats_base(cur_y, target_dt, db)
         cost_7d, pnl_7d, roi_7d = QuantEngine._get_rolling_stats_base(7, target_dt, db)
 
-        # Calculate rolling 14d Hit Density and Daily PnL Volatility
         recent_14 = past_dates[:14]
         tot_nhay_14, tot_codes_14 = 0, 0
         daily_pnls_14 = []
@@ -577,7 +578,6 @@ class QuantEngine:
                 daily_pnls_14.append(pnl_r)
         p_hit_14d = (tot_nhay_14 / tot_codes_14) if tot_codes_14 > 0 else 0.27
 
-        # Micro V1 Base Multiplier
         recent_21 = past_dates[:21]
         wins_21, played_21 = 0, 0
         for r_dt in recent_21:
@@ -595,7 +595,6 @@ class QuantEngine:
         else:
             v1_base = 1.0 if streak == 0 else (0.5 if streak == 1 else (0.2 if streak == 2 else 0.0))
 
-        # Peak Equity Drawdown Calculation
         c_pnl = 0.0
         p_eq = 0.0
         all_ytd = sorted([info["date_obj"] for info in db.values() if info["date_obj"].year == cur_y and info["date_obj"] < target_dt])
@@ -698,7 +697,6 @@ class Auditor:
 
             dan_goc_str = " ".join([f"{x:02d}" for x in sorted(sorted_dan)])
 
-            # Build detailed allocation per code
             dan_alloc_lines = []
             total_von = 0.0
             allocated_items = []
@@ -715,7 +713,6 @@ class Auditor:
 
             alloc_detail_str = "\n".join(dan_alloc_lines)
 
-            # Accurate break-even points calculation
             pts_needed = math.ceil(total_von / Config.WIN_PER_NHAY) if total_von > 0 else 0
             
             if allocated_items and pts_needed > 0:
@@ -1061,16 +1058,193 @@ class Auditor:
             return "\n".join(prompt_lines)
         except Exception as e: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
 
+# ==============================================================================
+# ⚖️ BLOCK 7: ARBITRAGE & AUTO-CRAWL ODDS ENGINE (SĂN CHÊNH LỆCH TỶ LỆ)
+# ==============================================================================
+class OddsCrawler:
+    HEADERS = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json, text/plain, */*'
+    }
+    
+    @staticmethod
+    def crawl_bookie_a():
+        # Dành cho các trang web fetch data bằng API (XHR/Fetch)
+        try:
+            return {"name": "Sàn A (Mẫu Crawl API)", "payout": 99.0, "rebate_percent": 1.0}
+        except Exception as e:
+            return {"name": "Sàn A (Lỗi)", "payout": 0, "rebate_percent": 0, "error": str(e)}
+
+    @staticmethod
+    def crawl_bookie_b():
+        # Dành cho cào HTML trực tiếp bằng Regex
+        try:
+            return {"name": "Sàn B (Mẫu Crawl HTML)", "payout": 99.5, "rebate_percent": 0.5}
+        except Exception as e:
+            return {"name": "Sàn B (Lỗi)", "payout": 0, "rebate_percent": 0, "error": str(e)}
+            
+    @staticmethod
+    def get_all_live_odds():
+        b1 = OddsCrawler.crawl_bookie_a()
+        b2 = OddsCrawler.crawl_bookie_b()
+        return [b1, b2]
+
+class ArbitrageEngine:
+    @staticmethod
+    def auto_scan_surebet():
+        bookies_data = OddsCrawler.get_all_live_odds()
+        return ArbitrageEngine.calculate_surebet_de(bookies_data)
+
+    @staticmethod
+    def calculate_surebet_de(bookies_data):
+        best_bookie = None
+        best_effective_payout = 0
+        
+        for b in bookies_data:
+            if b.get('payout', 0) == 0: continue
+            
+            actual_cost = 1.0 - (b.get('rebate_percent', 0) / 100.0)
+            effective_payout = b['payout'] / actual_cost
+            
+            if effective_payout > best_effective_payout:
+                best_effective_payout = effective_payout
+                best_bookie = b
+
+        if not best_bookie:
+            return "🛑 LỖI: Không lấy được dữ liệu hoặc dữ liệu đầu vào trống."
+
+        total_numbers = 100
+        total_actual_cost = total_numbers * (1.0 - (best_bookie['rebate_percent'] / 100.0))
+        net_profit = best_bookie['payout'] - total_actual_cost
+        
+        is_surebet = net_profit > 0
+        roi = (net_profit / total_actual_cost) * 100 if total_actual_cost > 0 else 0
+        
+        lines = [
+            "📑 BÁO CÁO RADAR QUÉT SUREBET",
+            "=======================================================",
+            f"🏆 Sàn tối ưu nhất: {best_bookie['name']} (Thưởng 1 ăn {best_bookie['payout']}, Hoàn trả {best_bookie['rebate_percent']}%)",
+            f"💰 Vốn thực tế để bao trọn 100 số: {total_actual_cost:,.2f} điểm",
+            f"💵 Tổng thu về khi trúng 1 số    : {best_bookie['payout']:,.2f} điểm",
+            "-------------------------------------------------------"
+        ]
+        
+        if is_surebet:
+            lines.append(f"✅ TRẠNG THÁI: PHÁT HIỆN KẼ HỞ ARBITRAGE (SUREBET)!")
+            lines.append(f"🚀 Lợi nhuận chắc chắn: +{net_profit:,.2f} điểm / vòng quay")
+            lines.append(f"📈 Tỷ suất sinh lời (ROI): +{roi:.2f}%")
+        else:
+            lines.append(f"❌ TRẠNG THÁI: KHÔNG CÓ SUREBET.")
+            lines.append(f"🔴 Mức lỗ nếu bao trọn 100 số: {net_profit:,.2f} điểm")
+            
+        return "\n".join(lines)
+        
+    @staticmethod
+    def calculate_loto_ev(cost_per_point, payout_per_point, rebate_percent):
+        expected_hits = 0.27 
+        actual_cost = cost_per_point * (1.0 - (rebate_percent / 100.0))
+        expected_revenue = expected_hits * payout_per_point
+        ev_per_point = expected_revenue - actual_cost
+        roi = (ev_per_point / actual_cost) * 100 if actual_cost > 0 else 0
+        
+        lines = [
+            "📑 BÁO CÁO ĐỊNH GIÁ TRỊ KỲ VỌNG (EV) CHO LOTO 27 GIẢI",
+            "=======================================================",
+            f"• Giá mua 1 điểm (Thực tế) : {actual_cost:,.0f} VNĐ (Đã trừ {rebate_percent}% hoàn trả)",
+            f"• Trả thưởng 1 nháy        : {payout_per_point:,.0f} VNĐ",
+            f"• Kỳ vọng nháy/con số      : 0.27 nháy (Toán học tuyệt đối)",
+            "-------------------------------------------------------",
+            f"💵 Doanh thu kỳ vọng/điểm  : {expected_revenue:,.0f} VNĐ",
+            f"📊 Lợi nhuận kỳ vọng (EV)  : {ev_per_point:+,.0f} VNĐ / 1 điểm",
+            f"📈 Tỷ suất EV (Edge)       : {roi:+.2f}%"
+        ]
+        
+        if ev_per_point > 0:
+            lines.append("\n✅ KẾT LUẬN: ĐÁNH DÀI HẠN CHẮC CHẮN LÃI (POSITIVE EV).")
+        else:
+            lines.append("\n🔴 KẾT LUẬN: ĐÁNH DÀI HẠN CHẮC CHẮN LỖ (NEGATIVE EV).")
+            
+        return "\n".join(lines)
+
+# ==============================================================================
+# 📈 BLOCK 8: CHỨNG KHOÁN (MANUAL EOD QUANT SCANNER)
+# ==============================================================================
+class StockQuantEngine:
+    @staticmethod
+    def parse_manual_data(raw_text):
+        try:
+            df = pd.read_csv(io.StringIO(raw_text.strip()), sep=r'\s+|,|\t', engine='python')
+            if len(df.columns) < 3:
+                return None, "🛑 LỖI: Yêu cầu ít nhất 3 cột (Ngày, Giá, KhốiLượng)."
+                
+            df.columns = ['Date', 'Close', 'Volume'] + list(df.columns[3:])
+            df['Close'] = df['Close'].astype(str).str.replace(',', '').astype(float)
+            df['Volume'] = df['Volume'].astype(str).str.replace(',', '').astype(float)
+            
+            return df, "OK"
+        except Exception as e:
+            return None, f"🛑 LỖI PARSE DỮ LIỆU: {str(e)}"
+
+    @staticmethod
+    def run_single_stock_sensors(raw_text, ticker):
+        df, msg = StockQuantEngine.parse_manual_data(raw_text)
+        if df is None: return msg
+        
+        if len(df) < 21:
+            return f"🛑 THIẾU DỮ LIỆU: Cần ít nhất 21 phiên để tính MA20 và Z-Score. Hiện tại có {len(df)} phiên."
+
+        df['Prev_Close'] = df['Close'].shift(1)
+        df['MA20_Price'] = df['Close'].rolling(window=20).mean()
+        df['StdDev20_Price'] = df['Close'].rolling(window=20).std()
+        df['MA20_Vol'] = df['Volume'].rolling(window=20).mean()
+        df['Z_Score'] = (df['Close'] - df['MA20_Price']) / df['StdDev20_Price']
+        
+        latest = df.iloc[-1]
+        alerts = []
+        
+        vol_ratio = latest['Volume'] / latest['MA20_Vol']
+        if vol_ratio > 2.5 and latest['Close'] > latest['Prev_Close']:
+            alerts.append(f"🟢 [SMART MONEY]: NỔ KHỐI LƯỢNG! Vol gấp {vol_ratio:.1f} lần trung bình. Tiền lớn đang gom hàng, cân nhắc MUA BREAKOUT.")
+            
+        z = latest['Z_Score']
+        if z < -2.0:
+            alerts.append(f"🟣 [QUÁ BÁN]: Z-Score = {z:.2f}. Giá rơi tự do vượt mốc 2 độ lệch chuẩn. Chờ nến đảo chiều để BẮT ĐÁY.")
+        elif z > 2.0:
+            alerts.append(f"🔴 [QUÁ MUA]: Z-Score = {z:.2f}. Cổ phiếu kéo hưng phấn ảo, rủi ro điều chỉnh rất cao. Khuyến nghị CHỐT LỜI.")
+            
+        if not alerts:
+            alerts.append("⚪ [TRẠNG THÁI BÌNH THƯỜNG]: Cổ phiếu dao động trong vùng an toàn, không có tín hiệu bất thường.")
+            
+        lines = [
+            f"📑 BÁO CÁO CẢM BIẾN DÒNG TIỀN MÃ: {ticker.upper()}",
+            "=======================================================",
+            f"📅 Phiên giao dịch gần nhất : {latest['Date']}",
+            f"💵 Giá Đóng Cửa             : {latest['Close']:,.2f}",
+            f"📊 Khối Lượng               : {latest['Volume']:,.0f}",
+            "-------------------------------------------------------",
+            f"• MA20 Giá                  : {latest['MA20_Price']:,.2f}",
+            f"• Chỉ số Z-Score            : {latest['Z_Score']:+.2f}",
+            f"• Đột biến Vol (Vol Ratio)  : x{vol_ratio:.2f}",
+            "=======================================================",
+            "🤖 KHUYẾN NGHỊ TỪ LÕI QUANT:"
+        ]
+        lines.extend(alerts)
+        return "\n".join(lines)
+
+# ==============================================================================
+# 🎨 UI & APP LAUNCHER
+# ==============================================================================
 def create_ui():
     db_init, _ = DatabaseManager.load_db()
     min_dt_init, latest_dt_init, next_predict_dt_init = DatabaseManager.get_boundaries(db_init)
 
     with gr.Blocks(title=Config.VERSION, theme=gr.themes.Default(primary_hue="orange")) as demo:
-        gr.Markdown(f"# 🚀 XSMB QUANT ENGINE {Config.VERSION}")
+        gr.Markdown(f"# 🚀 MULTI-MARKET QUANT ENGINE {Config.VERSION}")
         
         with gr.Row():
             nav_menu = gr.Radio(choices=Config.MENU_OPTIONS, value=Config.MENU_OPTIONS[0], label="🎛️ BẢNG ĐIỀU KHIỂN CHÍNH")
             
+        # [Cột 1] Đồng bộ Loto
         with gr.Column(visible=True) as col_1:
             with gr.Row():
                 btn_1_sync = gr.Button("⚡ KIỂM TOÁN LẠI DB HIỆN TẠI", variant="secondary")
@@ -1087,10 +1261,8 @@ def create_ui():
             out_1 = gr.Textbox(label="Biên bản Báo cáo Hệ thống", lines=8)
             title_2 = gr.Markdown(f"#### KHUYẾN NGHỊ GIAO DỊCH KỲ TỚI: {next_predict_dt_init.strftime('%d/%m/%Y') if next_predict_dt_init else ''}")
             
-            # --- VŨ KHÍ MỚI: TÁCH RIÊNG BƯỚC TẢI LÊN NÚT TO ĐÙNG ---
             gr.Markdown("---")
             gr.Markdown("### 📥 TẢI DATABASE VỀ MÁY TRỰC TIẾP")
-            gr.Markdown("*(Gradio đôi khi bị lỗi cache link ẩn. Bấm nút số 1 để trích xuất file mới nhất, sau đó NÚT TẢI TO ĐÙNG sẽ hiện ra)*")
             with gr.Row():
                 btn_prepare_dl = gr.Button("1️⃣ BẤM ĐỂ TRÍCH XUẤT FILE TỪ MÁY CHỦ", variant="primary")
             with gr.Row():
@@ -1099,12 +1271,12 @@ def create_ui():
             def get_excel_file():
                 path = os.path.abspath(Config.DATA_FILE)
                 if os.path.exists(path):
-                    # Bật cờ cho nút DownloadButton hiện lên cùng với file chuẩn
                     return gr.update(value=path, visible=True)
                 return gr.update(visible=False)
                 
             btn_prepare_dl.click(fn=get_excel_file, inputs=[], outputs=dl_output)
             
+        # [Cột 2] Khuyến nghị Loto
         with gr.Column(visible=False) as col_2:
             with gr.Row():
                 pts_2 = gr.Number(label="Khối lượng Vốn Cơ sở (Điểm / Mã)", value=10)
@@ -1112,6 +1284,7 @@ def create_ui():
             out_2 = gr.Textbox(label="Hồ sơ Lệnh Tác Chiến", lines=25)
             btn_2.click(Auditor.phan_he_2_predict, inputs=[pts_2], outputs=out_2)
             
+        # [Cột 3] Kiểm toán
         with gr.Column(visible=False) as col_3:
             gr.Markdown("### 🔍 MODULE KIỂM TOÁN CHUYÊN SÂU & TRUY VẾT")
             audit_type = gr.Radio(
@@ -1119,13 +1292,10 @@ def create_ui():
                 value="Kiểm toán 1 Ngày", 
                 label="Loại Kiểm toán"
             )
-            
             with gr.Column(visible=True) as row_audit_day:
                 date_3 = gr.Textbox(label="Ngày Truy xuất (DD/MM/YYYY)", value=latest_dt_init.strftime('%d/%m/%Y') if latest_dt_init else "")
-            
             with gr.Column(visible=False) as row_audit_month:
                 month_3 = gr.Textbox(label="Tháng Truy xuất (MM/YYYY)", value=latest_dt_init.strftime('%m/%Y') if latest_dt_init else "")
-                
             pts_3 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
             btn_3 = gr.Button("📡 THỰC THI KIỂM TOÁN", variant="primary")
             out_3 = gr.Textbox(label="Báo cáo Kiểm toán", lines=24)
@@ -1137,6 +1307,7 @@ def create_ui():
             audit_type.change(fn=toggle_audit, inputs=audit_type, outputs=[row_audit_day, row_audit_month])
             btn_3.click(Auditor.phan_he_3_router, inputs=[audit_type, date_3, month_3, pts_3], outputs=out_3)
 
+        # [Cột 4] Phân tích Chu kỳ
         with gr.Column(visible=False) as col_4:
             with gr.Row():
                 t1_4 = gr.Textbox(label="Từ ngày (DD/MM/YYYY)", value=min_dt_init.strftime('%d/%m/%Y') if min_dt_init else "")
@@ -1146,22 +1317,82 @@ def create_ui():
             out_4 = gr.Textbox(label="Báo cáo Dòng Tiền & Max Drawdown", lines=22)
             btn_4.click(Auditor.phan_he_4_range, inputs=[t1_4, t2_4, pts_4], outputs=out_4)
 
+        # [Cột 5] Bảng Loto Gốc
         with gr.Column(visible=False) as col_5:
             date_5 = gr.Textbox(label="Phiên Giao dịch Truy xuất (DD/MM/YYYY)", value=latest_dt_init.strftime('%d/%m/%Y') if latest_dt_init else "")
             btn_5 = gr.Button("💾 TRUY XUẤT KẾT QUẢ LOTO TRUYỀN THỐNG", variant="primary")
             out_5 = gr.Textbox(label="Bảng Kết Quả Loto", lines=15)
             btn_5.click(Auditor.phan_he_5_raw, inputs=date_5, outputs=out_5)
 
+        # [Cột 6] AI Tổng hợp Loto
         with gr.Column(visible=False) as col_6:
             gr.Markdown("### 🤖 BỘ NÃO AI - QUÉT TOÀN BỘ LỊCH SỬ DB")
             btn_6 = gr.Button("🧬 BẮT ĐẦU QUÉT TOÀN DB", variant="primary")
             out_6 = gr.Textbox(label="Báo cáo Tổng hợp V5.8", lines=25)
             btn_6.click(Auditor.phan_he_6_master_diagnostic_prompt, inputs=[], outputs=out_6)
 
+        # [Cột 7] HỆ THỐNG RADAR ARBITRAGE
+        with gr.Column(visible=False) as col_7:
+            gr.Markdown("### ⚖️ MODULE ARBITRAGE KẼ HỞ NHÀ CÁI")
+            
+            with gr.Tab("1. Quét Surebet Đề Tự Động"):
+                gr.Markdown("*(Yêu cầu cấu hình lại Link API trong code lõi Block 7)*")
+                btn_auto_scan = gr.Button("🌐 CHẠY RADAR CRAWL TỰ ĐỘNG", variant="primary")
+                out_arbitrage_auto = gr.Textbox(label="Kết quả Radar Tự động", lines=10)
+                btn_auto_scan.click(ArbitrageEngine.auto_scan_surebet, inputs=[], outputs=out_arbitrage_auto)
+                
+            with gr.Tab("2. Quét Surebet Nhập Tay (An Toàn)"):
+                with gr.Row():
+                    b1_name = gr.Textbox(label="Sàn A", value="Nhà Cái 1")
+                    b1_payout = gr.Number(label="Ăn (VD: 99.0)", value=99.0)
+                    b1_rebate = gr.Number(label="Hoàn trả %", value=0.0)
+                with gr.Row():
+                    b2_name = gr.Textbox(label="Sàn B", value="Nhà Cái 2")
+                    b2_payout = gr.Number(label="Ăn (VD: 99.5)", value=99.5)
+                    b2_rebate = gr.Number(label="Hoàn trả %", value=0.5)
+                btn_manual_arb = gr.Button("🔍 KIỂM TRA SUREBET", variant="primary")
+                out_arb_manual = gr.Textbox(label="Báo Cáo Surebet Nhập Tay", lines=10)
+                
+                def run_surebet_manual(n1, p1, r1, n2, p2, r2):
+                    return ArbitrageEngine.calculate_surebet_de([
+                        {'name': n1, 'payout': p1, 'rebate_percent': r1},
+                        {'name': n2, 'payout': p2, 'rebate_percent': r2}
+                    ])
+                btn_manual_arb.click(run_surebet_manual, inputs=[b1_name, b1_payout, b1_rebate, b2_name, b2_payout, b2_rebate], outputs=out_arb_manual)
+                
+            with gr.Tab("3. Đo lường Lợi thế EV Loto"):
+                with gr.Row():
+                    cost_loto = gr.Number(label="Giá 1 điểm (VNĐ)", value=27000)
+                    payout_loto = gr.Number(label="Trả thưởng 1 điểm (VNĐ)", value=99000)
+                    rebate_loto = gr.Number(label="Hoàn trả %", value=1.0)
+                btn_ev = gr.Button("⚖️ ĐO LƯỜNG LỢI THẾ TOÁN HỌC (EV)", variant="primary")
+                out_ev = gr.Textbox(label="Báo cáo EV", lines=12)
+                btn_ev.click(ArbitrageEngine.calculate_loto_ev, inputs=[cost_loto, payout_loto, rebate_loto], outputs=out_ev)
+
+        # [Cột 8] CẢM BIẾN CHỨNG KHOÁN (MANUAL EOD)
+        with gr.Column(visible=False) as col_8:
+            gr.Markdown("### 🧠 HỆ THỐNG CẢM BIẾN DÒNG TIỀN CHỨNG KHOÁN (EOD SCANNER)")
+            gr.Markdown("**Hướng dẫn:** Copy ít nhất 21 dòng dữ liệu từ Excel/FireAnt và Paste vào đây. Cột bắt buộc (Cách nhau bằng Tab hoặc Dấu phẩy): `Ngày   Giá_Đóng_Cửa   Khối_Lượng`")
+            
+            with gr.Row():
+                stock_ticker = gr.Textbox(label="Mã Cổ Phiếu (Ví dụ: SSI, HPG)", value="SSI")
+                
+            raw_stock_data = gr.Textbox(
+                label="Dán Dữ Liệu Lịch Sử", 
+                lines=10, 
+                placeholder="20/07/2026   32.5   1500000\n21/07/2026   33.0   4500000\n..."
+            )
+            
+            btn_scan_stock = gr.Button("🚀 QUÉT CẢM BIẾN ĐỊNH LƯỢNG", variant="primary")
+            out_stock_report = gr.Textbox(label="Báo cáo Phân tích Phím Lệnh", lines=15)
+            btn_scan_stock.click(StockQuantEngine.run_single_stock_sensors, inputs=[raw_stock_data, stock_ticker], outputs=out_stock_report)
+
+        # Mapping Events Loto Cột 1
         btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2])
         btn_1_crawl.click(lambda: Auditor.phan_he_1_sync(auto_crawl=True), outputs=[out_1, title_2])
         btn_manual_save.click(Auditor.process_manual_input, inputs=[manual_date, manual_numbers], outputs=[out_1, title_2])
 
+        # Control UI Visibility
         def update_visibility(choice):
             return [
                 gr.Column(visible=(choice == Config.MENU_OPTIONS[0])),
@@ -1170,8 +1401,11 @@ def create_ui():
                 gr.Column(visible=(choice == Config.MENU_OPTIONS[3])),
                 gr.Column(visible=(choice == Config.MENU_OPTIONS[4])),
                 gr.Column(visible=(choice == Config.MENU_OPTIONS[5])),
+                gr.Column(visible=(choice == Config.MENU_OPTIONS[6])),
+                gr.Column(visible=(choice == Config.MENU_OPTIONS[7])),
             ]
-        nav_menu.change(fn=update_visibility, inputs=[nav_menu], outputs=[col_1, col_2, col_3, col_4, col_5, col_6])
+        nav_menu.change(fn=update_visibility, inputs=[nav_menu], outputs=[col_1, col_2, col_3, col_4, col_5, col_6, col_7, col_8])
+        
     return demo
 
 # ==============================================================================
