@@ -1,0 +1,30 @@
+{
+  "action_id": "N004",
+  "source_id": "minhngoc",
+  "source_url": "https://www.minhngoc.net.vn/xo-so-mien-bac.html",
+  "retrieved_at": "2026-08-16T11:31:24.258919+00:00",
+  "http_status": 200,
+  "content_type": "text/html; charset=UTF-8",
+  "raw_byte_length": 196596,
+  "raw_sha256": "3213bf273337f1716b7269e7d9a3c332c763bf8fce24bd1e1dfd0b4549be0672",
+  "draw_date": "15/08/2026",
+  "full_27": [
+    "80278", "97028", "57724", "00834", "71946", "84077", "83718", "45800", "97287", "77363",
+    "6233", "3434", "5381", "6127", "4027", "2547", "1283", "5647", "6635", "0761",
+    "790", "558", "928", "33", "66", "52", "04"
+  ],
+  "full_27_count": 27,
+  "parser_version": "MINHNGOC_XSMB_FULL27_V1",
+  "content_hygiene": {
+    "form_tags": 5,
+    "link_tags": 3,
+    "script_tags": 24,
+    "style_tags": 5,
+    "table_tags": 29
+  },
+  "persistence": "EPHEMERAL_CAPTURE_ONLY",
+  "promotable": false,
+  "promotion": "DENY",
+  "runtime_status": "RUNTIME_VERIFIED",
+  "evidence_sha256": "853d56af9f2cb7cea0299b3aa58170a25a536d94b9acf65b5ea8efe2e90536aa"
+}
