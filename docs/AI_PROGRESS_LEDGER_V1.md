@@ -15,8 +15,10 @@ SOURCE REGISTRY = 4 SOURCES
 CONTENT HYGIENE = IMPLEMENTED
 CANDIDATE EVIDENCE = IMPLEMENTED
 BRAIN GOVERNANCE = ACTIVE
-COMMUNICATION SECURITY = SPECIFIED / NOT YET RUNTIME ENFORCED
-LAYER / CORRIDOR MATRIX = SPECIFIED / NOT YET RUNTIME ENFORCED
+COMMUNICATION SECURITY = RUNTIME PRIMITIVES IMPLEMENTED / RUNTIME EVIDENCE PENDING
+LAYER / CORRIDOR MATRIX = SPECIFIED + ENFORCEMENT PRIMITIVES IMPLEMENTED / RUNTIME EVIDENCE PENDING
+CAPABILITY AUTHORITY = IMPLEMENTED / RUNTIME EVIDENCE PENDING
+COMMUNICATION AUDIT = IMPLEMENTED / RUNTIME EVIDENCE PENDING
 UI PRESERVATION = LOCKED
 RUNTIME HISTORICAL SLICE = NOT YET VERIFIED
 PROMOTION = DENY
@@ -32,7 +34,7 @@ Before work:
 4. Read `docs/FOSENNIC_COMMUNICATION_SECURITY_V1.md`.
 5. Read `docs/FOSENNIC_LAYER_CORRIDOR_MATRIX_V1.md`.
 6. Read this ledger completely.
-7. Read `docs/AI_ACTION_LOG_V1.md`.
+7. Read `docs/AI_ACTION_LOG_V1.md` and the newest files under `docs/action_log/`.
 8. Inspect latest Git commits and relevant files.
 9. Resume from `NEXT_ACTION`.
 
@@ -85,30 +87,29 @@ These states are not interchangeable.
 - Legacy app.py UI preservation boundary documented.
 - Foundation blueprint/runbook/tree/AI handoff documents exist.
 - Fosennic system closure map exists and treats the architecture as a graph with feedback loops and fail-closed branches.
-- Communication security is now explicitly modeled as room-to-room corridor crossing with layer classification, authorization, capability, lineage and audit requirements.
+- Communication security is explicitly modeled as room-to-room corridor crossing with layer classification, authorization, capability, lineage and audit requirements.
 - Layer/corridor matrix exists with default DENY.
+- N002 runtime security primitives implemented: message envelope, corridor gate, capability authority, communication audit and invariant tests.
+- Persistent action record for N002 created under `docs/action_log/`.
 - This ledger and action log form the persistent continuation memory.
 
 ## Current NEXT_ACTION
 
-### N002 — Security enforcement before broad ingestion
+### N003 — Runtime proof of communication security
 
-Implement and verify the communication boundary primitives before allowing the four source adapters to become a connected runtime graph:
+Execute the security invariant suite in a real build/runtime boundary and bind the result as evidence:
 
-1. Define `RoomIdentity` / layer identity.
-2. Define corridor registry from `docs/FOSENNIC_LAYER_CORRIDOR_MATRIX_V1.md`.
-3. Define a strict message envelope with schema/version/lineage/state.
-4. Implement default-DENY corridor authorization.
-5. Implement privileged capability issuance/consumption using the existing forensic capability pattern.
-6. Implement pre/post identity checks and anti-TOCTOU checks.
-7. Implement append-only communication audit events with secret redaction.
-8. Implement fail-closed handling: privileged security failure -> TERMINAL_HALT; ordinary data-gate failure -> DENY/HOLD according to the contract.
-9. Add invariant tests for forbidden privilege inversions.
-10. Only after these gates pass, connect the four source adapters into the runtime graph.
+1. Run `tests/security/test_corridor.py` in an actual Python runtime.
+2. Capture interpreter/version, commit SHA and test result.
+3. Add an explicit fail-closed/`TERMINAL_HALT` adapter for privileged security failures.
+4. Verify no secret values are emitted by communication audit serialization.
+5. Verify replay, scope mismatch, missing lineage, unknown corridor and privilege inversion all fail closed.
+6. Record the runtime evidence under `docs/action_log/`.
+7. Only after N003 has `RUNTIME_VERIFIED` status, connect the four source adapters through registered corridors.
 
 ### Why this is before the crawler
 
-The crawler is a lower-trust L0 component. If it is connected directly to higher layers before the corridor model exists, the system can accidentally create an ungoverned privilege path. Fosennic requires the corridors to exist before the rooms are connected.
+The crawler is a lower-trust L0 component. If it is connected directly to higher layers before the corridor enforcement has runtime evidence, the system can accidentally create an ungoverned privilege path. Fosennic requires the corridors to exist and be verified before the rooms are connected.
 
 ## Handoff template
 
@@ -152,7 +153,7 @@ A future Bot MUST NOT:
 
 ## Completion gate
 
-`DATA FOUNDATION = COMPLETE` only when all blueprint completion criteria are evidenced AND all required cross-room communication paths are registered and fail-closed. Until then:
+`DATA FOUNDATION = COMPLETE` only when all blueprint completion criteria are evidenced AND all required cross-room communication paths are registered, enforced and runtime-verified. Until then:
 
 ```text
 DATA FOUNDATION = INCOMPLETE
