@@ -19,8 +19,8 @@ COMMUNICATION SECURITY = RUNTIME_VERIFIED
 LAYER / CORRIDOR MATRIX = RUNTIME_VERIFIED
 CAPABILITY AUTHORITY = RUNTIME_VERIFIED
 COMMUNICATION AUDIT = RUNTIME_VERIFIED
-L0 MINHNGOC ADAPTER = RUNTIME_VERIFIED / PERSISTENCE PENDING
-RAW ARTIFACT PERSISTENCE = INCOMPLETE
+L0 MINHNGOC ADAPTER = RUNTIME_VERIFIED
+RAW ARTIFACT PERSISTENCE = BLOCKED / DATABASE_URL_NOT_BOUND
 UI PRESERVATION = LOCKED
 RUNTIME HISTORICAL SLICE = NOT YET VERIFIED
 PROMOTION = DENY
@@ -97,30 +97,31 @@ These states are not interchangeable.
 - N004 first registered source (`minhngoc`) executed through the L0 adapter on Render.
 - N004 captured raw HTTP bytes before extraction, SHA-256 bound the raw source, applied content hygiene, extracted exactly 27 FULL_27 values with leading zeros preserved, and kept promotion denied.
 - N004 evidence bound under `evidence/runtime/N004_minhnog_live_probe_v1.json`.
-- N004 raw capture remains explicitly `EPHEMERAL_CAPTURE_ONLY`; immutable database persistence is not yet complete.
-- Persistent action records for N002, N003 and N004 exist under `docs/action_log/`.
+- N005 persistence implementation was added with TLS-required PostgreSQL, immutable raw bytes, provenance and idempotency constraints.
+- N005 runtime gate correctly failed closed because `DATABASE_URL` is not bound to the Render service.
+- The temporary database persistence flag was returned to `0`; the service is not intentionally left in a failing persistence mode.
+- Persistent action records for N002, N003, N004 and N005 exist under `docs/action_log/`.
 - This ledger and action log form the persistent continuation memory.
 
 ## Current NEXT_ACTION
 
-### N005 — Immutable raw-artifact persistence in xsmb_runtime_db
+### N005B — Bind the existing Render PostgreSQL credential to xsmb-quant
 
-The L0 adapter is proven against one live source, but the raw bytes are still ephemeral. Fix the foundation before widening sources.
+The code and fail-closed gate are ready. The remaining blocker is infrastructure secret binding.
 
-1. Establish a TLS-required PostgreSQL client path for `xsmb_runtime_db`.
-2. Add a minimal schema for immutable raw artifacts and provenance records.
-3. Use a database-side unique key on `(source_id, content_sha256)` so duplicate captures are idempotent without overwriting bytes.
-4. Store retrieval timestamp, URL, HTTP status, content type, raw SHA-256, byte length and parser version separately from raw bytes.
-5. Store the raw bytes exactly as captured; no HTML cleanup may modify the canonical raw artifact.
-6. Bind the N004 raw SHA as the first real provenance record.
-7. Verify database read-after-write from the Render runtime.
-8. Add a fail-closed database gate: persistence failure means `DENY/HOLD`, never “continue with unrecorded truth”.
-9. Record database runtime evidence and exact hashes.
-10. Keep `PROMOTION = DENY`.
+1. Bind `DATABASE_URL` on Render service `xsmb-quant` to the existing `xsmb_runtime_db` connection using TLS.
+2. Do not place the password or full connection string in GitHub, source code, evidence, logs or Bot action logs.
+3. Keep `PGSSLMODE=require`.
+4. Set `RUN_DB_PERSISTENCE=1` only for the controlled verification deployment.
+5. Verify raw capture → database insert → provenance row → read-after-write.
+6. Capture the database artifact id, raw SHA and evidence hash without exposing credentials.
+7. Set `RUN_DB_PERSISTENCE=0` after the verification deployment.
+8. Only after persistence is runtime-verified may the system widen to xoso/xskt/ketqua16 or historical backfill.
+9. Keep `PROMOTION = DENY`.
 
 ### Why this is the next gate
 
-Without immutable raw persistence, a live crawl can be observed but cannot become reproducible forensic evidence. The data foundation must therefore close the raw-artifact persistence boundary before adding xoso/xskt/ketqua16 or historical backfill.
+The system has now demonstrated that it will refuse to continue without durable evidence. That is a successful Fosennic boundary, not a failure to bypass. The missing credential binding is an infrastructure gate and must be closed before data truth can be considered durable.
 
 ## Handoff template
 
