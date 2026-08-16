@@ -15,10 +15,10 @@ SOURCE REGISTRY = 4 SOURCES
 CONTENT HYGIENE = IMPLEMENTED
 CANDIDATE EVIDENCE = IMPLEMENTED
 BRAIN GOVERNANCE = ACTIVE
-COMMUNICATION SECURITY = RUNTIME PRIMITIVES IMPLEMENTED / RUNTIME EVIDENCE PENDING
-LAYER / CORRIDOR MATRIX = SPECIFIED + ENFORCEMENT PRIMITIVES IMPLEMENTED / RUNTIME EVIDENCE PENDING
-CAPABILITY AUTHORITY = IMPLEMENTED / RUNTIME EVIDENCE PENDING
-COMMUNICATION AUDIT = IMPLEMENTED / RUNTIME EVIDENCE PENDING
+COMMUNICATION SECURITY = RUNTIME_VERIFIED
+LAYER / CORRIDOR MATRIX = RUNTIME_VERIFIED
+CAPABILITY AUTHORITY = RUNTIME_VERIFIED
+COMMUNICATION AUDIT = RUNTIME_VERIFIED
 UI PRESERVATION = LOCKED
 RUNTIME HISTORICAL SLICE = NOT YET VERIFIED
 PROMOTION = DENY
@@ -72,7 +72,7 @@ These states are not interchangeable.
 ## Existing completed work
 
 - Repository reset and foundation established.
-- FULL_27 canonical topology established: DB1x5, G1 1x5, G2 2x5, G3 6x5, G4 4x4, G5 6x4, G6 3x3, G7 4x2 = 27 values.
+- FULL_27 canonical topology established: DB1x5, G1 1x5, G2 2x5, G3 6x5, G4 4x5, G5 6x4, G6 3x3, G7 4x2 = 27 values.
 - TAIL_27 is derived from FULL_27 only.
 - Legacy Excel measured: 4,172 rows in its observed window; it is reconciliation reference, not full-result truth.
 - 70 historical gaps identified; missing != non-draw.
@@ -90,26 +90,33 @@ These states are not interchangeable.
 - Communication security is explicitly modeled as room-to-room corridor crossing with layer classification, authorization, capability, lineage and audit requirements.
 - Layer/corridor matrix exists with default DENY.
 - N002 runtime security primitives implemented: message envelope, corridor gate, capability authority, communication audit and invariant tests.
-- Persistent action record for N002 created under `docs/action_log/`.
+- N003 runtime verification completed on Render: replay, unknown corridor, missing lineage, capability scope mismatch, capability replay, append-only audit, secret redaction and terminal-halt fail-closed all verified.
+- N003 evidence bound under `evidence/runtime/N003_security_runtime_verification_v2.json`.
+- Persistent action record for N003 created under `docs/action_log/`.
 - This ledger and action log form the persistent continuation memory.
 
 ## Current NEXT_ACTION
 
-### N003 — Runtime proof of communication security
+### N004 — First bounded source adapter through the security corridor
 
-Execute the security invariant suite in a real build/runtime boundary and bind the result as evidence:
+Do not connect all four sources simultaneously. Start with exactly one source adapter as the controlled L0→L1 path:
 
-1. Run `tests/security/test_corridor.py` in an actual Python runtime.
-2. Capture interpreter/version, commit SHA and test result.
-3. Add an explicit fail-closed/`TERMINAL_HALT` adapter for privileged security failures.
-4. Verify no secret values are emitted by communication audit serialization.
-5. Verify replay, scope mismatch, missing lineage, unknown corridor and privilege inversion all fail closed.
-6. Record the runtime evidence under `docs/action_log/`.
-7. Only after N003 has `RUNTIME_VERIFIED` status, connect the four source adapters through registered corridors.
+1. Select the first registered source from `data/ingestion/source_registry_v2.json` according to the existing registry order/policy.
+2. Build an adapter that captures raw response bytes without modifying them.
+3. Record source URL, retrieval timestamp, HTTP metadata, content hash and parser version.
+4. Pass the captured artifact through content hygiene before any extraction.
+5. Emit only a schema-validated `RAW_SOURCE_V1` envelope through the registered L0→L1 corridor.
+6. Store raw evidence immutably; never overwrite a prior capture.
+7. Parse FULL_27 only after provenance is bound.
+8. Never derive TAIL_27 from source HTML when FULL_27 is available.
+9. Run a bounded fixture first; then a single real retrieval.
+10. Compare the extracted result against an independent reference before widening the source.
+11. Record runtime evidence and exact hashes.
+12. Keep `PROMOTION = DENY`.
 
-### Why this is before the crawler
+### Why this is the next gate
 
-The crawler is a lower-trust L0 component. If it is connected directly to higher layers before the corridor enforcement has runtime evidence, the system can accidentally create an ungoverned privilege path. Fosennic requires the corridors to exist and be verified before the rooms are connected.
+The security corridor is now runtime-proven. The next risk is the L0 data ingress itself: advertisements, navigation, malformed pages, changed HTML, missing dates, duplicate captures and parser drift must be contained before multiple sources can interact. One source at a time preserves forensic causality.
 
 ## Handoff template
 
@@ -149,6 +156,7 @@ A future Bot MUST NOT:
 - create direct cross-room calls without a registered corridor;
 - allow lower-layer components to issue upper-layer capabilities;
 - allow UI/reporting to mutate canonical truth;
+- connect all source adapters at once;
 - log credentials, DATABASE_URL, tokens or capability secrets.
 
 ## Completion gate
@@ -157,6 +165,5 @@ A future Bot MUST NOT:
 
 ```text
 DATA FOUNDATION = INCOMPLETE
-COMMUNICATION SECURITY = INCOMPLETE
 PROMOTION = DENY
 ```
