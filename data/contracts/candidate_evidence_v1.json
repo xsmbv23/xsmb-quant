@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"xsmb://schema/candidate_evidence_v1",
+  "title":"XSMB Candidate Evidence V1",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["schema_version","source_artifact","candidate","verification","promotion"],
+  "properties":{
+    "schema_version":{"const":"CANDIDATE_EVIDENCE_V1"},
+    "source_artifact":{"type":"object","required":["source_id","url","retrieved_at","sha256"],"additionalProperties":false,"properties":{"source_id":{"type":"string"},"url":{"type":"string"},"retrieved_at":{"type":"string"},"sha256":{"type":"string","pattern":"^[a-fA-F0-9]{64}$"}}},
+    "candidate":{"type":"object","required":["date","full27","parser_version"],"additionalProperties":false,"properties":{"date":{"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}$"},"full27":{"type":"object"},"parser_version":{"type":"string"}}},
+    "verification":{"type":"object","required":["full27_valid","calendar_verified","provenance_verified","quorum_verified","brain_policy"],"additionalProperties":false,"properties":{"full27_valid":{"type":"boolean"},"calendar_verified":{"type":"boolean"},"provenance_verified":{"type":"boolean"},"quorum_verified":{"type":"boolean"},"brain_policy":{"type":"string","enum":["PASS","DENY"]}}},
+    "promotion":{"const":"DENY"}
+  }
+}
