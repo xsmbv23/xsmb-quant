@@ -8,10 +8,16 @@ from security.selftest import run_security_selftest
 SELFTEST_RESULT = run_security_selftest()
 print(json.dumps({"event": "SECURITY_SELFTEST", **SELFTEST_RESULT}, sort_keys=True), flush=True)
 
+SOURCE_PROBE_RESULT = None
+if os.environ.get("RUN_MINHNGOC_PROBE") == "1":
+    from ingestion.minhngoc_probe import run_probe
+    SOURCE_PROBE_RESULT = run_probe()
+    print(json.dumps({"event": "MINHNGOC_L0_PROBE", **SOURCE_PROBE_RESULT}, ensure_ascii=False, sort_keys=True), flush=True)
+
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path not in ("/", "/health", "/verification/security"):
+        if self.path not in ("/", "/health", "/verification/security", "/verification/source/minhngoc"):
             self.send_response(404)
             self.end_headers()
             return
@@ -24,6 +30,7 @@ class Handler(BaseHTTPRequestHandler):
             "derived_view": "TAIL_27",
             "runtime_mode": "FOUNDATION_ONLY",
             "security_verification": SELFTEST_RESULT,
+            "minhngoc_probe": SOURCE_PROBE_RESULT,
         }
         body = json.dumps(payload, ensure_ascii=False).encode()
         self.send_response(200)
