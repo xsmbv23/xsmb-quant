@@ -1,12 +1,38 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
+import subprocess
+import sys
+from pathlib import Path
 
 from security.selftest import run_security_selftest
 
 
 SELFTEST_RESULT = run_security_selftest()
 print(json.dumps({"event": "SECURITY_SELFTEST", **SELFTEST_RESULT}, sort_keys=True), flush=True)
+
+BOUNDED_FIXTURE_RESULT = None
+if os.environ.get("RUN_BOUNDED_FIXTURE") == "1":
+    fixture = Path("fixtures/2026-08-12/full27_fixture.json")
+    output = Path("evidence/runtime/2026-08-12/render_bounded.json")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        sys.executable,
+        "verification/render_safe_runner.py",
+        str(fixture),
+        "--output",
+        str(output),
+    ]
+    proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    BOUNDED_FIXTURE_RESULT = {
+        "status": "RUNTIME_VERIFIED" if proc.returncode in (0, 2) else "DENY",
+        "promotion": "DENY",
+        "fixture": str(fixture),
+        "runner_exit_code": proc.returncode,
+        "stdout": proc.stdout[-4000:],
+        "stderr": proc.stderr[-4000:],
+    }
+    print(json.dumps({"event": "BOUNDED_FIXTURE_RUNTIME", **BOUNDED_FIXTURE_RESULT}, ensure_ascii=False, sort_keys=True), flush=True)
 
 SOURCE_PROBE_RESULT = None
 if os.environ.get("RUN_MINHNGOC_PROBE") == "1":
@@ -39,7 +65,7 @@ if os.environ.get("RUN_DB_PERSISTENCE") == "1":
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path not in ("/", "/health", "/verification/security", "/verification/source/minhngoc"):
+        if self.path not in ("/", "/health", "/verification/security", "/verification/source/minhngoc", "/verification/bounded"):
             self.send_response(404)
             self.end_headers()
             return
@@ -52,6 +78,7 @@ class Handler(BaseHTTPRequestHandler):
             "derived_view": "TAIL_27",
             "runtime_mode": "FOUNDATION_ONLY",
             "security_verification": SELFTEST_RESULT,
+            "bounded_fixture": BOUNDED_FIXTURE_RESULT,
             "minhngoc_probe": SOURCE_PROBE_RESULT,
             "raw_artifact_persistence": PERSISTENCE_RESULT,
         }
@@ -61,6 +88,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def do_HEAD(self):
+        if self.path not in ("/", "/health", "/verification/security", "/verification/source/minhngoc", "/verification/bounded"):
+            self.send_response(404)
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def log_message(self, *_args):
         return
