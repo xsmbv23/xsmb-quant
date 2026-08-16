@@ -67,3 +67,27 @@ This is the append-only style operational history for AI work on the repository.
 **Governance:** Promotion remains `DENY`. No source adapter is connected to the runtime graph by N003.
 
 **Next action:** N004 — connect exactly one registered source adapter through the L0→L1 security corridor, bounded first, with immutable raw artifact capture and provenance binding.
+
+## 2026-08-16 — N004 Minh Ngoc Live Probe
+
+**Actor:** GPT-5.6 Luna
+
+**Action record:** `docs/action_log/2026-08-16_N004_minhnog_live_probe.md`
+
+**Evidence:** `evidence/runtime/N004_minhnog_live_probe_v1.json`
+
+**Runtime:** Render service `srv-da0obdpt0dsc73a5ubbg`
+
+**Runtime verification:** `RUNTIME_VERIFIED`
+
+**Verified:** one real request to Minh Ngoc returned HTTP 200; raw response was captured before parsing; raw SHA-256 was bound; content hygiene was measured; parser extracted exactly 27 FULL_27 values with leading zeros preserved.
+
+**Raw SHA-256:** `3213bf273337f1716b7269e7d9a3c332c763bf8fce24bd1e1dfd0b4549be0672`
+
+**Evidence SHA-256:** `853d56af9f2cb7cea0299b3aa58170a25a536d94b9acf65b5ea8efe2e90536aa`
+
+**Important limitation:** raw capture is `EPHEMERAL_CAPTURE_ONLY`; it is not yet immutable database evidence.
+
+**Governance:** Promotion remains `DENY`.
+
+**Next action:** N005 — establish TLS-required immutable raw-artifact persistence in `xsmb_runtime_db`, bind N004 provenance, and fail closed if persistence is unavailable.
