@@ -15,6 +15,8 @@ SOURCE REGISTRY = 4 SOURCES
 CONTENT HYGIENE = IMPLEMENTED
 CANDIDATE EVIDENCE = IMPLEMENTED
 BRAIN GOVERNANCE = ACTIVE
+COMMUNICATION SECURITY = SPECIFIED / NOT YET RUNTIME ENFORCED
+LAYER / CORRIDOR MATRIX = SPECIFIED / NOT YET RUNTIME ENFORCED
 UI PRESERVATION = LOCKED
 RUNTIME HISTORICAL SLICE = NOT YET VERIFIED
 PROMOTION = DENY
@@ -26,10 +28,13 @@ Before work:
 
 1. Read `docs/AI_START_HERE.md`.
 2. Read `docs/DATA_FOUNDATION_BLUEPRINT_V1.md`.
-3. Read this ledger completely.
-4. Read `docs/AI_ACTION_LOG_V1.md`.
-5. Inspect latest Git commits and relevant files.
-6. Resume from `NEXT_ACTION`.
+3. Read `docs/FOSENNIC_SYSTEM_CLOSURE_MAP_V1.md`.
+4. Read `docs/FOSENNIC_COMMUNICATION_SECURITY_V1.md`.
+5. Read `docs/FOSENNIC_LAYER_CORRIDOR_MATRIX_V1.md`.
+6. Read this ledger completely.
+7. Read `docs/AI_ACTION_LOG_V1.md`.
+8. Inspect latest Git commits and relevant files.
+9. Resume from `NEXT_ACTION`.
 
 After work:
 
@@ -79,36 +84,31 @@ These states are not interchangeable.
 - Project Brain governance is active.
 - Legacy app.py UI preservation boundary documented.
 - Foundation blueprint/runbook/tree/AI handoff documents exist.
-- This ledger and action log now form the persistent continuation memory.
+- Fosennic system closure map exists and treats the architecture as a graph with feedback loops and fail-closed branches.
+- Communication security is now explicitly modeled as room-to-room corridor crossing with layer classification, authorization, capability, lineage and audit requirements.
+- Layer/corridor matrix exists with default DENY.
+- This ledger and action log form the persistent continuation memory.
 
 ## Current NEXT_ACTION
 
-### N001 — Real ingestion layer
+### N002 — Security enforcement before broad ingestion
 
-Implement and verify, in this exact order:
+Implement and verify the communication boundary primitives before allowing the four source adapters to become a connected runtime graph:
 
-1. Four source-specific adapters:
-   - minhngoc
-   - xoso
-   - xskt
-   - ketqua16
-2. Common `CandidateRecord` output contract.
-3. Immutable SHA-addressed raw artifact persistence.
-4. Adversarial fixtures:
-   - ads around table;
-   - banners containing numbers;
-   - scripts containing numbers;
-   - navigation containing numbers;
-   - duplicate tables;
-   - malformed prize widths;
-   - wrong-date page;
-   - missing prize group.
-5. Universal FULL_27 validator over all adapters.
-6. Bounded real historical slice on Render.
-7. Capture runtime evidence and hashes.
-8. Compare derived TAIL_27 with legacy Excel reference.
-9. Record all outcomes here and in action log.
-10. Only then expand historical backfill.
+1. Define `RoomIdentity` / layer identity.
+2. Define corridor registry from `docs/FOSENNIC_LAYER_CORRIDOR_MATRIX_V1.md`.
+3. Define a strict message envelope with schema/version/lineage/state.
+4. Implement default-DENY corridor authorization.
+5. Implement privileged capability issuance/consumption using the existing forensic capability pattern.
+6. Implement pre/post identity checks and anti-TOCTOU checks.
+7. Implement append-only communication audit events with secret redaction.
+8. Implement fail-closed handling: privileged security failure -> TERMINAL_HALT; ordinary data-gate failure -> DENY/HOLD according to the contract.
+9. Add invariant tests for forbidden privilege inversions.
+10. Only after these gates pass, connect the four source adapters into the runtime graph.
+
+### Why this is before the crawler
+
+The crawler is a lower-trust L0 component. If it is connected directly to higher layers before the corridor model exists, the system can accidentally create an ungoverned privilege path. Fosennic requires the corridors to exist before the rooms are connected.
 
 ## Handoff template
 
@@ -144,13 +144,18 @@ A future Bot MUST NOT:
 - promote candidate evidence automatically;
 - redesign preserved UI while foundation is incomplete;
 - delete or overwrite forensic evidence to make tests pass;
-- erase prior ledger/action history.
+- erase prior ledger/action history;
+- create direct cross-room calls without a registered corridor;
+- allow lower-layer components to issue upper-layer capabilities;
+- allow UI/reporting to mutate canonical truth;
+- log credentials, DATABASE_URL, tokens or capability secrets.
 
 ## Completion gate
 
-`DATA FOUNDATION = COMPLETE` only when all blueprint completion criteria are evidenced. Until then:
+`DATA FOUNDATION = COMPLETE` only when all blueprint completion criteria are evidenced AND all required cross-room communication paths are registered and fail-closed. Until then:
 
 ```text
 DATA FOUNDATION = INCOMPLETE
+COMMUNICATION SECURITY = INCOMPLETE
 PROMOTION = DENY
 ```
