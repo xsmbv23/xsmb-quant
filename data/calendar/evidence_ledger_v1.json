@@ -1,0 +1,19 @@
+{
+  "schema_version": "CALENDAR_EVIDENCE_V1",
+  "policy": {
+    "missing_data_is_not_non_draw": true,
+    "unknown_gap_blocks_promotion": true,
+    "historical_exception_requires_evidence": true
+  },
+  "candidate_periods": [
+    {
+      "start": "2020-04-01",
+      "end": "2020-04-22",
+      "candidate_state": "NON_DRAW_DAY",
+      "reason": "COVID-19 lottery suspension candidate",
+      "evidence_required": ["official_announcement", "resumption_notice"],
+      "promotion": "DENY_UNTIL_EVIDENCE_BOUND"
+    }
+  ],
+  "ledger_rule": "Every exceptional period remains a candidate until source evidence is attached."
+}
