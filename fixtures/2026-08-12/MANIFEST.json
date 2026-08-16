@@ -1,0 +1,25 @@
+{
+  "manifest_version": "XSMB-BOUNDED-FIXTURE-1",
+  "fixture_id": "XSMB-2026-08-12-REAL-SOURCE-001",
+  "source_file": "Ket_Qua_Loto27.xlsx",
+  "source_sha256": "96328e7808165f60fd4513f2dbe77936c12e3fc3f918896c62e3f0049306e225",
+  "fixture_payload_sha256": "d80bff3b3d8576263f9eb9c103656a8512360a8376b0d30b8ea1b5680291b76a",
+  "date": "2026-08-12",
+  "full27": {
+    "count": 27,
+    "status": "STRUCTURALLY_VALIDATED"
+  },
+  "tail27": {
+    "count": 27,
+    "derivation": "source_prize[-2:]",
+    "status": "DERIVED_FROM_FULL27"
+  },
+  "quorum": {
+    "source_count": 1,
+    "required": 2,
+    "status": "FAIL"
+  },
+  "canonical": "DENY",
+  "promotion": "DENY",
+  "next": "Execute bounded parser/derivation/evidence runtime against this fixture; do not promote it."
+}
