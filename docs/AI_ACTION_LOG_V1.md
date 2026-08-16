@@ -25,3 +25,21 @@ This is the append-only style operational history for AI work on the repository.
 **Governance:** Promotion remains DENY. Data foundation remains INCOMPLETE.
 
 **Next action:** Implement four source-specific adapters, immutable raw artifact persistence, adversarial parser fixtures, then execute a bounded historical slice on Render and record runtime evidence.
+
+## 2026-08-16 — N002 Communication Security Enforcement
+
+**Actor:** GPT-5.6 Luna
+
+**Action record:** `docs/action_log/2026-08-16_N002_security_enforcement.md`
+
+**Commits:** `a14f481d624f09f2eb24a4345262390993ccde1c`, `1ccb29b7a0ee7c3a1a511500f07c0579e655fe2b`, `cd01222292eee6e06e6e8861ccb06328135f21c6`, `5e5887ffc8deaaf86c26fa2bb4c0be92482f1cd0`, `13c3b7c49c8e52783976608d079b5ec71845c4d4`, `10478c4c2fe5fe525b005094f9f38d2254f70c20`, `872b5470283640f4998238033fbef51c085f515e`, `f38f360a5d90d96784d53de4b5fdc807956a29d4`
+
+**Implemented:** L0–L6 runtime layer identities, explicit corridor registry, strict message envelope, default-deny gate, replay protection, scoped one-shot capability authority, append-only communication audit with secret redaction, and invariant tests.
+
+**Static verification:** Repository writes completed and commit chain preserved.
+
+**Runtime verification:** UNKNOWN / NOT YET EXECUTED. This is intentionally not marked PASS.
+
+**Governance:** Promotion remains DENY; source adapters remain disconnected until runtime proof exists.
+
+**Next action:** N003 — execute the security invariant suite in a real Python/build runtime, add explicit fail-closed/TERMINAL_HALT handling, bind runtime evidence, then connect source adapters through registered corridors.
