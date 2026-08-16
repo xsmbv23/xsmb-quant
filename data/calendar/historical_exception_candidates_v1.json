@@ -1,0 +1,35 @@
+{
+  "schema_version": "HISTORICAL_EXCEPTION_CANDIDATES_V1",
+  "promotion": "DENY",
+  "rule": "These ranges are candidates for official NON_DRAW_DAY classification. They are not canonical until authoritative evidence is attached.",
+  "tet_candidate_ranges": [
+    ["2015-02-18", "2015-02-21"],
+    ["2016-02-07", "2016-02-10"],
+    ["2017-01-27", "2017-01-30"],
+    ["2018-02-15", "2018-02-18"],
+    ["2019-02-04", "2019-02-07"],
+    ["2020-01-24", "2020-01-27"],
+    ["2021-02-11", "2021-02-14"],
+    ["2022-01-31", "2022-02-03"],
+    ["2023-01-21", "2023-01-24"],
+    ["2024-02-09", "2024-02-12"],
+    ["2025-01-28", "2025-01-31"],
+    ["2026-02-16", "2026-02-19"]
+  ],
+  "covid_candidate_ranges": [
+    ["2020-04-01", "2020-04-22"]
+  ],
+  "covid_evidence": [
+    {
+      "date": "2020-04-23",
+      "claim": "XSMB resumed issuance and draws from 23/04/2020 after suspension from 01/04/2020",
+      "url": "https://phapluatplus.baophapluat.vn/hom-nay-234-xo-so-mien-bac-quay-thuong-tro-lai-69598.html"
+    },
+    {
+      "date": "2020-04-23",
+      "claim": "XSMB resumed from 23/04/2020; prior suspension began 01/04/2020",
+      "url": "https://vietnammoi.vn/hom-nay-xo-so-mien-bac-hoat-dong-lai-vietlott-van-tiep-tuc-dong-cua-20200422235813877.htm"
+    }
+  ],
+  "next_required": "Attach authoritative evidence for each Tet closure range before changing UNKNOWN_GAP to NON_DRAW_DAY."
+}
