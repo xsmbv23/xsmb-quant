@@ -1,0 +1,22 @@
+{
+  "action_id": "N003",
+  "checks": [
+    "valid_corridor",
+    "replay_denied",
+    "unknown_corridor_denied",
+    "missing_lineage_denied",
+    "capability_scope_mismatch_denied",
+    "capability_replay_denied",
+    "communication_audit_append_only",
+    "secret_redaction",
+    "terminal_halt_fail_closed"
+  ],
+  "commit_sha": "f6bea305766505b23b49e3f457a0401f43de6199",
+  "deploy_id": "dep-da0psrmt2ais739d5rkg",
+  "promotion": "DENY",
+  "runtime": "Render",
+  "runtime_status": "RUNTIME_VERIFIED",
+  "service_id": "srv-da0obdpt0dsc73a5ubbg",
+  "startup_selftest_timestamp": "2026-08-16T11:27:05.948980105Z",
+  "evidence_sha256": "7bcd0bdfc576aa2e5e2e55f6788ccf0517a736921ff7b5739eec1cb144ec4616"
+}
