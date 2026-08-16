@@ -1,0 +1,35 @@
+{
+  "schema_version": "SOURCE_REGISTRY_V1",
+  "purpose": "FULL_27 source discovery and provenance",
+  "sources": [
+    {
+      "id": "minhngoc_mb",
+      "domain": "minhngoc.net.vn",
+      "url_template": "https://www.minhngoc.net.vn/ket-qua-xo-so/mien-bac/{dd}-{mm}-{yyyy}.html",
+      "coverage_role": "primary_historical",
+      "full27_observed": true,
+      "evidence": "https://www.minhngoc.net.vn/ket-qua-xo-so/mien-bac/01-01-2015.html"
+    },
+    {
+      "id": "xoso_mb",
+      "domain": "xoso.com.vn",
+      "url_template": "https://xoso.com.vn/xsmb-{dd}-{mm}-{yyyy}.html",
+      "coverage_role": "independent_crosscheck",
+      "full27_observed": true,
+      "evidence": "https://xoso.com.vn/xsmb-01-01-2015.html"
+    },
+    {
+      "id": "xskt_mb",
+      "domain": "xskt.com.vn",
+      "url_template": "https://xskt.com.vn/xsmb/ngay-{d}-{m}-{yyyy}",
+      "coverage_role": "independent_crosscheck",
+      "full27_observed": true,
+      "evidence": "https://xskt.com.vn/xsmb/ngay-13-7-2026"
+    }
+  ],
+  "quorum_policy": {
+    "minimum_independent_sources": 2,
+    "conflict_policy": "RETAIN_AND_DENY",
+    "single_source_policy": "OBSERVE_ONLY_NOT_CANONICAL"
+  }
+}
