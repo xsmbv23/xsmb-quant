@@ -6,6 +6,7 @@ from security.selftest import run_security_selftest
 
 
 SELFTEST_RESULT = run_security_selftest()
+print(json.dumps({"event": "SECURITY_SELFTEST", **SELFTEST_RESULT}, sort_keys=True), flush=True)
 
 
 class Handler(BaseHTTPRequestHandler):
