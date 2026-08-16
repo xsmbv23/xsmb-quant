@@ -1,0 +1,30 @@
+flowchart TD
+    A[Source Registry V2] --> B[Acquire RAW bytes]
+    B --> C[SHA256 + provenance]
+    C --> D[Content Hygiene]
+    D --> D1[AD / BANNER]
+    D --> D2[SCRIPT / STYLE]
+    D --> D3[NAVIGATION]
+    D --> D4[CANDIDATE DATA]
+    D4 --> E[Source-specific parser]
+    E --> F[Universal FULL_27 validator]
+    F --> G{Calendar state}
+    G -->|NON_DRAW_DAY| X[Closure evidence]
+    G -->|UNKNOWN_GAP| Y[HOLD / DENY]
+    G -->|DRAW_EXPECTED| H[Source identity]
+    H --> I{Quorum >= 2 independent?}
+    I -->|NO| Y
+    I -->|CONFLICT| J[Conflict Ledger]
+    J --> Y
+    I -->|YES| K[Cross-source agreement]
+    K --> L[Project_Brain governance]
+    L -->|DENY| Y
+    L -->|PASS| M[CANDIDATE EVIDENCE]
+    M --> N[Derive TAIL_27]
+    N --> O[Legacy Excel reconciliation]
+    O -->|Mismatch| J
+    O -->|Match| P[Evidence complete]
+    P --> Q[Promotion remains separate]
+    R[Legacy Excel] --> O
+    S[Project_Brain_AI] -.governs.-> L
+    T[app.py UI] -.presentation only.-> U[New Core]
