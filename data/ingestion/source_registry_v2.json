@@ -1,0 +1,16 @@
+{
+  "version": "SOURCE_REGISTRY_V2",
+  "sources": [
+    {"id":"minhngoc","base_url":"https://www.minhngoc.net.vn","independence_group":"publisher_a"},
+    {"id":"xoso","base_url":"https://xoso.com.vn","independence_group":"publisher_b"},
+    {"id":"xskt","base_url":"https://xskt.com.vn","independence_group":"publisher_c"},
+    {"id":"ketqua16","base_url":"https://ketqua16.net","independence_group":"publisher_d"}
+  ],
+  "quorum": {"minimum_independent_sources":2,"conflict_action":"DENY"},
+  "content_policy": {
+    "advertising": "IGNORE_FOR_DATA_EXTRACTION",
+    "scripts": "NEVER_CANONICAL",
+    "navigation": "NEVER_CANONICAL",
+    "data_table": "CANDIDATE_ONLY_UNTIL_VALIDATED"
+  }
+}
