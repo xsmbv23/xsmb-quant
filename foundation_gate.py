@@ -2,10 +2,15 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
 
+from security.selftest import run_security_selftest
+
+
+SELFTEST_RESULT = run_security_selftest()
+
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path not in ("/", "/health"):
+        if self.path not in ("/", "/health", "/verification/security"):
             self.send_response(404)
             self.end_headers()
             return
@@ -17,6 +22,7 @@ class Handler(BaseHTTPRequestHandler):
             "canonical_truth": "FULL_27",
             "derived_view": "TAIL_27",
             "runtime_mode": "FOUNDATION_ONLY",
+            "security_verification": SELFTEST_RESULT,
         }
         body = json.dumps(payload, ensure_ascii=False).encode()
         self.send_response(200)
