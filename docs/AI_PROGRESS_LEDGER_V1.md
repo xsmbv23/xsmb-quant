@@ -19,6 +19,8 @@ COMMUNICATION SECURITY = RUNTIME_VERIFIED
 LAYER / CORRIDOR MATRIX = RUNTIME_VERIFIED
 CAPABILITY AUTHORITY = RUNTIME_VERIFIED
 COMMUNICATION AUDIT = RUNTIME_VERIFIED
+L0 MINHNGOC ADAPTER = RUNTIME_VERIFIED / PERSISTENCE PENDING
+RAW ARTIFACT PERSISTENCE = INCOMPLETE
 UI PRESERVATION = LOCKED
 RUNTIME HISTORICAL SLICE = NOT YET VERIFIED
 PROMOTION = DENY
@@ -72,7 +74,7 @@ These states are not interchangeable.
 ## Existing completed work
 
 - Repository reset and foundation established.
-- FULL_27 canonical topology established: DB1x5, G1 1x5, G2 2x5, G3 6x5, G4 4x5, G5 6x4, G6 3x3, G7 4x2 = 27 values.
+- FULL_27 canonical topology established: DB1x5, G1 1x5, G2 2x5, G3 6x5, G4 4x4, G5 6x4, G6 3x3, G7 4x2 = 27 values.
 - TAIL_27 is derived from FULL_27 only.
 - Legacy Excel measured: 4,172 rows in its observed window; it is reconciliation reference, not full-result truth.
 - 70 historical gaps identified; missing != non-draw.
@@ -92,31 +94,33 @@ These states are not interchangeable.
 - N002 runtime security primitives implemented: message envelope, corridor gate, capability authority, communication audit and invariant tests.
 - N003 runtime verification completed on Render: replay, unknown corridor, missing lineage, capability scope mismatch, capability replay, append-only audit, secret redaction and terminal-halt fail-closed all verified.
 - N003 evidence bound under `evidence/runtime/N003_security_runtime_verification_v2.json`.
-- Persistent action record for N003 created under `docs/action_log/`.
+- N004 first registered source (`minhngoc`) executed through the L0 adapter on Render.
+- N004 captured raw HTTP bytes before extraction, SHA-256 bound the raw source, applied content hygiene, extracted exactly 27 FULL_27 values with leading zeros preserved, and kept promotion denied.
+- N004 evidence bound under `evidence/runtime/N004_minhnog_live_probe_v1.json`.
+- N004 raw capture remains explicitly `EPHEMERAL_CAPTURE_ONLY`; immutable database persistence is not yet complete.
+- Persistent action records for N002, N003 and N004 exist under `docs/action_log/`.
 - This ledger and action log form the persistent continuation memory.
 
 ## Current NEXT_ACTION
 
-### N004 — First bounded source adapter through the security corridor
+### N005 — Immutable raw-artifact persistence in xsmb_runtime_db
 
-Do not connect all four sources simultaneously. Start with exactly one source adapter as the controlled L0→L1 path:
+The L0 adapter is proven against one live source, but the raw bytes are still ephemeral. Fix the foundation before widening sources.
 
-1. Select the first registered source from `data/ingestion/source_registry_v2.json` according to the existing registry order/policy.
-2. Build an adapter that captures raw response bytes without modifying them.
-3. Record source URL, retrieval timestamp, HTTP metadata, content hash and parser version.
-4. Pass the captured artifact through content hygiene before any extraction.
-5. Emit only a schema-validated `RAW_SOURCE_V1` envelope through the registered L0→L1 corridor.
-6. Store raw evidence immutably; never overwrite a prior capture.
-7. Parse FULL_27 only after provenance is bound.
-8. Never derive TAIL_27 from source HTML when FULL_27 is available.
-9. Run a bounded fixture first; then a single real retrieval.
-10. Compare the extracted result against an independent reference before widening the source.
-11. Record runtime evidence and exact hashes.
-12. Keep `PROMOTION = DENY`.
+1. Establish a TLS-required PostgreSQL client path for `xsmb_runtime_db`.
+2. Add a minimal schema for immutable raw artifacts and provenance records.
+3. Use a database-side unique key on `(source_id, content_sha256)` so duplicate captures are idempotent without overwriting bytes.
+4. Store retrieval timestamp, URL, HTTP status, content type, raw SHA-256, byte length and parser version separately from raw bytes.
+5. Store the raw bytes exactly as captured; no HTML cleanup may modify the canonical raw artifact.
+6. Bind the N004 raw SHA as the first real provenance record.
+7. Verify database read-after-write from the Render runtime.
+8. Add a fail-closed database gate: persistence failure means `DENY/HOLD`, never “continue with unrecorded truth”.
+9. Record database runtime evidence and exact hashes.
+10. Keep `PROMOTION = DENY`.
 
 ### Why this is the next gate
 
-The security corridor is now runtime-proven. The next risk is the L0 data ingress itself: advertisements, navigation, malformed pages, changed HTML, missing dates, duplicate captures and parser drift must be contained before multiple sources can interact. One source at a time preserves forensic causality.
+Without immutable raw persistence, a live crawl can be observed but cannot become reproducible forensic evidence. The data foundation must therefore close the raw-artifact persistence boundary before adding xoso/xskt/ketqua16 or historical backfill.
 
 ## Handoff template
 
@@ -157,6 +161,7 @@ A future Bot MUST NOT:
 - allow lower-layer components to issue upper-layer capabilities;
 - allow UI/reporting to mutate canonical truth;
 - connect all source adapters at once;
+- treat ephemeral raw captures as immutable evidence;
 - log credentials, DATABASE_URL, tokens or capability secrets.
 
 ## Completion gate
