@@ -1,0 +1,21 @@
+{
+  "evidence_version": "XSMB-RUNTIME-EVIDENCE-V1",
+  "execution_boundary": "LOCAL_VERIFICATION_RUNTIME",
+  "executed_at_utc": "2026-08-16T14:05:46.721114+00:00",
+  "fixture_id": "XSMB-2026-08-12-REAL-SOURCE-001",
+  "source_file": "Ket_Qua_Loto27.xlsx",
+  "source_sha256": "96328e7808165f60fd4513f2dbe77936c12e3fc3f918896c62e3f0049306e225",
+  "source_sha256_match": true,
+  "observed_date": "12/08/2026",
+  "full27_count": 27,
+  "semantic_lengths": [5,5,5,5,5,5,5,5,5,5,4,4,4,4,4,4,4,4,4,4,3,3,3,2,2,2,2],
+  "full27_valid": true,
+  "tail27_count": 27,
+  "tail27_derived_from_full27": true,
+  "canonical_payload_sha256": "1f089aa05e6d71ad186ad6aa35bb27858f3571b69da7381e872839c27c9061f2",
+  "quorum": {"source_count": 1, "required": 2, "status": "FAIL"},
+  "canonical": "DENY",
+  "promotion": "DENY",
+  "maxrss_kb_observed_local": 120104,
+  "runtime_note": "Runtime chain executed against one bounded real-source fixture. The memory observation is local-runtime evidence only and is not a Render capacity claim."
+}
