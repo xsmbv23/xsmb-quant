@@ -1,0 +1,27 @@
+{
+  "schema_version": "LEGACY_RECONCILIATION_V1",
+  "source_file": "Ket_Qua_Loto27.xlsx",
+  "artifact_sha256": "48e0251d8fe4e986579a118c9372ae1b2289e6ca1b67884df5827e692426f94f",
+  "row_count": 4172,
+  "oldest": "2015-01-01",
+  "newest": "2026-08-12",
+  "all_rows_have_27_tails": true,
+  "unknown_gap_days": 70,
+  "canonical_full27": false,
+  "promotion": "DENY",
+  "unknown_gap_ranges": [
+    {"start":"2015-02-18","end":"2015-02-21","days":4},
+    {"start":"2016-02-07","end":"2016-02-10","days":4},
+    {"start":"2017-01-27","end":"2017-01-30","days":4},
+    {"start":"2018-02-15","end":"2018-02-18","days":4},
+    {"start":"2019-02-04","end":"2019-02-07","days":4},
+    {"start":"2020-01-24","end":"2020-01-27","days":4},
+    {"start":"2020-04-01","end":"2020-04-22","days":22},
+    {"start":"2021-02-11","end":"2021-02-14","days":4},
+    {"start":"2022-01-31","end":"2022-02-03","days":4},
+    {"start":"2023-01-21","end":"2023-01-24","days":4},
+    {"start":"2024-02-09","end":"2024-02-12","days":4},
+    {"start":"2025-01-28","end":"2025-01-31","days":4},
+    {"start":"2026-02-16","end":"2026-02-19","days":4}
+  ]
+}
