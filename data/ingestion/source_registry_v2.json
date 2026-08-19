@@ -4,7 +4,8 @@
     {"id":"minhngoc","base_url":"https://www.minhngoc.net.vn","independence_group":"publisher_a"},
     {"id":"xoso","base_url":"https://xoso.com.vn","independence_group":"publisher_b"},
     {"id":"xskt","base_url":"https://xskt.com.vn","independence_group":"publisher_c"},
-    {"id":"ketqua16","base_url":"https://ketqua16.net","independence_group":"publisher_d"}
+    {"id":"ketqua16","base_url":"https://ketqua16.net","independence_group":"publisher_d"},
+    {"id":"xsmb","base_url":"https://www.xsmb.com.vn","independence_group":"publisher_e"}
   ],
   "quorum": {"minimum_independent_sources":2,"conflict_action":"DENY"},
   "content_policy": {
