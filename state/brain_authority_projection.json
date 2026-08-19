@@ -1,0 +1,18 @@
+{
+  "project_id": "XSMB_FORENSIC",
+  "repository": "xsmbv23/xsmb-quant",
+  "role": "DATA_PLANE_PROJECTION",
+  "authority_repository": "xsmbv23/Project_Brain_AI",
+  "authority_path": "state/current_state.json",
+  "authority_blob_sha": "84f5706ff8fe0b5a70cc018a82920ec7de2f8208",
+  "local_state_authority": false,
+  "may_override_brain": false,
+  "may_promote": false,
+  "runtime_is_authority": false,
+  "conflict_policy": "HARD_DENY",
+  "unknown_policy": "DENY",
+  "canonical_data_policy": "BRAIN_ADMISSION_REQUIRED",
+  "historical_logs_are_authority": false,
+  "layer_1": "LOCKED_UNTIL_BRAIN_AUTHORITY_TRANSITION",
+  "note": "This projection exists to orient successors and prevent state drift. It is not a second state machine. Brain current_state.json is the sole logical state authority."
+}
