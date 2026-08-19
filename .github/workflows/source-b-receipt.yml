@@ -1,0 +1,34 @@
+name: source-b-receipt
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      draw_date:
+        description: "Real draw date YYYY-MM-DD"
+        required: true
+        default: "2026-08-12"
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Parser tests
+        run: python -m unittest tests/test_xsmb_source_b.py
+      - name: Live source-B receipt
+        env:
+          DRAW_DATE: ${{ inputs.draw_date || '2026-08-12' }}
+        run: python scripts/collect_source_b_receipt.py "$DRAW_DATE"
+      - name: Upload candidate receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-b-receipt
+          path: source_b_receipt.json
+          if-no-files-found: error
