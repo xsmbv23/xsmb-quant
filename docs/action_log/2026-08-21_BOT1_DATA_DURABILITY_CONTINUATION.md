@@ -12,9 +12,9 @@ Forensic is the admission/control mechanism, not the destination. PASS is local;
 
 ## Continuation finding
 
-The previous durability verifier checked that the database row's `evidence_sha256` field matched the expected hash. That alone was insufficient: a persisted JSON envelope could theoretically have its contents altered while retaining the hash field. Readback verification therefore must recompute the canonical SHA from the recovered envelope itself.
+The previous durability verifier checked the database row's `evidence_sha256` field against the expected hash. That alone was insufficient: a persisted JSON envelope could theoretically have its contents altered while retaining the hash field. Readback verification therefore must recompute the canonical SHA from the recovered envelope itself.
 
-## Repair
+## Repair 1 — readback integrity
 
 Updated `verification/durable_evidence_roundtrip.py` to:
 
@@ -27,25 +27,42 @@ Updated `verification/durable_evidence_roundtrip.py` to:
 
 Commit: `f14eb522e0275c82e46bd5e5aacfab9c9eecbae2`
 
+## Repair 2 — executable regression coverage
+
+Added `tests/test_durable_evidence_roundtrip.py` covering:
+
+- valid envelope + matching readback → PASS locally;
+- readback payload tampering while retaining the hash field → DENY;
+- local envelope hash mismatch → DENY before persistence.
+
+Commit: `5cb70763d4525c15c6dd28d06367debefd7cf224`
+
+Added `.github/workflows/durable-evidence-tests.yml` so the durability integrity tests execute on pushes to `main`, pull requests, and manual dispatch.
+
+Commit: `85c4f5419f728c2b08f0957e6941d71149946f82`
+
 ## Verification status
 
 IMPLEMENTED = YES
-EXECUTION RECEIPT = NOT YET PROVEN
+CI EXECUTION RECEIPT = NOT YET PROVEN
 RENDER DURABILITY = NOT YET PROVEN
 PROMOTION = DENY
 
+The GitHub connector currently reports no workflow run associated with the repair commit and no combined status checks. Therefore no PASS is inferred from the existence of the workflow file or test code.
+
 ## Next action
 
-Run the repository's available CI/runtime verification against the current commit. Then, on the confirmed DATA Render workspace, execute an exact-current bounded durability test with a real externally produced compact evidence envelope and real `DATABASE_URL`. Verify:
+Obtain an exact-current CI execution receipt for the durability tests. If CI passes, move to the confirmed DATA Render workspace and execute an exact-current bounded durability test with a real externally produced compact evidence envelope and real `DATABASE_URL`. Verify:
 
 - original envelope SHA;
 - recovered envelope SHA recomputation;
 - recovered JSON identity;
 - repeated persistence/idempotency;
-- no promotion side effect.
+- no promotion side effect;
+- memory remains within the repository's Render guard.
 
 Do not infer source quorum, FULL_27 admission, backtest validity, EV/P&L, or action permission from durability alone.
 
 ## Parallel-work boundary
 
-Bot 1 remains scoped to `xsmbv23/xsmb-quant`. No Project_Brain_AI or Quant_Engine mutation is performed by this workstream.
+Bot 1 remains scoped to `xsmbv23/xsmb-quant`. No `Project_Brain_AI` or `Quant_Engine` mutation is performed by this workstream.
