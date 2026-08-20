@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -105,6 +106,7 @@ def fetch_source_d(day: date, raw_root: str | Path = "runtime/raw", timeout: int
     tmp_path = raw_dir / ".capture.html"
     digest = hashlib.sha256()
     parse_buf = bytearray()
+    byte_length = 0
 
     with requests.get(
         SOURCE_URL,
@@ -113,15 +115,16 @@ def fetch_source_d(day: date, raw_root: str | Path = "runtime/raw", timeout: int
         stream=True,
     ) as response:
         response.raise_for_status()
+        encoding = response.encoding or "utf-8"
         with tmp_path.open("wb") as handle:
             for chunk in response.iter_content(chunk_size=64 * 1024):
                 if not chunk:
                     continue
                 digest.update(chunk)
+                byte_length += len(chunk)
                 handle.write(chunk)
                 if len(parse_buf) < parse_window_bytes:
                     parse_buf.extend(chunk[: parse_window_bytes - len(parse_buf)])
-        encoding = response.encoding or "utf-8"
 
     html_sha = digest.hexdigest()
     raw_path = raw_dir / f"{html_sha}.html"
@@ -131,4 +134,24 @@ def fetch_source_d(day: date, raw_root: str | Path = "runtime/raw", timeout: int
     block = extract_date_block(visible, day)
     full = parse_full27_block(block)
     block_sha = hashlib.sha256(block.encode("utf-8")).hexdigest()
+    meta_path = raw_dir / f"{html_sha}.json"
+    if not meta_path.exists():
+        meta_path.write_text(
+            json.dumps(
+                {
+                    "schema": "XSMB-SOURCE-CAPTURE-V1",
+                    "source_id": SOURCE_ID,
+                    "source_url": SOURCE_URL,
+                    "observed_date": day.isoformat(),
+                    "raw_sha256": html_sha,
+                    "parse_block_sha256": block_sha,
+                    "byte_length": byte_length,
+                    "durability": "LOCAL_EPHEMERAL",
+                    "promotion_eligible": False,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ) + "\n",
+            encoding="utf-8",
+        )
     return SourceDRecord(day.isoformat(), full, SOURCE_ID, SOURCE_URL, html_sha, str(raw_path), block_sha)
