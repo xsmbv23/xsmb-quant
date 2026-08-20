@@ -1,11 +1,11 @@
 {
   "version": "SOURCE_REGISTRY_V2",
   "sources": [
-    {"id":"minhngoc","base_url":"https://www.minhngoc.net.vn","independence_group":"publisher_a"},
-    {"id":"xoso","base_url":"https://xoso.com.vn","independence_group":"publisher_b"},
-    {"id":"xskt","base_url":"https://xskt.com.vn","independence_group":"publisher_c"},
-    {"id":"ketqua16","base_url":"https://ketqua16.net","independence_group":"publisher_d"},
-    {"id":"xsmb","base_url":"https://www.xsmb.com.vn","independence_group":"publisher_e"}
+    {"id":"minhngoc","base_url":"https://www.minhngoc.net.vn","independence_group":"publisher_a","adapter":"generic_date_url","content_role":"result_candidate"},
+    {"id":"xoso","base_url":"https://xoso.com.vn","independence_group":"publisher_b","adapter":"generic_date_url","content_role":"result_candidate"},
+    {"id":"xskt","base_url":"https://xskt.com.vn","independence_group":"publisher_c","adapter":"generic_date_url","content_role":"result_candidate"},
+    {"id":"ketqua16","base_url":"https://ketqua16.net","independence_group":"publisher_d","adapter":"ketqua16_source_d","content_role":"result_candidate"},
+    {"id":"xsmb","base_url":"https://www.xsmb.com.vn","independence_group":"publisher_e","adapter":"xsmb_source_b","content_role":"result_candidate"}
   ],
   "quorum": {"minimum_independent_sources":2,"conflict_action":"DENY"},
   "content_policy": {
@@ -13,5 +13,12 @@
     "scripts": "NEVER_CANONICAL",
     "navigation": "NEVER_CANONICAL",
     "data_table": "CANDIDATE_ONLY_UNTIL_VALIDATED"
+  },
+  "acquisition_invariant": {
+    "registry_is_authoritative": true,
+    "unregistered_source": "DENY",
+    "registered_without_adapter": "DENY",
+    "adapter_pass_without_quorum": "CANDIDATE_ONLY",
+    "raw_durability": "LOCAL_EPHEMERAL_UNTIL_DURABLE_SINK_VERIFIED"
   }
 }
