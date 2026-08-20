@@ -16,11 +16,14 @@ from data.ingestion.full27_validator import validate_prize_groups
 
 NAMES = ('DB', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7')
 NUMBER_RE = re.compile(r'(?<!\d)\d{2,5}(?!\d)')
-DEFAULT_SOURCES = {
-    'minhngoc_mb': 'https://www.minhngoc.net.vn/ket-qua-xo-so/mien-bac/{dd}-{mm}-{yyyy}.html',
-    'xoso_mb': 'https://xoso.com.vn/xsmb-{dd}-{mm}-{yyyy}.html',
-    'xskt_mb': 'https://xskt.com.vn/xsmb/ngay-{d}-{m}-{yyyy}',
+REGISTRY_PATH = Path(__file__).with_name('source_registry_v2.json')
+
+GENERIC_URLS = {
+    'minhngoc': 'https://www.minhngoc.net.vn/ket-qua-xo-so/mien-bac/{dd}-{mm}-{yyyy}.html',
+    'xoso': 'https://xoso.com.vn/xsmb-{dd}-{mm}-{yyyy}.html',
+    'xskt': 'https://xskt.com.vn/xsmb/ngay-{d}-{m}-{yyyy}',
 }
+
 
 @dataclass(frozen=True)
 class SourceRecord:
@@ -42,8 +45,24 @@ class SourceRecord:
         return hashlib.sha256(payload).hexdigest()
 
 
+def load_registry() -> dict:
+    payload = json.loads(REGISTRY_PATH.read_text(encoding='utf-8'))
+    if payload.get('version') != 'SOURCE_REGISTRY_V2':
+        raise ValueError('SOURCE_REGISTRY_VERSION_UNSUPPORTED')
+    return payload
+
+
+def registered_source_ids() -> tuple[str, ...]:
+    return tuple(item['id'] for item in load_registry().get('sources', []))
+
+
 def url_for(source_id: str, day: date) -> str:
-    return DEFAULT_SOURCES[source_id].format(dd=f'{day.day:02d}', mm=f'{day.month:02d}', d=day.day, m=day.month, yyyy=day.year)
+    if source_id == 'ketqua16':
+        return 'https://ketqua16.net/so-ket-qua-truyen-thong/200'
+    if source_id == 'xsmb':
+        return 'https://www.xsmb.com.vn/so-ket-qua-xsmb-500-ngay'
+    template = GENERIC_URLS[source_id]
+    return template.format(dd=f'{day.day:02d}', mm=f'{day.month:02d}', d=day.day, m=day.month, yyyy=day.year)
 
 
 def _label(text: str) -> str:
@@ -111,7 +130,34 @@ def _verify_page_date(html: str, day: date) -> bool:
     return any(form in text for form in forms)
 
 
+def _record_from_adapter(adapter_record) -> SourceRecord:
+    table_sha = hashlib.sha256(json.dumps(adapter_record.full_prizes, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
+    return SourceRecord(
+        adapter_record.draw_date,
+        tuple(adapter_record.full_prizes),
+        adapter_record.source_id,
+        adapter_record.source_url,
+        adapter_record.source_html_sha256,
+        table_sha,
+        adapter_record.raw_artifact_path,
+    )
+
+
+def _fetch_special(source_id: str, day: date, raw_root: str | Path, timeout: int) -> SourceRecord | None:
+    if source_id == 'xsmb':
+        from data.ingestion.xsmb_source_b import fetch_source_b
+        return _record_from_adapter(fetch_source_b(day, raw_root=raw_root, timeout=timeout))
+    if source_id == 'ketqua16':
+        from data.ingestion.ketqua16_source_d import fetch_source_d
+        return _record_from_adapter(fetch_source_d(day, raw_root=raw_root, timeout=timeout))
+    return None
+
+
 def fetch_one(source_id: str, day: date, timeout: int = 20, raw_root: str | Path = 'runtime/raw') -> SourceRecord | None:
+    special = _fetch_special(source_id, day, raw_root, timeout)
+    if special is not None:
+        return special
+
     url = url_for(source_id, day)
     response = requests.get(url, headers={'User-Agent': 'XSMB-ForensicCrawler/2.1', 'Accept': 'text/html,application/xhtml+xml'}, timeout=timeout)
     if response.status_code != 200:
@@ -129,7 +175,7 @@ def fetch_one(source_id: str, day: date, timeout: int = 20, raw_root: str | Path
     if not raw_path.exists():
         raw_path.write_bytes(content)
     if not meta_path.exists():
-        meta_path.write_text(json.dumps({'source_id': source_id, 'url': url, 'date': day.isoformat(), 'sha256': html_sha, 'byte_length': len(content)}, ensure_ascii=False, indent=2), encoding='utf-8')
+        meta_path.write_text(json.dumps({'source_id': source_id, 'url': url, 'date': day.isoformat(), 'sha256': html_sha, 'byte_length': len(content), 'durability': 'LOCAL_EPHEMERAL', 'promotion_eligible': False}, ensure_ascii=False, indent=2), encoding='utf-8')
 
     groups = extract_groups(response.text)
     if groups is None:
@@ -139,8 +185,12 @@ def fetch_one(source_id: str, day: date, timeout: int = 20, raw_root: str | Path
     return SourceRecord(day.isoformat(), full, source_id, url, html_sha, table_sha, str(raw_path))
 
 
-def crawl(days: Iterable[date], sources: Iterable[str] = DEFAULT_SOURCES, workers: int = 6, timeout: int = 20):
-    tasks = [(source, day) for source in sources for day in days]
+def crawl(days: Iterable[date], sources: Iterable[str] | None = None, workers: int = 6, timeout: int = 20):
+    selected = tuple(sources) if sources is not None else registered_source_ids()
+    unknown = sorted(set(selected) - set(registered_source_ids()))
+    if unknown:
+        raise ValueError(f'SOURCE_NOT_REGISTERED:{unknown}')
+    tasks = [(source, day) for source in selected for day in days]
     records: list[SourceRecord] = []
     errors: list[dict[str, str]] = []
     with ThreadPoolExecutor(max_workers=max(1, min(workers, len(tasks) or 1))) as pool:
