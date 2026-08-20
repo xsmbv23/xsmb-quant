@@ -19,15 +19,19 @@ def canonical(value: dict) -> bytes:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
 
 
+def evidence_sha(value: dict) -> str:
+    body = dict(value)
+    body.pop("evidence_sha256", None)
+    return hashlib.sha256(canonical(body)).hexdigest()
+
+
 def verify_envelope(path: Path) -> tuple[int, dict]:
     env = json.loads(path.read_text(encoding="utf-8"))
     expected = env.get("evidence_sha256")
     if not expected:
         return 3, {"status": "DENY", "promotion": "DENY", "reason": "EVIDENCE_SHA_MISSING"}
 
-    body = dict(env)
-    body.pop("evidence_sha256", None)
-    computed = hashlib.sha256(canonical(body)).hexdigest()
+    computed = evidence_sha(env)
     if computed != expected:
         return 3, {"status": "DENY", "promotion": "DENY", "reason": "EVIDENCE_SHA_LOCAL_MISMATCH"}
 
@@ -42,13 +46,19 @@ def verify_envelope(path: Path) -> tuple[int, dict]:
             "error_type": type(exc).__name__,
         }
 
-    recovered_sha = recovered.get("evidence_sha256")
-    status = "PASS" if recovered_sha == expected else "DENY_READBACK_HASH_MISMATCH"
+    recovered_sha_field = recovered.get("evidence_sha256")
+    recovered_sha_computed = evidence_sha(recovered)
+    status = (
+        "PASS"
+        if recovered_sha_field == expected and recovered_sha_computed == expected
+        else "DENY_READBACK_HASH_MISMATCH"
+    )
     return (0 if status == "PASS" else 5), {
         "status": status,
         "promotion": "DENY",
         "evidence_sha256": expected,
-        "readback_sha256": recovered_sha,
+        "readback_sha256": recovered_sha_computed,
+        "readback_sha_field": recovered_sha_field,
     }
 
 
