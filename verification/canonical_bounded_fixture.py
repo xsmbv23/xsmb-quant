@@ -18,6 +18,17 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def independent_quorum(fixture: dict) -> tuple[bool, list[str]]:
+    """Require explicit, distinct source identities; count alone is insufficient."""
+    raw_ids = fixture.get("source_identities", [])
+    if not isinstance(raw_ids, list):
+        return False, []
+    ids = [str(value).strip() for value in raw_ids if str(value).strip()]
+    unique_ids = list(dict.fromkeys(ids))
+    required = 2
+    return len(unique_ids) >= required, unique_ids
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("fixture", type=Path)
@@ -39,7 +50,7 @@ def main() -> int:
         source_sha = sha256_bytes(args.source.read_bytes())
         source_sha_match = source_sha == fixture["source_file_sha256"]
 
-    quorum_ok = fixture["source_count"] >= 2
+    quorum_ok, source_identities = independent_quorum(fixture)
     canonical = "ALLOW" if full27_valid and tail27_valid and source_sha_match is not False and quorum_ok else "DENY"
 
     evidence = {
@@ -57,9 +68,12 @@ def main() -> int:
         "tail27_count": len(tails),
         "tail27_derived_from_full27": tail27_valid,
         "quorum": {
-            "source_count": fixture["source_count"],
+            "source_count_declared": fixture.get("source_count"),
+            "source_identities": source_identities,
+            "distinct_source_count": len(source_identities),
             "required": 2,
             "status": "PASS" if quorum_ok else "FAIL",
+            "reason": None if quorum_ok else "INDEPENDENT_SOURCE_IDENTITY_EVIDENCE_REQUIRED",
         },
         "canonical": canonical,
         "promotion": "DENY",
