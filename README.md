@@ -11,19 +11,25 @@ The project is rebuilt from the data plane upward, with Project_Brain governance
 - `Ket_Qua_Loto27.xlsx` is legacy tail-only reference data, never forensic source truth.
 - Missing source data is never inferred as a non-draw day.
 
-## Legacy measurement already performed
+## Source registry and acquisition invariant
 
-The retained legacy workbook contains **4,172 data rows**, from `2015-01-01` through `2026-08-12`, with exactly 27 two-digit tails per row. It has **70 calendar gaps** in that span. These gaps remain `UNKNOWN_GAP` until authoritative calendar evidence is attached. A long gap exists from `2020-04-01` through `2020-04-22`; this is tracked as a COVID-era exception candidate, not silently hard-coded as a non-draw fact.
-
-## Source roles
-
-The source registry contains four independent candidates:
+The authoritative registry currently contains **five** independent candidates:
 
 ```text
-PRIMARY TARGET      = ketqua16.net
-IDENTITY / QUORUM B = xsmb.com.vn
-OTHER INDEPENDENT   = minhngoc
-OTHER INDEPENDENT   = xoso / xskt candidates as registered
+publisher_a = minhngoc
+publisher_b = xoso
+publisher_c = xskt
+publisher_d = ketqua16
+publisher_e = xsmb
+```
+
+The registry is the source of acquisition truth. The crawler may not silently maintain a separate source list. Every registered source must have an acquisition route and every unregistered source is rejected.
+
+The primary real-source pair for the current research gate is:
+
+```text
+SOURCE A = ketqua16.net
+SOURCE B = xsmb.com.vn
 ```
 
 A source's role does not make it canonical by itself. **No single website is allowed to promote its own output to source truth.** The default canonical quorum remains two independent sources, with conflicts and unresolved provenance causing DENY.
@@ -33,7 +39,8 @@ Advertisements, banners, navigation, scripts, analytics, sponsored blocks and ot
 ## Pipeline
 
 ```text
-source HTML
+SOURCE REGISTRY
+  -> acquisition adapter
   -> raw HTML SHA256
   -> content hygiene (ads/scripts/navigation isolated; raw bytes preserved)
   -> strict FULL_27 extraction
@@ -45,6 +52,18 @@ source HTML
   -> candidate canonical FULL_27
   -> derived TAIL_27
 ```
+
+### Acquisition adapters
+
+```text
+minhngoc -> generic date URL adapter
+xoso     -> generic date URL adapter
+xskt     -> generic date URL adapter
+ketqua16 -> ketqua16_source_d.py
+xsmb     -> xsmb_source_b.py
+```
+
+`ketqua16_source_d.py` and `xsmb_source_b.py` use bounded streaming capture and parse only the target date block. The crawler does not treat advertisements, scripts or navigation as source truth.
 
 ## Admission invariant
 
@@ -63,6 +82,10 @@ SOURCE EXISTS
 
 Each gate owns its own evidence. `PASS` is local and only a prerequisite for the next gate. There is **no PASS inheritance** and `UNKNOWN` is never converted to PASS by inference.
 
+## Raw evidence durability
+
+`runtime/raw` is a **write-once local capture cache**, not a durable forensic evidence store. Raw bytes are SHA-256 bound and never overwritten, but local Render filesystem persistence must not be treated as durable evidence. Durable promotion requires an explicit durable sink and a successful write → read → SHA-256 match.
+
 ## UI contract
 
 The complete legacy `app.py` interface is preserved as a byte-level source contract. The backend/core will be replaced behind the UI; the presentation layer is not redesigned.
@@ -71,4 +94,4 @@ The complete legacy `app.py` interface is preserved as a byte-level source contr
 
 Render is currently foundation-only. It must not crawl, rebuild history, invent calendar states, or promote data. Current promotion state is **DENY**.
 
-`IMPLEMENTED != VERIFIED != PROMOTED`.
+`IMPLEMENTED != VERIFIED != EVIDENCE_BOUND != PROMOTED`.
