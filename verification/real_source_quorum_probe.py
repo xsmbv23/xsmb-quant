@@ -2,7 +2,9 @@
 
 This is candidate-evidence generation only. It fetches one date from each
 registered primary source sequentially, keeps the evidence objects separate,
-and never promotes truth. A source failure or result conflict is DENY.
+and never promotes truth. Quorum is delegated to the canonical reconciliation
+gate so source registration, independence, observation integrity, conflict
+handling, and quorum semantics cannot drift between the probe and admission.
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ from pathlib import Path
 
 from data.ingestion.ketqua16_source_d import fetch_source_d
 from data.ingestion.xsmb_source_b import fetch_source_b
+from data.reconciliation.reconciliation_gate_v1 import SourceObservation, reconcile
 
 TARGET_DATE = date.fromisoformat("2026-08-12")
 OUTPUT = Path("evidence/runtime/2026-08-12/real_source_quorum.json")
@@ -31,13 +34,13 @@ def _source_evidence(record):
             "|".join(record.full_prizes).encode("utf-8")
         ).hexdigest(),
         "full27": list(record.full_prizes),
-        "status": "PASS",
+        "status": "OBSERVED",
     }
 
 
 def run_probe() -> dict:
     evidence = {
-        "evidence_version": "XSMB-REAL-SOURCE-PROBE-V1",
+        "evidence_version": "XSMB-REAL-SOURCE-PROBE-V2",
         "target_date": TARGET_DATE.isoformat(),
         "promotion": "DENY",
         "canonical_truth": "FULL_27",
@@ -57,18 +60,35 @@ def run_probe() -> dict:
 
     evidence["sources"] = [_source_evidence(record) for record in records]
     evidence["errors"] = errors
-    ids = [item["source_id"] for item in evidence["sources"]]
-    distinct_ids = list(dict.fromkeys(ids))
+
+    observations = [
+        SourceObservation(record.source_id, tuple(record.full_prizes), record.source_html_sha256)
+        for record in records
+    ]
+    decision = reconcile(observations, minimum_independent_sources=2)
+    evidence["admission"] = {
+        "state": decision.state,
+        "reasons": list(decision.reasons),
+        "evidence_sha256": decision.evidence_sha256,
+    }
+
+    distinct_ids = list(dict.fromkeys(item["source_id"] for item in evidence["sources"]))
     evidence["quorum"] = {
         "required": 2,
         "distinct_source_count": len(distinct_ids),
         "source_identities": distinct_ids,
-        "status": "PASS" if len(distinct_ids) >= 2 and not errors else "DENY",
+        "status": "PASS" if decision.state == "CANONICAL_CANDIDATE" else "DENY",
     }
 
     if len(records) == 2 and len(distinct_ids) == 2 and not errors:
         evidence["result_match"] = records[0].full_prizes == records[1].full_prizes
-        evidence["status"] = "CANDIDATE" if evidence["result_match"] else "DENY_CONFLICT"
+
+    if decision.state == "CANONICAL_CANDIDATE" and evidence["result_match"]:
+        evidence["status"] = "CANDIDATE"
+    elif decision.state == "DENY" and "SOURCE_CONFLICT" in decision.reasons:
+        evidence["status"] = "DENY_CONFLICT"
+    else:
+        evidence["status"] = "DENY"
 
     evidence["memory_peak_kib"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
