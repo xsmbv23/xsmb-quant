@@ -107,3 +107,27 @@ def persist_raw_artifact(capture, parser_version: str) -> PersistenceResult:
             )
         conn.commit()
     return PersistenceResult(artifact_id, capture.content_sha256, inserted)
+
+
+def read_raw_artifact(raw_artifact_id: int) -> dict:
+    """Read back the immutable raw artifact needed for durability verification."""
+    with psycopg.connect(_database_url(), sslmode="require") as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT source_id, source_url, content_sha256, byte_length, raw_bytes
+                FROM raw_artifacts
+                WHERE id=%s
+                """,
+                (raw_artifact_id,),
+            )
+            row = cur.fetchone()
+    if not row:
+        raise RuntimeError("RAW_ARTIFACT_NOT_FOUND")
+    return {
+        "source_id": row[0],
+        "source_url": row[1],
+        "content_sha256": row[2],
+        "byte_length": int(row[3]),
+        "raw_bytes": bytes(row[4]),
+    }
