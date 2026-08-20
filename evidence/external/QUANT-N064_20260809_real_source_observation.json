@@ -1,0 +1,19 @@
+{
+  "action_id": "QUANT-N064",
+  "draw_date": "2026-08-09",
+  "source_a": {
+    "source_id": "ketqua16",
+    "url": "https://ketqua16.net/so-ket-qua-truyen-thong/60",
+    "observed_full27": ["12221","33704","95134","17327","04217","82286","56322","52512","96314","32250","4316","0742","8961","8299","3379","6567","7893","5442","1310","1473","468","841","949","21","77","29","97"]
+  },
+  "source_b": {
+    "source_id": "xsmb",
+    "url": "https://xsmb.com.vn/xsmb-sxmb-ket-qua-xo-so-mien-bac-ngay-09-08-2026",
+    "observed_full27": ["12221","33704","95134","17327","04217","82286","56322","52512","96314","32250","4316","0742","8961","8299","3379","6567","7893","5442","1310","1473","468","841","949","21","77","29","97"]
+  },
+  "agreement": true,
+  "full27_cardinality": 27,
+  "promotion": "DENY",
+  "evidence_class": "EXTERNAL_WEB_OBSERVATION_NOT_RUNTIME_CRAWLER_RECEIPT",
+  "note": "This record confirms independent public observations for parser/architecture verification only. It does not prove the Render crawler captured these bytes and does not constitute durable forensic evidence."
+}
