@@ -33,6 +33,15 @@ if os.environ.get("RUN_MINHNGOC_PROBE") == "1":
     SOURCE_PROBE_RESULT = run_probe()
     print(json.dumps({"event": "MINHNGOC_L0_PROBE", **SOURCE_PROBE_RESULT}, ensure_ascii=False, sort_keys=True), flush=True)
 
+REAL_SOURCE_QUORUM_RESULT = None
+if os.environ.get("RUN_REAL_SOURCE_QUORUM_PROBE") == "1":
+    try:
+        from verification.real_source_quorum_probe import run_probe
+        REAL_SOURCE_QUORUM_RESULT = run_probe()
+    except Exception as exc:
+        REAL_SOURCE_QUORUM_RESULT = {"status": "DENY", "promotion": "DENY", "reason": type(exc).__name__ + ":" + str(exc)[:240]}
+    print(json.dumps({"event": "REAL_SOURCE_QUORUM_PROBE", **REAL_SOURCE_QUORUM_RESULT}, ensure_ascii=False, sort_keys=True), flush=True)
+
 PERSISTENCE_RESULT = {"status": "PENDING", "promotion": "DENY", "reason": "RUN_DB_PERSISTENCE_NOT_ENABLED"}
 if os.environ.get("RUN_DB_PERSISTENCE") == "1":
     try:
@@ -69,21 +78,21 @@ if os.environ.get("RUN_EVIDENCE_ROUNDTRIP") == "1":
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path not in ("/", "/health", "/verification/security", "/verification/source/minhngoc", "/verification/bounded", "/verification/durability"):
+        if self.path not in ("/", "/health", "/verification/security", "/verification/source/minhngoc", "/verification/bounded", "/verification/durability", "/verification/source/quorum"):
             self.send_response(404); self.end_headers(); return
         payload = {
             "project": "XSMB_FORENSIC", "component": "DATA_FOUNDATION", "status": "IMPLEMENTED_NOT_PROMOTED",
             "promotion": "DENY", "canonical_truth": "FULL_27", "derived_view": "TAIL_27", "runtime_mode": "FOUNDATION_ONLY",
             "security_verification": SELFTEST_RESULT, "bounded_fixture": BOUNDED_FIXTURE_RESULT,
-            "minhngoc_probe": SOURCE_PROBE_RESULT, "raw_artifact_persistence": PERSISTENCE_RESULT,
-            "evidence_durability": DURABILITY_RESULT,
+            "minhngoc_probe": SOURCE_PROBE_RESULT, "real_source_quorum_probe": REAL_SOURCE_QUORUM_RESULT,
+            "raw_artifact_persistence": PERSISTENCE_RESULT, "evidence_durability": DURABILITY_RESULT,
         }
         body = json.dumps(payload, ensure_ascii=False).encode()
         self.send_response(200); self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
     def do_HEAD(self):
-        self.send_response(200 if self.path in ("/", "/health", "/verification/security", "/verification/source/minhngoc", "/verification/bounded", "/verification/durability") else 404)
+        self.send_response(200 if self.path in ("/", "/health", "/verification/security", "/verification/source/minhngoc", "/verification/bounded", "/verification/durability", "/verification/source/quorum") else 404)
         self.send_header("Content-Length", "0"); self.end_headers()
 
     def log_message(self, *_args):
