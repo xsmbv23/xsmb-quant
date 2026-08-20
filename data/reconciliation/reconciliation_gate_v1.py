@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
 
 REGISTRY_PATH = Path(__file__).resolve().parents[1] / "ingestion" / "source_registry_v2.json"
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True)
@@ -34,8 +36,22 @@ def _independence_groups() -> dict[str, str]:
         independence_group = source.get("independence_group")
         if not source_id or not independence_group:
             raise ValueError("SOURCE_REGISTRY_INDEPENDENCE_GROUP_MISSING")
+        if source_id in groups:
+            raise ValueError("SOURCE_REGISTRY_DUPLICATE_SOURCE_ID")
         groups[source_id] = independence_group
     return groups
+
+
+def _invalid_observation_reason(observation: SourceObservation) -> str | None:
+    if len(observation.full27) != 27:
+        return "INVALID_FULL27_LENGTH"
+    if any(not isinstance(value, str) or not value.isdigit() or not 0 <= int(value) <= 99 for value in observation.full27):
+        return "INVALID_FULL27_VALUE"
+    if not _SHA256_RE.fullmatch(observation.raw_sha256.lower()):
+        return "INVALID_RAW_SHA256"
+    if not observation.source_id:
+        return "INVALID_SOURCE_ID"
+    return None
 
 
 def reconcile(observations: list[SourceObservation], minimum_independent_sources: int = 2) -> ReconciliationDecision:
@@ -43,6 +59,11 @@ def reconcile(observations: list[SourceObservation], minimum_independent_sources
         return ReconciliationDecision("DENY", None, sha256(b"INVALID_QUORUM").hexdigest(), ("INVALID_MINIMUM_INDEPENDENT_SOURCES",))
     if not observations:
         return ReconciliationDecision("DENY", None, sha256(b"EMPTY").hexdigest(), ("NO_SOURCE_OBSERVATIONS",))
+
+    invalid = sorted({reason for obs in observations if (reason := _invalid_observation_reason(obs))})
+    if invalid:
+        evidence = "|".join(sorted(o.raw_sha256 for o in observations)).encode()
+        return ReconciliationDecision("DENY", None, sha256(evidence).hexdigest(), tuple(invalid))
 
     try:
         independence_groups = _independence_groups()
@@ -53,6 +74,11 @@ def reconcile(observations: list[SourceObservation], minimum_independent_sources
     if unknown_sources:
         evidence = "|".join(sorted(o.raw_sha256 for o in observations)).encode()
         return ReconciliationDecision("DENY", None, sha256(evidence).hexdigest(), (f"UNREGISTERED_SOURCE:{','.join(unknown_sources)}",))
+
+    source_ids = [obs.source_id for obs in observations]
+    if len(source_ids) != len(set(source_ids)):
+        evidence = "|".join(sorted(o.raw_sha256 for o in observations)).encode()
+        return ReconciliationDecision("DENY", None, sha256(evidence).hexdigest(), ("DUPLICATE_SOURCE_OBSERVATION",))
 
     groups: dict[tuple[str, ...], list[SourceObservation]] = {}
     for obs in observations:
