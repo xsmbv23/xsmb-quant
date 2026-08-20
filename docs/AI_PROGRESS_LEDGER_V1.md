@@ -11,7 +11,10 @@ DATA FOUNDATION = INCOMPLETE
 FULL_27 = IMPLEMENTED
 TAIL_27 = DERIVED_ONLY / LOCKED
 CALENDAR = LOCKED
-SOURCE REGISTRY = 4 SOURCES
+SOURCE REGISTRY = 5 SOURCES
+ACQUISITION REGISTRY PARITY = IMPLEMENTED / STATIC CONTRACT TESTED
+KETQUA16 ADAPTER = IMPLEMENTED / STATIC TESTED
+XSMB ADAPTER = EXISTING / WIRED INTO MAIN CRAWLER
 CONTENT HYGIENE = IMPLEMENTED
 CANDIDATE EVIDENCE = IMPLEMENTED
 BRAIN GOVERNANCE = ACTIVE
@@ -19,10 +22,9 @@ COMMUNICATION SECURITY = RUNTIME_VERIFIED
 LAYER / CORRIDOR MATRIX = RUNTIME_VERIFIED
 CAPABILITY AUTHORITY = RUNTIME_VERIFIED
 COMMUNICATION AUDIT = RUNTIME_VERIFIED
-L0 MINHNGOC ADAPTER = RUNTIME_VERIFIED
-RAW ARTIFACT PERSISTENCE = BLOCKED / DATABASE_URL_NOT_BOUND
+RAW ARTIFACT PERSISTENCE = LOCAL WRITE-ONCE ONLY / NOT DURABLE
+DURABLE DATABASE BINDING = NOT_BOUND
 UI PRESERVATION = LOCKED
-RUNTIME HISTORICAL SLICE = NOT YET VERIFIED
 PROMOTION = DENY
 ```
 
@@ -71,6 +73,76 @@ UNKNOWN
 
 These states are not interchangeable.
 
+## Critical invariant: no PASS inheritance
+
+Forensic database admission is one chain, not multiple independent Forensic systems:
+
+```text
+DB_EXISTENCE
+    -> DB_BINDING
+    -> DB_TLS_ADMISSION
+    -> DB_ROUND_TRIP
+    -> PROMOTION
+```
+
+A PASS at one gate is only a prerequisite for testing the next gate. It is never inherited upward. In particular:
+
+```text
+DATABASE_EXISTS = PASS
+    !=
+SERVICE_AUTHORIZED = PASS
+
+BOUND_TLS = PASS
+    !=
+DURABLE_EVIDENCE = PASS
+
+WRITE_READ_HASH_MATCH = PASS
+    -> may satisfy the durable evidence gate
+```
+
+`UNKNOWN` is never converted to PASS by inference.
+
+## Source registry / acquisition drift rule
+
+The authoritative registry currently contains five sources:
+
+```text
+minhngoc
+xoso
+xskt
+ketqua16
+xsmb
+```
+
+The main forensic crawler must derive its default source set from `source_registry_v2.json`. It must reject explicitly requested source IDs that are not registered.
+
+Current acquisition routes:
+
+```text
+minhngoc -> generic date URL
+xoso     -> generic date URL
+xskt     -> generic date URL
+ketqua16 -> data/ingestion/ketqua16_source_d.py
+xsmb     -> data/ingestion/xsmb_source_b.py
+```
+
+`ketqua16.net` is a registered independent publisher and is part of the current primary real-source pair with `xsmb.com.vn` for quorum work. The source registry and crawler are now statically guarded against silent source-list drift.
+
+## Content hygiene invariant
+
+Advertisements, banners, scripts, navigation, analytics, sponsored blocks and other non-result content are never canonical. Raw forensic bytes remain untouched. Parsing must operate on an isolated visible-content representation or an explicit result panel. A website containing advertising is not itself unsafe; the unsafe operation is allowing advertising/navigation/script content to influence FULL_27 extraction.
+
+## Raw durability invariant
+
+`runtime/raw` is a write-once local capture cache. It preserves raw bytes and SHA-256, but it is explicitly marked:
+
+```text
+durability = LOCAL_EPHEMERAL
+promotion_eligible = false
+```
+
+The local filesystem is never allowed to masquerade as durable forensic storage. Durable admission requires an explicit durable sink and a real write -> read -> SHA-256 match.
+
 ## Existing completed work
 
 - Repository reset and foundation established.
@@ -80,7 +152,7 @@ These states are not interchangeable.
 - 70 historical gaps identified; missing != non-draw.
 - COVID interval treated as evidence candidate, not inferred truth.
 - Calendar states established: DRAW_EXPECTED, DRAW_CONFIRMED, NON_DRAW_DAY, UNKNOWN_GAP.
-- Four sources registered: minhngoc, xoso, xskt, ketqua16.
+- Five sources registered: minhngoc, xoso, xskt, ketqua16, xsmb.
 - Minimum independent quorum: 2; conflicts DENY.
 - Content hygiene isolates ads/scripts/navigation without modifying raw bytes.
 - Candidate evidence contract forces promotion=DENY.
@@ -90,56 +162,34 @@ These states are not interchangeable.
 - Foundation blueprint/runbook/tree/AI handoff documents exist.
 - Fosennic system closure map exists and treats the architecture as a graph with feedback loops and fail-closed branches.
 - Communication security is explicitly modeled as room-to-room corridor crossing with layer classification, authorization, capability, lineage and audit requirements.
-- Layer/corridor matrix exists with default DENY.
 - N002 runtime security primitives implemented: message envelope, corridor gate, capability authority, communication audit and invariant tests.
 - N003 runtime verification completed on Render: replay, unknown corridor, missing lineage, capability scope mismatch, capability replay, append-only audit, secret redaction and terminal-halt fail-closed all verified.
-- N003 evidence bound under `evidence/runtime/N003_security_runtime_verification_v2.json`.
 - N004 first registered source (`minhngoc`) executed through the L0 adapter on Render.
 - N004 captured raw HTTP bytes before extraction, SHA-256 bound the raw source, applied content hygiene, extracted exactly 27 FULL_27 values with leading zeros preserved, and kept promotion denied.
-- N004 evidence bound under `evidence/runtime/N004_minhnog_live_probe_v1.json`.
 - N005 persistence implementation was added with TLS-required PostgreSQL, immutable raw bytes, provenance and idempotency constraints.
 - N005 runtime gate correctly failed closed because `DATABASE_URL` is not bound to the Render service.
-- The temporary database persistence flag was returned to `0`; the service is not intentionally left in a failing persistence mode.
-- Persistent action records for N002, N003, N004 and N005 exist under `docs/action_log/`.
-- This ledger and action log form the persistent continuation memory.
+- N005 persistence flag was returned to `0`; the service is not intentionally left in a failing persistence mode.
+- N062 established the credential-free Render database binding contract and runtime probe. Exact-current runtime reported `NOT_BOUND`; no credential was fabricated or stored.
+- Proactive audit identified source-registry -> acquisition implementation drift.
+- Main crawler was changed to registry-driven acquisition and wired to the existing `xsmb` adapter plus a new `ketqua16` adapter.
+- `ketqua16_source_d.py` performs bounded streaming capture and target-date block extraction before FULL_27 validation.
+- Registry/acquisition parity tests were added.
+- Raw local capture metadata now explicitly declares `LOCAL_EPHEMERAL` and `promotion_eligible=false` in the new store implementation.
+- README was corrected from the stale four-source statement to the authoritative five-source registry.
 
 ## Current NEXT_ACTION
 
-### N005B — Bind the existing Render PostgreSQL credential to xsmb-quant
+### N064 — Static + bounded real-source acquisition verification
 
-The code and fail-closed gate are ready. The remaining blocker is infrastructure secret binding.
-
-1. Bind `DATABASE_URL` on Render service `xsmb-quant` to the existing `xsmb_runtime_db` connection using TLS.
-2. Do not place the password or full connection string in GitHub, source code, evidence, logs or Bot action logs.
-3. Keep `PGSSLMODE=require`.
-4. Set `RUN_DB_PERSISTENCE=1` only for the controlled verification deployment.
-5. Verify raw capture → database insert → provenance row → read-after-write.
-6. Capture the database artifact id, raw SHA and evidence hash without exposing credentials.
-7. Set `RUN_DB_PERSISTENCE=0` after the verification deployment.
-8. Only after persistence is runtime-verified may the system widen to xoso/xskt/ketqua16 or historical backfill.
-9. Keep `PROMOTION = DENY`.
-
-### Why this is the next gate
-
-The system has now demonstrated that it will refuse to continue without durable evidence. That is a successful Fosennic boundary, not a failure to bypass. The missing credential binding is an infrastructure gate and must be closed before data truth can be considered durable.
-
-## Handoff template
-
-```text
-DATE/TIME:
-BOT/ACTOR:
-ACTION_ID:
-OBJECTIVE:
-FILES_CHANGED:
-COMMIT_SHA:
-STATIC_VERIFICATION:
-RUNTIME_VERIFICATION:
-EVIDENCE_ARTIFACTS:
-FAILURES / UNKNOWN:
-GOVERNANCE_DECISION:
-CURRENT_STATE:
-NEXT_ACTION:
-```
+1. Run the registry parity tests and ketqua16 parser tests.
+2. Run a bounded real-source probe for `ketqua16` and `xsmb` for one already-observed historical date where both sources should contain the result.
+3. Record raw SHA-256, source URL, observed date, FULL_27 fingerprint and parser status only; never record credentials.
+4. Verify both sources independently produce 27 values with strict widths.
+5. Verify the two source records remain separate evidence objects and are not merged before quorum.
+6. Measure memory during the probe; keep worker count bounded and never load multi-day history into one process.
+7. Do not promote the result. The target output is `CANDIDATE` evidence only.
+8. If either source fails, classify the exact failure and keep the quorum gate DENY.
+9. After N064, address durable raw evidence binding separately; local runtime/raw remains non-durable.
 
 ## Forbidden continuation behavior
 
@@ -162,8 +212,11 @@ A future Bot MUST NOT:
 - allow lower-layer components to issue upper-layer capabilities;
 - allow UI/reporting to mutate canonical truth;
 - connect all source adapters at once;
-- treat ephemeral raw captures as immutable evidence;
-- log credentials, DATABASE_URL, tokens or capability secrets.
+- treat ephemeral raw captures as immutable durable evidence;
+- log credentials, DATABASE_URL, tokens or capability secrets;
+- treat a registry entry as proof that its collector works;
+- treat a collector PASS as canonical truth;
+- inherit PASS from one Forensic admission gate to another.
 
 ## Completion gate
 
