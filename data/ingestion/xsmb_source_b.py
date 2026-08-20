@@ -74,7 +74,18 @@ def parse_full27_block(block: str) -> tuple[str, ...]:
     for label, expected in COUNTS.items():
         if len(groups[label]) != expected:
             raise ValueError(f"FULL27_GROUP_COUNT:{label}:{len(groups[label])}!={expected}")
-    return validate_prize_groups(groups)
+
+    ordered = {
+        "DB": groups["ĐB"],
+        "G1": groups["G1"],
+        "G2": groups["G2"],
+        "G3": groups["G3"],
+        "G4": groups["G4"],
+        "G5": groups["G5"],
+        "G6": groups["G6"],
+        "G7": groups["G7"],
+    }
+    return validate_prize_groups(ordered)
 
 
 def fetch_source_b(day: date, raw_root: str | Path = "runtime/raw", timeout: int = 20, parse_window_bytes: int = 8 * 1024 * 1024) -> SourceBRecord:
