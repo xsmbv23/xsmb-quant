@@ -1,0 +1,32 @@
+name: real-source-quorum
+
+on:
+  workflow_dispatch:
+    inputs:
+      draw_date:
+        description: "Historical draw date YYYY-MM-DD"
+        required: true
+        default: "2026-08-12"
+  schedule:
+    - cron: "20 17 * * *"
+
+jobs:
+  quorum:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run two-source quorum probe
+        env:
+          TARGET_DATE: ${{ inputs.draw_date || '2026-08-12' }}
+        run: python verification/real_source_quorum_probe.py
+      - name: Upload candidate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-source-quorum-${{ inputs.draw_date || 'scheduled' }}
+          path: evidence/runtime/**/real_source_quorum.json
+          if-no-files-found: error
