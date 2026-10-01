@@ -36,7 +36,7 @@ class XsmbSourceBTests(unittest.TestCase):
         self.assertEqual(full[0], "82326")
         self.assertEqual(full[-1], "00")
 
-    def test_missing_date_denies(self):
+    def test_reassembles_fragmented_digits(self):\n        fragmented = FIXTURE.replace("ĐB  | 82326", "ĐB  | 8 2 3 2 6")\n        full = parse_full27_block(extract_date_block(fragmented, date(2026, 8, 12)))\n        self.assertEqual(full[0], "82326")\n\n    def test_missing_date_denies(self):
         with self.assertRaises(ValueError):
             extract_date_block(FIXTURE, date(2026, 8, 13))
 
