@@ -415,6 +415,71 @@ class Crawler:
 
 
     @staticmethod
+def auto_heal_history():
+        ok, data, msg = Crawler.fetch_ketqua_radar()
+        if not ok: return f"🛑 CRAWLER FAIL-CLOSED: {msg}", None
+
+        # The crawl button must not block on Google Sheets. Google API calls
+        # have no reliable request deadline here and were able to hold the
+        # Gradio request for minutes. Use the local Excel cache as the
+        # synchronous source of truth for this transaction.
+        db = {}
+        local_msg = ""
+        if os.path.exists(Config.DATA_FILE):
+            try:
+                df = pd.read_excel(Config.DATA_FILE, dtype=str)
+                for _, row in df.iterrows():
+                    if len(row) < 2: continue
+                    parsed = DatabaseManager._parse_row(row.iloc[0], row.iloc[1])
+                    if parsed: db[parsed[0]] = parsed[1]
+                local_msg = f"LOCAL CACHE: {len(db)} phiên"
+            except Exception as e:
+                return f"🛑 LOCAL CACHE FAIL: {e}", None
+        else:
+            # First-run / cache-missing recovery: use the existing strict DB
+            # source to seed the local cache, then continue with the same
+            # atomic local transaction. This preserves fail-closed semantics
+            # without discarding an otherwise valid quorum crawl.
+            seeded_db, seeded_msg = DatabaseManager.load_db()
+            if not seeded_db:
+                return f"🛑 LOCAL CACHE MISSING + DB SEED FAILED: {seeded_msg}", None
+            db = seeded_db
+            local_msg = f"SEEDED LOCAL CACHE: {len(db)} phiên | {seeded_msg}"
+
+        added, updated = 0, 0
+        now = Utils.get_vn_time()
+        for std, payload in data.items():
+            tails = payload['tails'] if isinstance(payload, dict) else payload
+            res = Utils.chuan_hoa_ngay(std)
+            if not res: continue
+            dt, canonical = res
+            if dt.date() > now.date(): continue
+            if dt.date() == now.date() and not Utils.draw_cutoff_reached(): continue
+            if len(tails) != 27: continue
+            source_set = payload.get("source_set", []) if isinstance(payload, dict) else []
+            rec = {"date_obj": dt, "prizes_int": tails, "raw_str": " ".join(f"{x:02d}" for x in tails), "calendar_state": Config.DRAW_CONFIRMED, "source_set": list(source_set)}
+            if canonical not in db: added += 1
+            elif db[canonical]["raw_str"] != rec["raw_str"]: updated += 1
+            db[canonical] = rec
+        if added or updated:
+            DatabaseManager._atomic_excel_write([
+                {"Ngày": info["date_obj"].strftime("%d/%m/%Y"), "Kết Quả Loto": info["raw_str"]}
+                for info in sorted(db.values(), key=lambda x: x["date_obj"], reverse=True)
+            ])
+            QuantEngine.clear_cache()
+
+            # Cloud persistence is best-effort and deliberately detached from
+            # the UI request. A slow/hung Google API must never make the crawl
+            # button wait indefinitely.
+            def _sync_google_snapshot(snapshot):
+                try:
+                    DatabaseManager.rewrite_clean_db(snapshot)
+                except Exception as exc:
+                    print(f"[GOOGLE ASYNC SYNC] {type(exc).__name__}: {exc}", flush=True)
+            threading.Thread(target=_sync_google_snapshot, args=(dict(db),), name="google-db-sync", daemon=True).start()
+
+        return f"✅ STRICT-27-TAIL AUTO-HEAL | added={added} updated={updated} | {local_msg} | {msg}", db
+    @staticmethod
     def get_boundaries(db):
         now = Utils.get_vn_time()
         today = datetime(now.year, now.month, now.day)
