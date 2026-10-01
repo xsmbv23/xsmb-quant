@@ -186,6 +186,42 @@ radar = r'''    @staticmethod
 '''
 s = s[:start] + radar + s[end:]
 
+# Replace consensus with deterministic exact equality across the two trusted sources.
+consensus_marker = '    @staticmethod\n    def _build_consensus(results):'
+consensus_start = s.index(consensus_marker)
+consensus_end = s.index('    @staticmethod\n    def _fetch_single_domain(domain):', consensus_start)
+consensus_impl = r'''    @staticmethod
+    def _build_consensus(results):
+        """Require exact canonical 27-tail equality from both trusted sources."""
+        trusted = {"ketqua16.net", "ketqua.net"}
+        by_domain = {}
+        for domain, data in results:
+            if domain not in trusted or domain in by_domain or not isinstance(data, dict):
+                continue
+            canonical_rows = {}
+            for date_key, tails in data.items():
+                try:
+                    canonical_rows[date_key] = tuple(
+                        int(x) for x in Forensic.canonical_tails(tails)
+                    )
+                except Exception:
+                    continue
+            by_domain[domain] = canonical_rows
+
+        if set(by_domain) != trusted:
+            return {}
+
+        left = by_domain["ketqua16.net"]
+        right = by_domain["ketqua.net"]
+        return {
+            date_key: list(left[date_key])
+            for date_key in (set(left) & set(right))
+            if left[date_key] == right[date_key]
+        }
+
+'''
+s = s[:consensus_start] + consensus_impl + s[consensus_end:]
+
 # Install the visible-block parser directly into the runtime class.
 marker = '    @staticmethod\n    def _build_consensus(results):'
 if 'def _extract_27_from_visible_blocks' not in s:
