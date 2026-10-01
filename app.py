@@ -505,7 +505,7 @@ class DatabaseManager:
     @staticmethod
     def auto_heal_history():
         ok, data, msg = Crawler.fetch_ketqua_radar()
-        if not ok: return f"🛑 CRAWLER FAIL-CLOSED: {msg}"
+        if not ok: return f"🛑 CRAWLER FAIL-CLOSED: {msg}", None
         db, dbmsg = DatabaseManager.load_db()
         added, updated = 0, 0
         now = Utils.get_vn_time()
@@ -523,7 +523,7 @@ class DatabaseManager:
         if added or updated:
             DatabaseManager.rewrite_clean_db(db)
             QuantEngine.clear_cache()
-        return f"✅ STRICT-27-TAIL AUTO-HEAL | added={added} updated={updated} | {msg}"
+        return f"✅ STRICT-27-TAIL AUTO-HEAL | added={added} updated={updated} | {msg}", db
 
     @staticmethod
     def get_boundaries(db):
@@ -1233,8 +1233,13 @@ class Auditor:
     @staticmethod
     def phan_he_1_sync(auto_crawl=False):
         crawl_msg = "ℹ️ Chế độ Offline. Bấm nút cập nhật để kích hoạt Radar."
-        if auto_crawl: crawl_msg = DatabaseManager.auto_heal_history()
-        db, msg = DatabaseManager.load_db()
+        db = None
+        if auto_crawl:
+            crawl_msg, db = DatabaseManager.auto_heal_history()
+        if db is None:
+            db, msg = DatabaseManager.load_db()
+        else:
+            msg = "🟢 DB đã được nạp trong cùng phiên AUTO-HEAL; bỏ qua lần đọc lại Google Sheets."
         _, latest_dt, next_predict_dt = DatabaseManager.get_boundaries(db)
         latest_str = latest_dt.strftime('%d/%m/%Y') if latest_dt else "⚠️ CHƯA CÓ DỮ LIỆU!"
         lines = [
