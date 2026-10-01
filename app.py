@@ -430,7 +430,7 @@ class Crawler:
                 df = pd.read_excel(Config.DATA_FILE, dtype=str)
                 for _, row in df.iterrows():
                     if len(row) < 2: continue
-                    parsed = DatabaseManager._parse_row(row.iloc[0], row.iloc[1], row.iloc[2] if len(row) >= 3 else None)
+                    parsed = DatabaseManager._parse_row(row.iloc[0], row.iloc[1], row.iloc[2] if len(row) >= 3 else None, row.iloc[3] if len(row) >= 4 else None)
                     if parsed: db[parsed[0]] = parsed[1]
                 local_msg = f"LOCAL CACHE: {len(db)} phiên"
             except Exception as e:
@@ -463,7 +463,7 @@ class Crawler:
             db[canonical] = rec
         if added or updated:
             DatabaseManager._atomic_excel_write([
-                {"Ngày": info["date_obj"].strftime("%d/%m/%Y"), "Kết Quả Loto": info["raw_str"], Config.CALENDAR_STATE_HEADER: info.get("calendar_state", Config.LEGACY_CALENDAR_STATE)}
+                {"Ngày": info["date_obj"].strftime("%d/%m/%Y"), "Kết Quả Loto": info["raw_str"], Config.CALENDAR_STATE_HEADER: info.get("calendar_state", Config.LEGACY_CALENDAR_STATE), "Source Set": ",".join(sorted(set(info.get("source_set", []))))}
                 for info in sorted(db.values(), key=lambda x: x["date_obj"], reverse=True)
             ])
             QuantEngine.clear_cache()
@@ -563,7 +563,7 @@ class DatabaseManager:
             df = pd.read_excel(Config.DATA_FILE, dtype=str)
             if len(df.columns) < 2: return {}, "🛑 DATA_SCHEMA_FAIL: cần Ngày + Kết Quả Loto"
             for _, row in df.iterrows():
-                try: parsed = DatabaseManager._parse_row(row.iloc[0], row.iloc[1], row.iloc[2] if len(row) >= 3 else None)
+                try: parsed = DatabaseManager._parse_row(row.iloc[0], row.iloc[1], row.iloc[2] if len(row) >= 3 else None, row.iloc[3] if len(row) >= 4 else None)
                 except ValueError as exc: raise RuntimeError(f"LOCAL_STRICT_27_REJECT: row={row.iloc[0]} | {exc}") from exc
                 if parsed: db[parsed[0]] = parsed[1]
             return db, f"🟢 LOCAL EXCEL STRICT-27-TAIL: {len(db)} phiên. [{ws_msg}]"
