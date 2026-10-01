@@ -192,15 +192,19 @@ consensus_start = s.index(consensus_marker)
 consensus_end = s.index('    @staticmethod\n    def _fetch_single_domain(domain):', consensus_start)
 consensus_impl = r'''    @staticmethod
     def _build_consensus(results):
-        """Require exact canonical 27-tail equality from both trusted sources."""
+        """Require exact 27-tail equality from both trusted sources, keyed by canonical date."""
         trusted = {"ketqua16.net", "ketqua.net"}
         by_domain = {}
         for domain, data in results:
             if domain not in trusted or domain in by_domain or not isinstance(data, dict):
                 continue
             canonical_rows = {}
-            for date_key, tails in data.items():
+            for raw_date, tails in data.items():
                 try:
+                    normalized = Utils.chuan_hoa_ngay(raw_date)
+                    if not normalized:
+                        continue
+                    _, date_key = normalized
                     canonical_rows[date_key] = tuple(
                         int(x) for x in Forensic.canonical_tails(tails)
                     )
@@ -213,9 +217,10 @@ consensus_impl = r'''    @staticmethod
 
         left = by_domain["ketqua16.net"]
         right = by_domain["ketqua.net"]
+        overlap = set(left) & set(right)
         return {
             date_key: list(left[date_key])
-            for date_key in (set(left) & set(right))
+            for date_key in overlap
             if left[date_key] == right[date_key]
         }
 
