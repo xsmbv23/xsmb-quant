@@ -76,7 +76,7 @@ class Config:
     REQUIRE_OOS_AUDIT = True
     MAX_AUDIT_DAYS = 5000
     CRAWL_MIN_QUORUM = 2
-    CRAWL_FAST_TIMEOUT = 4
+    CRAWL_FAST_TIMEOUT = 2
     CRAWL_FAST_DOMAINS = ["ketqua16.net", "ketqua.net", "ketqua.vn", "ketquaxoso.net"]
     ANCHOR_MAGIC = "V58_FORENSIC_ANCHOR_V1"
     
@@ -271,7 +271,7 @@ class Crawler:
                         tails = Crawler._extract_27_from_table(table)
                         if tails is not None:
                             parsed[std] = tails
-                    if len(parsed) >= 3:
+                    if parsed:
                         return True, parsed, domain
                 except requests.RequestException:
                     continue
