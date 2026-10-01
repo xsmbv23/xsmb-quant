@@ -252,6 +252,37 @@ class Crawler:
         return None
 
     @staticmethod
+    def _build_consensus(results):
+        """Build strict cross-source consensus without inventing or averaging data."""
+        quorum = int(Config.CRAWL_MIN_QUORUM)
+        if len(results) < quorum:
+            return {}
+        votes = {}
+        for domain, data in results:
+            if not isinstance(data, dict):
+                continue
+            for date_key, tails in data.items():
+                try:
+                    canonical = tuple(int(x) for x in Forensic.canonical_tails(tails))
+                except Exception:
+                    continue
+                votes.setdefault(date_key, {}).setdefault(canonical, []).append(domain)
+
+        consensus = {}
+        for date_key, variants in votes.items():
+            eligible = [
+                (tails, domains)
+                for tails, domains in variants.items()
+                if len(set(domains)) >= quorum
+            ]
+            if len(eligible) == 1:
+                tails, _domains = eligible[0]
+                consensus[date_key] = list(tails)
+            elif len(eligible) > 1:
+                continue
+        return consensus
+
+    @staticmethod
     def _fetch_single_domain(domain):
         if not HAS_REQUESTS:
             print(f"[CRAWL] domain={domain} status=requests_missing", flush=True)
