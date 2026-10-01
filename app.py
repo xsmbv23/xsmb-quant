@@ -239,7 +239,10 @@ class Crawler:
 
     @staticmethod
     def _fetch_single_domain(domain):
-        if not HAS_REQUESTS: return False, {}, "requests_missing"
+        if not HAS_REQUESTS:
+            print(f"[CRAWL] domain={domain} status=requests_missing", flush=True)
+            return False, {}, "requests_missing"
+
         urls = [
             f"https://{domain}/xsmb-ngay-{Utils.get_vn_time().strftime('%d-%m-%Y')}.html",
             f"https://{domain}/so-ket-qua-truyen-thong/300",
@@ -250,9 +253,22 @@ class Crawler:
 
         def fetch_and_parse(url):
             parsed = {}
+            started_url = time.perf_counter()
+            diag = {
+                "domain": domain,
+                "url": url,
+                "http_status": None,
+                "content_bytes": 0,
+                "parsed_dates": 0,
+                "valid_27_tail_dates": 0,
+                "failure_reason": None,
+            }
             try:
                 r = requests.get(url, headers=headers, timeout=Config.CRAWL_FAST_TIMEOUT)
+                diag["http_status"] = r.status_code
+                diag["content_bytes"] = len(r.content or b"")
                 if r.status_code != 200:
+                    diag["failure_reason"] = f"HTTP_{r.status_code}"
                     return parsed
                 soup = BeautifulSoup(r.text, "html.parser")
                 for table in soup.find_all("table"):
@@ -268,19 +284,36 @@ class Crawler:
                     dt_obj, std = res
                     if dt_obj.date() > Utils.get_vn_time().date():
                         continue
+                    diag["parsed_dates"] += 1
                     tails = Crawler._extract_27_from_table(table)
                     if tails is not None:
                         parsed[std] = tails
+                        diag["valid_27_tail_dates"] += 1
+                if not parsed and diag["parsed_dates"] == 0:
+                    diag["failure_reason"] = "NO_PARSEABLE_DATE_TABLE"
+                elif not parsed:
+                    diag["failure_reason"] = "NO_VALID_27_TAIL"
                 return parsed
-            except requests.RequestException:
+            except requests.RequestException as exc:
+                diag["failure_reason"] = f"{type(exc).__name__}:{exc}"
                 return {}
-            except Exception:
+            except Exception as exc:
+                diag["failure_reason"] = f"{type(exc).__name__}:{exc}"
                 return {}
+            finally:
+                diag["elapsed_ms"] = round((time.perf_counter() - started_url) * 1000)
+                print(
+                    "[CRAWL SOURCE] "
+                    f"domain={diag['domain']} url={diag['url']} "
+                    f"status={diag['http_status'] if diag['http_status'] is not None else 'NA'} "
+                    f"elapsed_ms={diag['elapsed_ms']} bytes={diag['content_bytes']} "
+                    f"dates={diag['parsed_dates']} valid_27={diag['valid_27_tail_dates']} "
+                    f"reason={diag['failure_reason'] or 'OK'}",
+                    flush=True,
+                )
 
-        # Race all candidate URLs for this source. IMPORTANT: do NOT use
-        # a context-manager here: ThreadPoolExecutor.__exit__ waits for every
-        # running request, which defeats fail-fast and makes the UI wait for
-        # the slowest URL even after one URL has produced valid data.
+        # Race all candidate URLs for this source. Do not use a context manager:
+        # ThreadPoolExecutor.__exit__ waits for every running request.
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=len(urls))
         futures = [executor.submit(fetch_and_parse, url) for url in urls]
         try:
@@ -289,15 +322,17 @@ class Crawler:
                     parsed = fut.result()
                     if parsed:
                         executor.shutdown(wait=False, cancel_futures=True)
+                        print(f"[CRAWL DOMAIN] domain={domain} result=VALID", flush=True)
                         return True, parsed, domain
-                except Exception:
-                    continue
+                except Exception as exc:
+                    print(f"[CRAWL DOMAIN] domain={domain} worker_error={type(exc).__name__}:{exc}", flush=True)
+            print(f"[CRAWL DOMAIN] domain={domain} result=NO_VALID_DATA", flush=True)
             return False, {}, domain
         finally:
             try:
                 executor.shutdown(wait=False, cancel_futures=True)
             except TypeError:
-                ex    @staticmethod
+                executor.shutdown(wait=False)    @staticmethod
     def fetch_ketqua_radar():
         """Run the crawler under a strict wall-clock deadline and fail closed."""
         if not HAS_REQUESTS:
@@ -335,6 +370,8 @@ class Crawler:
             except TypeError:
                 executor.shutdown(wait=False)
 
+        print(f"[CRAWL RADAR START] deadline_s={Config.CRAWL_HARD_DEADLINE} fast_domains={','.join(fast_domains)}", flush=True)
+
         # FAST PATH: wait only until the hard deadline, never on executor
         # shutdown. as_completed(timeout=...) prevents the UI callback from
         # waiting indefinitely for a worker that is stuck in I/O/parsing.
@@ -370,6 +407,8 @@ class Crawler:
                 pass
         finally:
             shutdown(fast_executor)
+
+        print(f"[CRAWL FAST END] sources={len(results)} elapsed_ms={(time.perf_counter()-fast_started)*1000:.0f}", flush=True)
 
         # FALLBACK PATH: bounded by the SAME absolute deadline. Once the
         # deadline expires, no new source is allowed to extend the request.
@@ -407,6 +446,8 @@ class Crawler:
                         pass
             finally:
                 shutdown(fallback_executor)
+
+        print(f"[CRAWL FINAL] status=FAIL_CLOSED sources={len(results)} elapsed_ms={(time.perf_counter()-started)*1000:.0f}", flush=True)
 
         # FAIL CLOSED: never return partial crawler data and never let the
         # crawler's background threads determine the browser response time.
