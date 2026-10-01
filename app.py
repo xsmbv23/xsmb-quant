@@ -15,6 +15,7 @@ import hashlib
 import uuid
 import concurrent.futures
 import threading
+import time
 from datetime import datetime, timedelta
 from bisect import bisect_left
 import traceback
@@ -75,6 +76,8 @@ class Config:
     REQUIRE_OOS_AUDIT = True
     MAX_AUDIT_DAYS = 5000
     CRAWL_MIN_QUORUM = 2
+    CRAWL_FAST_TIMEOUT = 4
+    CRAWL_FAST_DOMAINS = ["ketqua16.net", "ketqua.net", "ketqua.vn", "ketquaxoso.net"]
     ANCHOR_MAGIC = "V58_FORENSIC_ANCHOR_V1"
     
     ACTIVE_MODE = "🤖 [VERSION 5.8] V5.8 ROBUST TIERED QUANT ENGINE (RISK-PARITY ALLOCATION & TANH SLOPE)"
@@ -247,7 +250,7 @@ class Crawler:
         try:
             for url in urls:
                 try:
-                    r = session.get(url, headers=headers, timeout=8)
+                    r = session.get(url, headers=headers, timeout=Config.CRAWL_FAST_TIMEOUT)
                     if r.status_code != 200: continue
                     soup = BeautifulSoup(r.text, "html.parser")
                     
@@ -273,34 +276,13 @@ class Crawler:
                 except requests.RequestException:
                     continue
         except Exception:
-            logger = getattr(__import__("logging"), "getLogger")("V5.8")
-            logger.exception("crawler domain failure: %s", domain)
-        return bool(parsed), parsed, domain
-
-    @staticmethod
-    def fetch_ketqua_radar():
-        if not HAS_REQUESTS: return False, {}, "Thiếu requests"
-        domains = list(dict.fromkeys(Crawler.DOMAINS))
-        results = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(24, len(domains))) as ex:
-            futures = [ex.submit(Crawler._fetch_single_domain, d) for d in domains]
-            for fut in concurrent.futures.as_completed(futures):
-                try:
-                    ok, data, domain = fut.result()
-                    if ok and data:
-                        results.append((domain, data))
-                except Exception:
-                    continue
-        if not results:
-            return False, {}, "Không tìm được nguồn hợp lệ có đúng 27 giải/ngày."
-
-        # Cross-source quorum: one site is never allowed to silently become the
-        # canonical database. For each date, accept only an exact 27-tail
-        # sequence supported by at least CRAWL_MIN_QUORUM independent domains.
+            logger = getattr(__impo    @staticmethod
+    def _build_consensus(results):
         votes = {}
         for domain, data in results:
             for date_key, tails in data.items():
-                if len(tails) != 27: continue
+                if len(tails) != 27:
+                    continue
                 fingerprint = tuple(int(x) for x in tails)
                 votes.setdefault(date_key, {}).setdefault(fingerprint, set()).add(domain)
         consensus = {}
@@ -308,10 +290,87 @@ class Crawler:
             winner, sources = max(variants.items(), key=lambda item: len(item[1]))
             if len(sources) >= Config.CRAWL_MIN_QUORUM:
                 consensus[date_key] = list(winner)
+        return consensus
 
-        if not consensus:
-            return False, {}, f"CRAWL_QUORUM_FAIL_CLOSED: không có ngày nào đạt quorum >= {Config.CRAWL_MIN_QUORUM}."
-        source_count = len(results)
+    @staticmethod
+    def fetch_ketqua_radar():
+        if not HAS_REQUESTS:
+            return False, {}, "Thiếu requests"
+
+        started = time.perf_counter()
+        results = []
+        fast_domains = list(dict.fromkeys(Config.CRAWL_FAST_DOMAINS))
+        fallback_domains = [d for d in dict.fromkeys(Crawler.DOMAINS) if d not in fast_domains]
+
+        # FAST PATH: only the known, independent sources first. The crawl
+        # terminates as soon as the required cross-source quorum is reached.
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=len(fast_domains))
+        futures = {executor.submit(Crawler._fetch_single_domain, d): d for d in fast_domains}
+        consensus = {}
+        try:
+            for fut in concurrent.futures.as_completed(futures):
+                try:
+                    ok, data, domain = fut.result()
+                    if ok and data:
+                        results.append((domain, data))
+                        consensus = Crawler._build_consensus(results)
+                        if consensus:
+                            elapsed_ms = (time.perf_counter() - started) * 1000
+                            executor.shutdown(wait=False, cancel_futures=True)
+                            return True, consensus, (
+                                f"STRICT 27-TAIL FAST-QUORUM OK | sources={len(results)} "
+                                f"| quorum={Config.CRAWL_MIN_QUORUM} | days={len(consensus)} "
+                                f"| crawl_ms={elapsed_ms:.0f}"
+                            )
+                except Exception:
+                    continue
+        finally:
+            # Do not make the UI wait for unfinished fast-path requests.
+            try:
+                executor.shutdown(wait=False, cancel_futures=True)
+            except TypeError:
+                executor.shutdown(wait=False)
+
+        # FALLBACK PATH: only if the fast quorum could not be established.
+        fallback_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(12, len(fallback_domains))
+        )
+        fallback_futures = {
+            fallback_executor.submit(Crawler._fetch_single_domain, d): d
+            for d in fallback_domains
+        }
+        try:
+            for fut in concurrent.futures.as_completed(fallback_futures):
+                try:
+                    ok, data, domain = fut.result()
+                    if ok and data:
+                        results.append((domain, data))
+                        consensus = Crawler._build_consensus(results)
+                        if consensus:
+                            elapsed_ms = (time.perf_counter() - started) * 1000
+                            fallback_executor.shutdown(wait=False, cancel_futures=True)
+                            return True, consensus, (
+                                f"STRICT 27-TAIL FALLBACK-QUORUM OK | sources={len(results)} "
+                                f"| quorum={Config.CRAWL_MIN_QUORUM} | days={len(consensus)} "
+                                f"| crawl_ms={elapsed_ms:.0f}"
+                            )
+                except Exception:
+                    continue
+        finally:
+            try:
+                fallback_executor.shutdown(wait=False, cancel_futures=True)
+            except TypeError:
+                fallback_executor.shutdown(wait=False)
+
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        if not results:
+            return False, {}, (
+                f"Không tìm được nguồn hợp lệ có đúng 27 giải/ngày | crawl_ms={elapsed_ms:.0f}"
+            )
+        return False, {}, (
+            f"CRAWL_QUORUM_FAIL_CLOSED: không có ngày nào đạt quorum >= "
+            f"{Config.CRAWL_MIN_QUORUM} | sources={len(results)} | crawl_ms={elapsed_ms:.0f}"
+        )
         return True, consensus, f"STRICT 27-TAIL QUORUM CRAWL OK | sources={source_count} | quorum={Config.CRAWL_MIN_QUORUM} | days={len(consensus)}"
 
 # ==============================================================================
