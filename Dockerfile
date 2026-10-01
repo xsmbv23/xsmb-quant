@@ -5,6 +5,10 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY . /app
+# The runtime forensic bootstrap requires the legacy Excel cache at the
+# application root. Copy it explicitly so the data artifact cannot be
+# accidentally omitted from the container build context.
+COPY Ket_Qua_Loto27.xlsx /app/Ket_Qua_Loto27.xlsx
 
 # Render injects PORT at runtime; app.py reads it and binds Gradio to 0.0.0.0.
 ENV WEB_CONCURRENCY=1
