@@ -10,6 +10,12 @@ COPY . /app
 # accidentally omitted from the container build context.
 COPY Ket_Qua_Loto27.xlsx /app/Ket_Qua_Loto27.xlsx
 
+# Apply the deterministic archive-prize parser patch at image build time.
+# The resulting /app/app.py is the exact source hashed by the runtime
+# forensic manifest.
+COPY build_patch_crawler.py /app/build_patch_crawler.py
+RUN python /app/build_patch_crawler.py && rm -f /app/build_patch_crawler.py
+
 # Render injects PORT at runtime; app.py reads it and binds Gradio to 0.0.0.0.
 ENV WEB_CONCURRENCY=1
 CMD ["python", "app.py"]
