@@ -151,7 +151,7 @@ s = s[:start] + radar + s[end:]
 
 # Install the visible-block parser directly into the runtime class.
 marker = '    @staticmethod\n    def _build_consensus(results):'
-if '_extract_27_from_visible_blocks' not in s:
+if 'def _extract_27_from_visible_blocks' not in s:
     parser = r'''    @staticmethod
     def _extract_27_from_visible_blocks(soup):
         expected = [1, 1, 2, 6, 4, 6, 3, 4]
