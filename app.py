@@ -245,7 +245,7 @@ class Crawler:
             f"https://{domain}/"
         ]
         headers = {"User-Agent": "Mozilla/5.0", "Accept": "text/html,application/xhtml+xml"}
-        date_pattern = re.compile(r'\\b\\d{1,2}[-/.]\\d{1,2}[-/.]\\d{4}\\b')
+        date_pattern = re.compile(r'\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b')
 
         def fetch_and_parse(url):
             parsed = {}
