@@ -186,26 +186,53 @@ def fetch_one(source_id: str, day: date, timeout: int = 20, raw_root: str | Path
 
 
 def crawl(days: Iterable[date], sources: Iterable[str] | None = None, workers: int = 6, timeout: int = 20):
+    """Crawl with a hard wall-clock deadline; never let a slow HTTP stream block the UI indefinitely."""
     selected = tuple(sources) if sources is not None else registered_source_ids()
     unknown = sorted(set(selected) - set(registered_source_ids()))
     if unknown:
         raise ValueError(f'SOURCE_NOT_REGISTERED:{unknown}')
+
     tasks = [(source, day) for source in selected for day in days]
     records: list[SourceRecord] = []
     errors: list[dict[str, str]] = []
-    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(tasks) or 1))) as pool:
-        futures = {pool.submit(fetch_one, source, day, timeout): (source, day) for source, day in tasks}
-        for future in as_completed(futures):
-            source, day = futures[future]
-            try:
-                record = future.result()
-                if record:
-                    records.append(record)
-            except Exception as exc:
-                errors.append({'source_id': source, 'date': day.isoformat(), 'error': f'{type(exc).__name__}: {exc}'})
+    if not tasks:
+        return records, errors
+
+    # Per-request socket timeout is not a wall-clock timeout for streamed responses:
+    # a peer can keep sending bytes slowly forever. Bound the whole crawl separately.
+    deadline_s = max(15, min(30, int(timeout) * 2 + 2))
+    started = __import__("time").monotonic()
+    pool = ThreadPoolExecutor(max_workers=max(1, min(workers, len(tasks))))
+    futures = {pool.submit(fetch_one, source, day, timeout): (source, day) for source, day in tasks}
+    try:
+        pending = set(futures)
+        while pending:
+            remaining = deadline_s - (__import__("time").monotonic() - started)
+            if remaining <= 0:
+                break
+            done = {f for f in pending if f.done()}
+            if not done:
+                import time as _time
+                _time.sleep(min(0.05, remaining))
+                continue
+            for future in done:
+                pending.remove(future)
+                source, day = futures[future]
+                try:
+                    record = future.result()
+                    if record:
+                        records.append(record)
+                except Exception as exc:
+                    errors.append({'source_id': source, 'date': day.isoformat(), 'error': f'{type(exc).__name__}: {exc}'})
+
+        if pending:
+            for future in pending:
+                source, day = futures[future]
+                errors.append({'source_id': source, 'date': day.isoformat(), 'error': 'CRAWL_WALLCLOCK_DEADLINE'})
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
     return records, errors
-
-
 def reconcile(records: Iterable[SourceRecord], quorum: int = 2):
     by_date: dict[str, dict[tuple[str, ...], set[str]]] = {}
     for record in records:
