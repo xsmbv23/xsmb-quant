@@ -227,8 +227,8 @@ if 'def _extract_27_from_visible_blocks' not in s:
                 if normalized == label:
                     matched_idx = idx
                     break
-                if normalized.startswith(label + " "):
-                    matched_idx, remainder = idx, normalized[len(label):].strip()
+                if normalized.startswith(label + " ") or normalized.startswith(label + " |") or normalized.startswith(label + ":"):
+                    matched_idx, remainder = idx, normalized[len(label):].lstrip(" |:").strip()
                     break
             if matched_idx is not None:
                 if matched_idx != len(current):
