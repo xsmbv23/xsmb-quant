@@ -205,9 +205,8 @@ consensus_impl = r'''    @staticmethod
                     if not normalized:
                         continue
                     _, date_key = normalized
-                    canonical_rows[date_key] = tuple(
-                        int(x) for x in Forensic.canonical_tails(tails)
-                    )
+                    canonical_rows[date_key] = tuple(int(x) for x in tails)
+                    if len(tails) == 27 and all(0 <= int(x) <= 99 for x in tails) else (_ for _ in ()).throw(ValueError("invalid_27_tail"))
                 except Exception:
                     continue
             by_domain[domain] = canonical_rows
