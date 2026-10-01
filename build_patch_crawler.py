@@ -71,7 +71,13 @@ single = r'''    @staticmethod
                 flush=True,
             )
             if parsed:
-                print(f"[CRAWL DOMAIN] domain={domain} result=VALID", flush=True)
+                ordered_dates = sorted(parsed.keys(), key=lambda x: Utils.chuan_hoa_ngay(x)[0])
+                print(
+                    f"[CRAWL DOMAIN] domain={domain} result=VALID "
+                    f"first={ordered_dates[0] if ordered_dates else '-'} "
+                    f"last={ordered_dates[-1] if ordered_dates else '-'}",
+                    flush=True,
+                )
                 return True, parsed, domain
             return False, {}, domain
         except Exception as exc:
@@ -130,6 +136,19 @@ radar = r'''    @staticmethod
                 executor.shutdown(wait=False)
 
         consensus = Crawler._build_consensus(results)
+        if len(results) == 2:
+            left_dates = set(results[0][1])
+            right_dates = set(results[1][1])
+            overlap = sorted(
+                left_dates & right_dates,
+                key=lambda x: Utils.chuan_hoa_ngay(x)[0]
+            )
+            print(
+                f"[CRAWL CONSENSUS] overlap_dates={len(overlap)} "
+                f"first={overlap[0] if overlap else '-'} "
+                f"last={overlap[-1] if overlap else '-'}",
+                flush=True,
+            )
         elapsed = (time.perf_counter() - started) * 1000
 
         if consensus:
