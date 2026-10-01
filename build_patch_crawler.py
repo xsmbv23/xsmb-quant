@@ -87,7 +87,7 @@ single = r'''    @staticmethod
 s = s[:start] + single + s[end:]
 
 start = s.index('    @staticmethod\n    def fetch_ketqua_radar():')
-end = s.index('\n\nclass DatabaseManager:', start)
+end = s.index('\n# ==============================================================================' + '\n# 📊 BLOCK 4: GOOGLE SHEETS & DATABASE MANAGER', start)
 
 radar = r'''    @staticmethod
     def fetch_ketqua_radar():
