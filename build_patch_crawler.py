@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+from zoneinfo import ZoneInfo
 
 p = Path("/app/app.py")
 s = p.read_text(encoding="utf-8")
@@ -257,4 +258,4 @@ if 'def _extract_27_from_visible_blocks' not in s:
     s = s.replace(marker, parser + marker, 1)
 
 p.write_text(s, encoding="utf-8")
-print("[BUILD PATCH] live crawler reduced to ketqua16.net + ketqua.net, strict 27-tail consensus")
+print("[BUILD PATCH] live crawler + calendar boundary contract")
