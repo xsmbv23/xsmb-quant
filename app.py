@@ -410,7 +410,7 @@ class Crawler:
 
         # FAIL CLOSED: never return partial crawler data and never let the
         # crawler's background threads determine the browser response time.
-        return False, {}, stage_msg("CRAWL_HARD_DEADLINE_FAIL_CLOSED")UM} | days={len(consensus)}"
+        return False, {}, stage_msg("CRAWL_HARD_DEADLINE_FAIL_CLOSED")
 
 # ==============================================================================
 # 📊 BLOCK 4: GOOGLE SHEETS & DATABASE MANAGER
