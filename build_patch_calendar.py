@@ -2,6 +2,7 @@ from pathlib import Path
 
 p = Path("/app/app.py")
 s = p.read_text(encoding="utf-8")
+if "from zoneinfo import ZoneInfo" not in s:\n    s = s.replace("from datetime import datetime, timedelta", "from datetime import datetime, timedelta\\nfrom zoneinfo import ZoneInfo")
 
 # Calendar state is persisted in a third workbook column. Legacy two-column
 # rows remain readable but are not treated as confirmed draw dates.
