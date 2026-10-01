@@ -143,12 +143,29 @@ radar = r'''    @staticmethod
                 left_dates & right_dates,
                 key=lambda x: Utils.chuan_hoa_ngay(x)[0]
             )
+            exact = set(consensus.keys())
+            mismatches = sorted(
+                left_dates & right_dates - exact,
+                key=lambda x: Utils.chuan_hoa_ngay(x)[0]
+            )
             print(
                 f"[CRAWL CONSENSUS] overlap_dates={len(overlap)} "
+                f"exact_dates={len(exact)} mismatches={len(mismatches)} "
                 f"first={overlap[0] if overlap else '-'} "
                 f"last={overlap[-1] if overlap else '-'}",
                 flush=True,
             )
+            if mismatches:
+                for date_key in mismatches[:5]:
+                    left = next((d for d, data in results if date_key in data), None)
+                    right = next((d for d, data in results if date_key in data and d != left), None)
+                    left_tails = next((data[date_key] for d, data in results if d == left), [])
+                    right_tails = next((data[date_key] for d, data in results if d == right), [])
+                    print(
+                        f"[CRAWL MISMATCH] date={date_key} left={left} right={right} "
+                        f"left_tails={left_tails} right_tails={right_tails}",
+                        flush=True,
+                    )
         elapsed = (time.perf_counter() - started) * 1000
 
         if consensus:
