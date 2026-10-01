@@ -276,18 +276,27 @@ class Crawler:
             except Exception:
                 return {}
 
-        # Race all candidate URLs for this source. The first URL producing
-        # any valid strict-27 result wins; no sequential timeout penalty.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(urls)) as executor:
-            futures = [executor.submit(fetch_and_parse, url) for url in urls]
+        # Race all candidate URLs for this source. IMPORTANT: do NOT use
+        # a context-manager here: ThreadPoolExecutor.__exit__ waits for every
+        # running request, which defeats fail-fast and makes the UI wait for
+        # the slowest URL even after one URL has produced valid data.
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=len(urls))
+        futures = [executor.submit(fetch_and_parse, url) for url in urls]
+        try:
             for fut in concurrent.futures.as_completed(futures):
                 try:
                     parsed = fut.result()
                     if parsed:
+                        executor.shutdown(wait=False, cancel_futures=True)
                         return True, parsed, domain
                 except Exception:
                     continue
-        return False, {}, domain
+            return False, {}, domain
+        finally:
+            try:
+                executor.shutdown(wait=False, cancel_futures=True)
+            except TypeError:
+                executor.shutdown(wait=False)
 
     @staticmethod
     def fetch_ketqua_radar():
