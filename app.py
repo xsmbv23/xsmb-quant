@@ -1585,3 +1585,155 @@ class Auditor:
             peak = np.maximum.accumulate(cum_pnl) if len(cum_pnl) > 0 else []
             drawdowns = cum_pnl - peak if len(cum_pnl) > 0 else []
             max_dd = abs(min(drawdowns)) if len(drawdowns) > 0 else 0
+
+            prompt_lines.extend([
+                f"➤ LÕI DUY NHẤT: {Config.ACTIVE_MODE}",
+                f"   - Total PnL: {(total_thu - total_chi):+,.0f} VNĐ | ROI: {roi:.2f}% | Max Drawdown: {max_dd:,.0f} VNĐ",
+                f"   - Win/Loss: {wins}W / {losses}L | Vốn đầu tư: {total_chi:,.0f} VNĐ | Doanh thu: {total_thu:,.0f} VNĐ",
+                "-" * 65, "\n⚠️ XÁC NHẬN BÁO CÁO V5.8 FORENSIC VERIFIED CORE:",
+                "1. Tích hợp cơ chế Dồn vốn Bậc thang Risk-Parity chuẩn hóa: Bạch Thủ Lô (1.30x), Song Thủ Lô (1.15x), Lô Dàn Lót (0.85x).",
+                "2. HỆ THỐNG CHỈ SỬ DỤNG DUY NHẤT 1 SỰ THẬT: FROZEN POLICY TỪ MANIFEST CHO OOS VÀ LIVE; LEGACY PATH BỊ CẤM.",
+                "3. Immutable Append-Only Ledger có Monotonic Anchor chống Rollback Vật Lý."
+            ])
+            return "\n".join(prompt_lines)
+        except Exception: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
+
+# ==============================================================================
+# 🖥️ BLOCK 7: GRADIO WEB UI (RENDER READY)
+# ==============================================================================
+def create_ui():
+    db_init, _ = DatabaseManager.load_db()
+    min_dt_init, latest_dt_init, next_predict_dt_init = DatabaseManager.get_boundaries(db_init)
+
+    with gr.Blocks(title=Config.VERSION, theme=gr.themes.Default(primary_hue="orange")) as demo:
+        gr.Markdown(f"# 🚀 XSMB QUANT ENGINE {Config.VERSION}")
+        with gr.Row(): nav_menu = gr.Radio(choices=Config.MENU_OPTIONS, value=Config.MENU_OPTIONS[0], label="🎛️ BẢNG ĐIỀU KHIỂN CHÍNH")
+            
+        with gr.Column(visible=True) as col_1:
+            with gr.Row():
+                btn_1_sync = gr.Button("⚡ KIỂM TOÁN LẠI DB HIỆN TẠI", variant="secondary")
+                btn_1_crawl = gr.Button("🌐 CẬP NHẬT KẾT QUẢ MỚI (QUÉT RADAR CRAWLER ĐA LUỒNG)", variant="primary")
+            gr.Markdown("---")
+            gr.Markdown("✍️ **NHẬP KẾT QUẢ BẰNG TAY (DÀNH CHO NGÀY WEB CRAWLER BỊ KHÓA IP)**")
+            with gr.Row():
+                manual_date = gr.Textbox(label="Ngày (DD/MM/YYYY)", placeholder="Ví dụ: 01/08/2026")
+                manual_numbers = gr.Textbox(label="27 GIẢI", placeholder="Ví dụ: 5 số / 4 số / 3 số / 2 số — đúng 27 giải")
+            btn_manual_save = gr.Button("📥 LƯU DỮ LIỆU VÀO DATABASE", variant="primary")
+            gr.Markdown("---")
+            out_1 = gr.Textbox(label="Biên bản Báo cáo Hệ thống", lines=8)
+            title_2 = gr.Markdown(f"#### KHUYẾN NGHỊ GIAO DỊCH KỲ TỚI: {next_predict_dt_init.strftime('%d/%m/%Y')}")
+            
+        with gr.Column(visible=False) as col_2:
+            with gr.Row(): pts_2 = gr.Number(label="Khối lượng Vốn Cơ sở (Điểm / Mã)", value=10)
+            btn_2 = gr.Button("🔍 XUẤT LỆNH GIAO DỊCH CAO CẤP", variant="primary")
+            out_2 = gr.Textbox(label="Hồ sơ Lệnh Tác Chiến", lines=25)
+            btn_2.click(lambda pts: Auditor.phan_he_2_predict(pts), inputs=[pts_2], outputs=out_2)
+            
+        with gr.Column(visible=False) as col_3:
+            gr.Markdown("### 🔍 MODULE KIỂM TOÁN CHUYÊN SÂU & TRUY VẾT")
+            audit_type = gr.Radio(choices=["Kiểm toán 1 Ngày", "Kiểm toán Cả Tháng"], value="Kiểm toán 1 Ngày", label="Loại Kiểm toán")
+            with gr.Column(visible=True) as row_audit_day: date_3 = gr.Textbox(label="Ngày Truy xuất (DD/MM/YYYY)", value=latest_dt_init.strftime('%d/%m/%Y') if latest_dt_init else "")
+            with gr.Column(visible=False) as row_audit_month: month_3 = gr.Textbox(label="Tháng Truy xuất (MM/YYYY)", value=latest_dt_init.strftime('%m/%Y') if latest_dt_init else "")
+            pts_3 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
+            btn_3 = gr.Button("📡 THỰC THI KIỂM TOÁN", variant="primary")
+            out_3 = gr.Textbox(label="Báo cáo Kiểm toán", lines=24)
+            def toggle_audit(choice): return gr.Column(visible=(choice == "Kiểm toán 1 Ngày")), gr.Column(visible=(choice != "Kiểm toán 1 Ngày"))
+            audit_type.change(fn=toggle_audit, inputs=audit_type, outputs=[row_audit_day, row_audit_month])
+            btn_3.click(Auditor.phan_he_3_router, inputs=[audit_type, date_3, month_3, pts_3], outputs=out_3)
+
+        with gr.Column(visible=False) as col_4:
+            with gr.Row():
+                t1_4 = gr.Textbox(label="Từ ngày", value=min_dt_init.strftime('%d/%m/%Y') if min_dt_init else "")
+                t2_4 = gr.Textbox(label="Đến ngày", value=latest_dt_init.strftime('%d/%m/%Y') if latest_dt_init else "")
+                pts_4 = gr.Number(label="Khối lượng Vốn (Điểm / Mã)", value=10)
+            btn_4 = gr.Button("📈 KIỂM TOÁN BIÊN ĐỘ LỢI NHUẬN CHU KỲ", variant="primary")
+            out_4 = gr.Textbox(label="Báo cáo Dòng Tiền", lines=22)
+            btn_4.click(lambda t1, t2, pts: Auditor.phan_he_4_range(t1, t2, pts), inputs=[t1_4, t2_4, pts_4], outputs=out_4)
+
+        with gr.Column(visible=False) as col_5:
+            date_5 = gr.Textbox(label="Phiên Giao dịch", value=latest_dt_init.strftime('%d/%m/%Y') if latest_dt_init else "")
+            btn_5 = gr.Button("💾 TRUY XUẤT KẾT QUẢ", variant="primary")
+            out_5 = gr.Textbox(label="Bảng Kết Quả Loto", lines=15)
+            btn_5.click(Auditor.phan_he_5_raw, inputs=date_5, outputs=out_5)
+
+        with gr.Column(visible=False) as col_6:
+            gr.Markdown("### 🤖 BỘ NÃO AI - QUÉT TOÀN BỘ LỊCH SỬ DB")
+            btn_6 = gr.Button("🧬 BẮT ĐẦU QUÉT TOÀN DB", variant="primary")
+            out_6 = gr.Textbox(label="Báo cáo Tổng hợp V5.8", lines=25)
+            btn_6.click(Auditor.phan_he_6_master_diagnostic_prompt, inputs=[], outputs=out_6)
+
+        btn_1_sync.click(lambda: Auditor.phan_he_1_sync(auto_crawl=False), outputs=[out_1, title_2])
+        btn_1_crawl.click(lambda: Auditor.phan_he_1_sync(auto_crawl=True), outputs=[out_1, title_2])
+        btn_manual_save.click(Auditor.process_manual_input, inputs=[manual_date, manual_numbers], outputs=[out_1, title_2])
+
+        def update_visibility(choice):
+            return [gr.Column(visible=(choice == Config.MENU_OPTIONS[i])) for i in range(6)]
+        nav_menu.change(fn=update_visibility, inputs=[nav_menu], outputs=[col_1, col_2, col_3, col_4, col_5, col_6])
+    return demo
+
+def _render_forensic_bootstrap():
+    """
+    Render-safe startup:
+    - NEVER block the web server waiting for the first Frozen Manifest.
+    - Build the manifest exactly once in a background thread when absent.
+    - Ordinary restarts never rebuild an existing manifest.
+    """
+    if os.path.exists(Config.STATE_FILE):
+        print("[FORENSIC BOOTSTRAP] Frozen Manifest already exists; startup rebuild skipped.")
+        return
+
+    print("[FORENSIC BOOTSTRAP] STATE_NOT_FOUND -> starting one-time background bootstrap...")
+    try:
+        db, msg = DatabaseManager.load_db()
+        print(f"[FORENSIC BOOTSTRAP] {msg}")
+        if not db:
+            print("[FORENSIC BOOTSTRAP] BLOCKED: DATABASE_EMPTY")
+            return
+
+        result = QuantEngine.backtest_forensic(db)
+        if isinstance(result, dict) and result.get("status") == "BLOCKED":
+            print(f"[FORENSIC BOOTSTRAP] BLOCKED: {result.get('reason', 'UNKNOWN')}")
+            return
+
+        # backtest_forensic() is responsible for the authenticated,
+        # append-only Frozen Manifest write.
+        if os.path.exists(Config.STATE_FILE):
+            print("[FORENSIC BOOTSTRAP] Frozen Manifest created successfully.")
+        else:
+            print("[FORENSIC BOOTSTRAP] HARD FAIL: backtest returned but STATE_FILE was not created.")
+    except Exception as e:
+        print(f"[FORENSIC BOOTSTRAP] HARD FAIL: {type(e).__name__}: {e}")
+        traceback.print_exc()
+
+
+if __name__ == '__main__':
+    # Explicit forensic rebuild remains a manual/destructive operation.
+    # It is intentionally NOT part of normal Render startup.
+    if '--rebuild-manifest' in sys.argv:
+        db, msg = DatabaseManager.load_db()
+        print(msg)
+        if not db:
+            raise SystemExit('REBUILD_BLOCKED: DATABASE_EMPTY')
+        result = QuantEngine.backtest_forensic(db)
+        print(json.dumps(result if isinstance(result, dict) else {'status':'OK'},
+                         ensure_ascii=False, indent=2, default=str))
+        raise SystemExit(0)
+
+    # IMPORTANT:
+    # The web server must bind its Render PORT before the potentially expensive
+    # forensic bootstrap runs. Otherwise Render kills the service because no
+    # listening socket is visible during the port-scan window.
+    #
+    # The daemon thread performs the one-time manifest creation in the
+    # background. The UI/audit remains available while it is being built.
+    bootstrap_thread = threading.Thread(
+        target=_render_forensic_bootstrap,
+        name="forensic-bootstrap",
+        daemon=True,
+    )
+    bootstrap_thread.start()
+
+    demo = create_ui()
+    port = int(os.environ.get('PORT', 10000))
+    print(f"[RENDER] Starting Gradio on 0.0.0.0:{port}")
+    demo.launch(server_name='0.0.0.0', server_port=port, share=False)
