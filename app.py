@@ -244,41 +244,50 @@ class Crawler:
             f"https://{domain}/so-ket-qua-truyen-thong/300",
             f"https://{domain}/"
         ]
-        session = requests.Session()
         headers = {"User-Agent": "Mozilla/5.0", "Accept": "text/html,application/xhtml+xml"}
-        parsed = {}
-        try:
-            for url in urls:
+        date_pattern = re.compile(r'\\b\\d{1,2}[-/.]\\d{1,2}[-/.]\\d{4}\\b')
+
+        def fetch_and_parse(url):
+            parsed = {}
+            try:
+                r = requests.get(url, headers=headers, timeout=Config.CRAWL_FAST_TIMEOUT)
+                if r.status_code != 200:
+                    return parsed
+                soup = BeautifulSoup(r.text, "html.parser")
+                for table in soup.find_all("table"):
+                    date_node = table.find_previous(string=date_pattern)
+                    if not date_node:
+                        continue
+                    matches = date_pattern.findall(str(date_node))
+                    if len(matches) != 1:
+                        continue
+                    res = Utils.chuan_hoa_ngay(matches[0])
+                    if not res:
+                        continue
+                    dt_obj, std = res
+                    if dt_obj.date() > Utils.get_vn_time().date():
+                        continue
+                    tails = Crawler._extract_27_from_table(table)
+                    if tails is not None:
+                        parsed[std] = tails
+                return parsed
+            except requests.RequestException:
+                return {}
+            except Exception:
+                return {}
+
+        # Race all candidate URLs for this source. The first URL producing
+        # any valid strict-27 result wins; no sequential timeout penalty.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(urls)) as executor:
+            futures = [executor.submit(fetch_and_parse, url) for url in urls]
+            for fut in concurrent.futures.as_completed(futures):
                 try:
-                    r = session.get(url, headers=headers, timeout=Config.CRAWL_FAST_TIMEOUT)
-                    if r.status_code != 200: continue
-                    soup = BeautifulSoup(r.text, "html.parser")
-                    
-                    # Fix 4: DOM-Date Binding instead of string slicing
-                    for table in soup.find_all("table"):
-                        # Look for the closest preceding date-like text in the DOM
-                        date_pattern = re.compile(r'\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b')
-                        date_node = table.find_previous(string=date_pattern)
-                        if not date_node: continue
-                        matches = date_pattern.findall(str(date_node))
-                        if len(matches) != 1: continue
-                        date_str_raw = matches[0]
-                        res = Utils.chuan_hoa_ngay(date_str_raw)
-                        if not res: continue
-                        dt_obj, std = res
-                        if dt_obj.date() > Utils.get_vn_time().date(): continue
-                        
-                        tails = Crawler._extract_27_from_table(table)
-                        if tails is not None:
-                            parsed[std] = tails
+                    parsed = fut.result()
                     if parsed:
                         return True, parsed, domain
-                except requests.RequestException:
+                except Exception:
                     continue
-        except Exception:
-            logger = getattr(__import__("logging"), "getLogger")("V5.8")
-            logger.exception("crawler domain failure: %s", domain)
-        return bool(parsed), parsed, domain
+        return False, {}, domain
 
     @staticmethod
     def fetch_ketqua_radar():
