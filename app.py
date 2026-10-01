@@ -529,6 +529,8 @@ class DatabaseManager:
         if not res: return None
         dt_obj, std = res
         tails, source_tokens = Forensic.parse_raw_prizes(raw)
+        if isinstance(source_set, str):
+            source_set = [x.strip() for x in source_set.split(",") if x.strip()]
         return std, {
             "date_obj": dt_obj,
             "prizes_int": tails,
@@ -547,7 +549,7 @@ class DatabaseManager:
                 vals = ws.get_all_values()
                 for row in vals[1:]:
                     if len(row) < 2: continue
-                    try: parsed = DatabaseManager._parse_row(row[0], row[1], row[2] if len(row) >= 3 else None)
+                    try: parsed = DatabaseManager._parse_row(row[0], row[1], row[2] if len(row) >= 3 else None, row[3] if len(row) >= 4 else None)
                     except ValueError as exc: raise RuntimeError(f"GOOGLE_STRICT_27_REJECT: row={row[:2]} | {exc}") from exc
                     if parsed: db[parsed[0]] = parsed[1]
                 if db:
@@ -571,7 +573,12 @@ class DatabaseManager:
     def _save_local_excel_cache(db):
         rows = []
         for info in sorted(db.values(), key=lambda x: x["date_obj"], reverse=True):
-            rows.append({"Ngày": info["date_obj"].strftime("%d/%m/%Y"), "Kết Quả Loto": info["raw_str"]})
+            rows.append({
+                "Ngày": info["date_obj"].strftime("%d/%m/%Y"),
+                "Kết Quả Loto": info["raw_str"],
+                Config.CALENDAR_STATE_HEADER: info.get("calendar_state", Config.LEGACY_CALENDAR_STATE),
+                "Source Set": ",".join(sorted(set(info.get("source_set", [])))),
+            })
         if rows: DatabaseManager._atomic_excel_write(rows)
 
     @staticmethod
@@ -589,14 +596,22 @@ class DatabaseManager:
         rows = []
         for info in sorted(db.values(), key=lambda x: x["date_obj"], reverse=True):
             if len(info["prizes_int"]) != 27: raise ValueError("WRITE_ABORT: NON-27 ROW")
-            rows.append({"Ngày": info["date_obj"].strftime("%d/%m/%Y"), "Kết Quả Loto": " ".join(f"{x:02d}" for x in info["prizes_int"])})
+            rows.append({
+                "Ngày": info["date_obj"].strftime("%d/%m/%Y"),
+                "Kết Quả Loto": " ".join(f"{x:02d}" for x in info["prizes_int"]),
+                Config.CALENDAR_STATE_HEADER: info.get("calendar_state", Config.LEGACY_CALENDAR_STATE),
+                "Source Set": ",".join(sorted(set(info.get("source_set", [])))),
+            })
         if os.path.exists(Config.DATA_FILE):
             timestamp = Utils.get_vn_time().strftime("%Y%m%d_%H%M%S")
             shutil.copy2(Config.DATA_FILE, f"{Config.BACKUP_PREFIX}{timestamp}.bak")
         DatabaseManager._atomic_excel_write(rows)
         ws, _ = GoogleSheetsManager.get_worksheet()
         if ws is not None:
-            matrix = [["Ngày", "Kết Quả Loto"]] + [[r["Ngày"], r["Kết Quả Loto"]] for r in rows]
+            matrix = [["Ngày", "Kết Quả Loto", Config.CALENDAR_STATE_HEADER, "Source Set"]] + [
+                    [r["Ngày"], r["Kết Quả Loto"], r.get(Config.CALENDAR_STATE_HEADER, Config.LEGACY_CALENDAR_STATE), r.get("Source Set", "")]
+                    for r in rows
+                ]
             try:
                 ws.clear()
                 try: ws.update(values=matrix, range_name="A1")
