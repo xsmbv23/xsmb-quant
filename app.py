@@ -213,12 +213,26 @@ class Crawler:
             if not cells: continue
             label = " ".join(cells[0].stripped_strings).strip()
             normalized = re.sub(r"\s+", " ", label).strip().lower()
-            if normalized in {"đb", "g.đb", "g.db", "db", "đặc biệt", "g đặc biệt"}:
+            if normalized in {"đb", "g.đb", "g.db", "db", "đặc biệt", "g đặc biệt", "giải đặc biệt"}:
                 idx = 0
             else:
-                m = re.search(r"g\s*[.:]?\s*([1-7])\b", normalized)
-                if not m: continue
-                idx = int(m.group(1))
+                # Current source markup uses Vietnamese prize names
+                # ("giải nhất" ... "giải bảy"), not G1/G2... labels.
+                prize_names = {
+                    "giải nhất": 1,
+                    "giải nhì": 2,
+                    "giải ba": 3,
+                    "giải tư": 4,
+                    "giải năm": 5,
+                    "giải sáu": 6,
+                    "giải bảy": 7,
+                }
+                if normalized in prize_names:
+                    idx = prize_names[normalized]
+                else:
+                    m = re.search(r"(?:g|giải)\s*[.:]?\s*([1-7])\b", normalized)
+                    if not m: continue
+                    idx = int(m.group(1))
             vals = []
             for cell in cells[1:]:
                 vals.extend(cell_tokens(cell))
@@ -245,6 +259,7 @@ class Crawler:
 
         urls = [
             f"https://{domain}/xsmb-ngay-{Utils.get_vn_time().strftime('%d-%m-%Y')}.html",
+            f"https://{domain}/so-ket-qua",
             f"https://{domain}/so-ket-qua-truyen-thong/300",
             f"https://{domain}/"
         ]
