@@ -494,6 +494,34 @@ class Crawler:
         return min(confirmed), latest, target
 
 
+class GoogleSheetsManager:
+    @staticmethod
+    def get_worksheet():
+        if not HAS_GSPREAD: return None, "Thiếu gspread/google-auth."
+        sheet_name = os.environ.get("GOOGLE_SHEET_NAME", "Ket_Qua_Loto27").strip()
+        sheet_id = os.environ.get("GOOGLE_SHEET_ID", "").strip()
+        creds_json_str = os.environ.get("GOOGLE_CREDENTIALS", "").strip() or os.environ.get("GOOGLE_SHEETS_JSON", "").strip()
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = None
+        if creds_json_str:
+            try: creds = Credentials.from_service_account_info(json.loads(creds_json_str), scopes=scopes)
+            except Exception: creds = None
+        if not creds:
+            for fname in ["google_credentials.json", "credentials.json", "service_account.json"]:
+                if os.path.exists(fname):
+                    try:
+                        creds = Credentials.from_service_account_file(fname, scopes=scopes)
+                        break
+                    except Exception:
+                        continue
+        if not creds: return None, "Chưa cấu hình Google Credentials hoặc credentials không hợp lệ."
+        try:
+            gc = gspread.authorize(creds)
+            ws = gc.open_by_key(sheet_id).sheet1 if sheet_id else gc.open(sheet_name).sheet1
+            return ws, "OK"
+        except Exception as e: return None, f"Lỗi Google Sheets: {e}"
+
+
 class DatabaseManager:
     @staticmethod
     def _parse_row(date_raw, raw, calendar_state=None, source_set=None):
