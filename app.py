@@ -346,6 +346,17 @@ class GoogleSheetsManager:
 
 
 class DatabaseManager:
+    _cache_lock = threading.RLock()
+    _db_cache = None
+    _db_cache_at = 0.0
+    _DB_CACHE_TTL = 30.0
+
+    @staticmethod
+    def _invalidate_cache():
+        with DatabaseManager._cache_lock:
+            DatabaseManager._db_cache = None
+            DatabaseManager._db_cache_at = 0.0
+
     @staticmethod
     def _parse_row(date_raw, raw):
         res = Utils.chuan_hoa_ngay(date_raw)
@@ -360,7 +371,13 @@ class DatabaseManager:
         }
 
     @staticmethod
-    def load_db():
+    def load_db(force=False):
+        now_mono = __import__("time").monotonic()
+        with DatabaseManager._cache_lock:
+            if (not force and DatabaseManager._db_cache is not None
+                    and now_mono - DatabaseManager._db_cache_at < DatabaseManager._DB_CACHE_TTL):
+                return DatabaseManager._db_cache, "🟢 DB CACHE: dữ liệu đã nạp sẵn."
+
         db = {}
         ws, ws_msg = GoogleSheetsManager.get_worksheet()
         if ws is not None:
@@ -373,6 +390,9 @@ class DatabaseManager:
                     if parsed: db[parsed[0]] = parsed[1]
                 if db:
                     DatabaseManager._save_local_excel_cache(db)
+                    with DatabaseManager._cache_lock:
+                        DatabaseManager._db_cache = db
+                        DatabaseManager._db_cache_at = now_mono
                     return db, f"🟢 GOOGLE SHEETS STRICT-27-TAIL: {len(db)} phiên."
             except Exception as e: ws_msg = f"Google Sheets lỗi: {e}"
 
@@ -385,6 +405,9 @@ class DatabaseManager:
                 try: parsed = DatabaseManager._parse_row(row.iloc[0], row.iloc[1])
                 except ValueError as exc: raise RuntimeError(f"LOCAL_STRICT_27_REJECT: row={row.iloc[0]} | {exc}") from exc
                 if parsed: db[parsed[0]] = parsed[1]
+            with DatabaseManager._cache_lock:
+                DatabaseManager._db_cache = db
+                DatabaseManager._db_cache_at = now_mono
             return db, f"🟢 LOCAL EXCEL STRICT-27-TAIL: {len(db)} phiên. [{ws_msg}]"
         except Exception as e: return {}, f"🛑 LỖI ĐỌC DB: {e}"
 
@@ -415,6 +438,7 @@ class DatabaseManager:
             timestamp = Utils.get_vn_time().strftime("%Y%m%d_%H%M%S")
             shutil.copy2(Config.DATA_FILE, f"{Config.BACKUP_PREFIX}{timestamp}.bak")
         DatabaseManager._atomic_excel_write(rows)
+        DatabaseManager._invalidate_cache()
         ws, _ = GoogleSheetsManager.get_worksheet()
         if ws is not None:
             matrix = [["Ngày", "Kết Quả Loto"]] + [[r["Ngày"], r["Kết Quả Loto"]] for r in rows]
@@ -435,6 +459,7 @@ class DatabaseManager:
         db[std] = {"date_obj": dt_obj, "prizes_int": tails, "raw_str": " ".join(f"{x:02d}" for x in tails), "source_prizes": tuple(source_tokens)}
         DatabaseManager.rewrite_clean_db(db)
         QuantEngine.clear_cache()
+        DatabaseManager._invalidate_cache()
         return f"✅ Đã lưu STRICT-27-TAIL: {std}"
 
     @staticmethod
@@ -458,6 +483,7 @@ class DatabaseManager:
         if added or updated:
             DatabaseManager.rewrite_clean_db(db)
             QuantEngine.clear_cache()
+            DatabaseManager._invalidate_cache()
         return f"✅ STRICT-27-TAIL AUTO-HEAL | added={added} updated={updated} | {msg}"
 
     @staticmethod
@@ -897,11 +923,12 @@ class AuditContext:
         return idx, int(self.regime_full[row]), self.probs_full[row]
 
 class QuantEngine:
-    _sig_cache={}; _mm_cache={}; _research_cache={}
+    _sig_cache={}; _mm_cache={}; _prediction_cache={}; _research_cache={}
 
     @staticmethod
     def clear_cache():
-        QuantEngine._sig_cache.clear(); QuantEngine._mm_cache.clear(); QuantEngine._research_cache.clear()
+        QuantEngine._sig_cache.clear(); QuantEngine._mm_cache.clear()
+        QuantEngine._prediction_cache.clear(); QuantEngine._research_cache.clear()
 
     @staticmethod
     def _matrix(db,dates):
@@ -982,9 +1009,22 @@ class QuantEngine:
 
     @staticmethod
     def get_full_prediction(target_dt, db, state_manifest, context=None):
-        """Fix 2: Propagating mandatory state_manifest."""
+        """Canonical prediction with request/global memoization."""
+        if context is not None:
+            cache_key = target_dt.strftime("%Y-%m-%d")
+            if cache_key in context.prediction_cache:
+                return context.prediction_cache[cache_key]
+        else:
+            cache_key = (target_dt, state_manifest.get("manifest_id"), state_manifest.get("sequence_id"))
+            if cache_key in QuantEngine._prediction_cache:
+                return QuantEngine._prediction_cache[cache_key]
+
         dan, trace = QuantEngine.get_signal(target_dt, db, state_manifest, context=context)
-        if dan is None: return None, trace
+        if dan is None:
+            result = (None, trace)
+            if context is not None: context.prediction_cache[cache_key] = result
+            else: QuantEngine._prediction_cache[cache_key] = result
+            return result
         
         if context is not None:
             idx, M = context.matrix_before(target_dt)
@@ -1005,7 +1045,7 @@ class QuantEngine:
         best = final[0] if final else 0
         mirror = (best%10)*10 + best//10
         stl = (final[1] if len(final)>1 else mirror, final[2] if len(final)>2 else ((best+11)%100))
-        return {
+        result = ({
             "btl": f"{best:02d}", "stl": f"{stl[0]:02d} - {stl[1]:02d}",
             "xien2": f"{best:02d} - {stl[0]:02d} | {best:02d} - {stl[1]:02d}",
             "cang3d": "[KHÔNG CÓ FULL 3-SỐ — FAIL CLOSED]",
@@ -1169,7 +1209,7 @@ class Auditor:
     def phan_he_1_sync(auto_crawl=False):
         crawl_msg = "ℹ️ Chế độ Offline. Bấm nút cập nhật để kích hoạt Radar."
         if auto_crawl: crawl_msg = DatabaseManager.auto_heal_history()
-        db, msg = DatabaseManager.load_db()
+        db, msg = DatabaseManager.load_db(force=True)
         _, latest_dt, next_predict_dt = DatabaseManager.get_boundaries(db)
         latest_str = latest_dt.strftime('%d/%m/%Y') if latest_dt else "⚠️ CHƯA CÓ DỮ LIỆU!"
         lines = [
