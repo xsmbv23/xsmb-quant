@@ -506,7 +506,26 @@ class DatabaseManager:
     def auto_heal_history():
         ok, data, msg = Crawler.fetch_ketqua_radar()
         if not ok: return f"🛑 CRAWLER FAIL-CLOSED: {msg}", None
-        db, dbmsg = DatabaseManager.load_db()
+
+        # The crawl button must not block on Google Sheets. Google API calls
+        # have no reliable request deadline here and were able to hold the
+        # Gradio request for minutes. Use the local Excel cache as the
+        # synchronous source of truth for this transaction.
+        db = {}
+        local_msg = ""
+        if os.path.exists(Config.DATA_FILE):
+            try:
+                df = pd.read_excel(Config.DATA_FILE, dtype=str)
+                for _, row in df.iterrows():
+                    if len(row) < 2: continue
+                    parsed = DatabaseManager._parse_row(row.iloc[0], row.iloc[1])
+                    if parsed: db[parsed[0]] = parsed[1]
+                local_msg = f"LOCAL CACHE: {len(db)} phiên"
+            except Exception as e:
+                return f"🛑 LOCAL CACHE FAIL: {e}", None
+        else:
+            return "🛑 LOCAL CACHE MISSING: không thể cập nhật an toàn mà không chờ Google Sheets.", None
+
         added, updated = 0, 0
         now = Utils.get_vn_time()
         for std, tails in data.items():
@@ -521,9 +540,23 @@ class DatabaseManager:
             elif db[canonical]["raw_str"] != rec["raw_str"]: updated += 1
             db[canonical] = rec
         if added or updated:
-            DatabaseManager.rewrite_clean_db(db)
+            DatabaseManager._atomic_excel_write([
+                {"Ngày": info["date_obj"].strftime("%d/%m/%Y"), "Kết Quả Loto": info["raw_str"]}
+                for info in sorted(db.values(), key=lambda x: x["date_obj"], reverse=True)
+            ])
             QuantEngine.clear_cache()
-        return f"✅ STRICT-27-TAIL AUTO-HEAL | added={added} updated={updated} | {msg}", db
+
+            # Cloud persistence is best-effort and deliberately detached from
+            # the UI request. A slow/hung Google API must never make the crawl
+            # button wait indefinitely.
+            def _sync_google_snapshot(snapshot):
+                try:
+                    DatabaseManager.rewrite_clean_db(snapshot)
+                except Exception as exc:
+                    print(f"[GOOGLE ASYNC SYNC] {type(exc).__name__}: {exc}", flush=True)
+            threading.Thread(target=_sync_google_snapshot, args=(dict(db),), name="google-db-sync", daemon=True).start()
+
+        return f"✅ STRICT-27-TAIL AUTO-HEAL | added={added} updated={updated} | {local_msg} | {msg}", db
 
     @staticmethod
     def get_boundaries(db):
