@@ -415,7 +415,7 @@ class Crawler:
 
 
     @staticmethod
-def auto_heal_history():
+    def auto_heal_history():
         ok, data, msg = Crawler.fetch_ketqua_radar()
         if not ok: return f"🛑 CRAWLER FAIL-CLOSED: {msg}", None
 
@@ -430,7 +430,7 @@ def auto_heal_history():
                 df = pd.read_excel(Config.DATA_FILE, dtype=str)
                 for _, row in df.iterrows():
                     if len(row) < 2: continue
-                    parsed = DatabaseManager._parse_row(row.iloc[0], row.iloc[1])
+                    parsed = DatabaseManager._parse_row(row.iloc[0], row.iloc[1], row.iloc[2] if len(row) >= 3 else None)
                     if parsed: db[parsed[0]] = parsed[1]
                 local_msg = f"LOCAL CACHE: {len(db)} phiên"
             except Exception as e:
@@ -463,7 +463,7 @@ def auto_heal_history():
             db[canonical] = rec
         if added or updated:
             DatabaseManager._atomic_excel_write([
-                {"Ngày": info["date_obj"].strftime("%d/%m/%Y"), "Kết Quả Loto": info["raw_str"]}
+                {"Ngày": info["date_obj"].strftime("%d/%m/%Y"), "Kết Quả Loto": info["raw_str"], Config.CALENDAR_STATE_HEADER: info.get("calendar_state", Config.LEGACY_CALENDAR_STATE)}
                 for info in sorted(db.values(), key=lambda x: x["date_obj"], reverse=True)
             ])
             QuantEngine.clear_cache()
