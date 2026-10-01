@@ -17,6 +17,21 @@ SOURCE_URL = "https://ketqua16.net/so-ket-qua-truyen-thong/200"
 LABELS = ("Đặc biệt", "Giải nhất", "Giải nhì", "Giải ba", "Giải tư", "Giải năm", "Giải sáu", "Giải bảy")
 COUNTS = {"Đặc biệt": 1, "Giải nhất": 1, "Giải nhì": 2, "Giải ba": 6, "Giải tư": 4, "Giải năm": 6, "Giải sáu": 3, "Giải bảy": 4}
 NUMBER_RE = re.compile(r"(?<!\d)\d{2,5}(?!\d)")
+
+
+def _extract_group_values(text: str, width: int, expected: int) -> list[str]:
+    """Extract fixed-width prizes, tolerating digit-level HTML/text fragmentation."""
+    tokens = re.findall(r"\d+", text)
+    values: list[str] = []
+    carry = ""
+    for token in tokens:
+        carry += token
+        while len(carry) >= width and len(values) < expected:
+            values.append(carry[:width])
+            carry = carry[width:]
+        if len(values) >= expected:
+            break
+    return values
 DATE_HEADER_RE = re.compile(r"(?:Thứ\s+(?:hai|ba|tư|năm|sáu|bảy)|Chủ nhật)\s+ngày\s+(\d{2})-(\d{2})-(\d{4})", re.IGNORECASE)
 
 
@@ -70,13 +85,14 @@ def parse_full27_block(block: str) -> tuple[str, ...]:
         if label is None:
             continue
         tail = line[len(label):].lstrip(" |:")
-        values = NUMBER_RE.findall(tail)
+        width = (5 if label in ("Đặc biệt", "Giải nhất", "Giải nhì", "Giải ba") else 4 if label in ("Giải tư", "Giải năm") else 3 if label == "Giải sáu" else 2)
+        values = _extract_group_values(tail, width, COUNTS[label])
         cursor = index + 1
         while len(values) < COUNTS[label] and cursor < len(lines):
             next_line = lines[cursor]
             if _label(next_line) is not None or DATE_HEADER_RE.search(next_line):
                 break
-            values.extend(NUMBER_RE.findall(next_line))
+            values.extend(_extract_group_values(next_line, width, COUNTS[label] - len(values)))
             cursor += 1
         groups[label] = values[: COUNTS[label]]
 
@@ -100,7 +116,7 @@ def parse_full27_block(block: str) -> tuple[str, ...]:
     return validate_prize_groups(ordered)
 
 
-def fetch_source_d(day: date, raw_root: str | Path = "runtime/raw", timeout: int = 20, parse_window_bytes: int = 8 * 1024 * 1024) -> SourceDRecord:
+def fetch_source_d(day: date, raw_root: str | Path = "runtime/raw", timeout: int = 20, parse_window_bytes: int = 32 * 1024 * 1024) -> SourceDRecord:
     raw_dir = Path(raw_root) / SOURCE_ID / day.isoformat()
     raw_dir.mkdir(parents=True, exist_ok=True)
     tmp_path = raw_dir / ".capture.html"
