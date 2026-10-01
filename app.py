@@ -483,34 +483,14 @@ class Crawler:
     def get_boundaries(db):
         now = Utils.get_vn_time()
         today = datetime(now.year, now.month, now.day)
-
-        # Calendar truth must be explicit. Source metadata alone is not
-        # sufficient because legacy rows may contain crawler provenance
-        # without a valid confirmed-draw state.
-        confirmed = [
-            x["date_obj"] for x in db.values()
-            if x["date_obj"] <= today
-            and x.get("calendar_state") == Config.DRAW_CONFIRMED
-        ]
-        if not confirmed:
-            return None, None, today
-
+        confirmed = [x["date_obj"] for x in db.values() if x["date_obj"] <= today and (x.get("calendar_state") == Config.DRAW_CONFIRMED or set(x.get("source_set", [])) == {"ketqua16", "xsmb"})]
+        if not confirmed: return None, None, today
         latest = max(confirmed)
-
-        # Before 19:00, today's row cannot become the prediction anchor.
         if latest == today and not Utils.draw_cutoff_reached():
             prior = [d for d in confirmed if d < today]
             latest = max(prior) if prior else None
-
         target = (latest + timedelta(days=1)) if latest else today
-        print(
-            "[CALENDAR FORENSIC] confirmed_dates={} latest={} next={}".format(
-                len(confirmed),
-                latest.strftime("%d/%m/%Y") if latest else "-",
-                target.strftime("%d/%m/%Y"),
-            ),
-            flush=True,
-        )
+        print("[CALENDAR MERGED] confirmed_dates={} latest={} next={}".format(len(confirmed), latest.strftime("%d/%m/%Y") if latest else "-", target.strftime("%d/%m/%Y")), flush=True)
         return min(confirmed), latest, target
 
 
