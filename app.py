@@ -77,6 +77,7 @@ class Config:
     MAX_AUDIT_DAYS = 5000
     CRAWL_MIN_QUORUM = 2
     CRAWL_FAST_TIMEOUT = 2
+    CRAWL_HARD_DEADLINE = 12
     CRAWL_FAST_DOMAINS = ["ketqua16.net", "ketqua.net", "ketqua.vn", "ketquaxoso.net"]
     ANCHOR_MAGIC = "V58_FORENSIC_ANCHOR_V1"
     
@@ -296,88 +297,120 @@ class Crawler:
             try:
                 executor.shutdown(wait=False, cancel_futures=True)
             except TypeError:
-                executor.shutdown(wait=False)
-
-    @staticmethod
+                ex    @staticmethod
     def fetch_ketqua_radar():
+        """Run the crawler under a strict wall-clock deadline and fail closed."""
         if not HAS_REQUESTS:
             return False, {}, "Thiếu requests"
 
         started = time.perf_counter()
+        fast_started = started
+        fast_quorum_ms = None
+        fallback_started = None
         results = []
         fast_domains = list(dict.fromkeys(Config.CRAWL_FAST_DOMAINS))
         fallback_domains = [d for d in dict.fromkeys(Crawler.DOMAINS) if d not in fast_domains]
+        deadline = started + float(Config.CRAWL_HARD_DEADLINE)
 
-        # FAST PATH: only the known, independent sources first. The crawl
-        # terminates as soon as the required cross-source quorum is reached.
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=len(fast_domains))
-        futures = {executor.submit(Crawler._fetch_single_domain, d): d for d in fast_domains}
-        consensus = {}
-        try:
-            for fut in concurrent.futures.as_completed(futures):
-                try:
-                    ok, data, domain = fut.result()
-                    if ok and data:
-                        results.append((domain, data))
-                        consensus = Crawler._build_consensus(results)
-                        if consensus:
-                            elapsed_ms = (time.perf_counter() - started) * 1000
-                            executor.shutdown(wait=False, cancel_futures=True)
-                            return True, consensus, (
-                                f"STRICT 27-TAIL FAST-QUORUM OK | sources={len(results)} "
-                                f"| quorum={Config.CRAWL_MIN_QUORUM} | days={len(consensus)} "
-                                f"| crawl_ms={elapsed_ms:.0f}"
-                            )
-                except Exception:
-                    continue
-        finally:
-            # Do not make the UI wait for unfinished fast-path requests.
+        def stage_msg(status):
+            crawl_ms = (time.perf_counter() - started) * 1000
+            fast_ms = (fast_quorum_ms - fast_started) * 1000 if fast_quorum_ms else None
+            fallback_ms = (
+                (time.perf_counter() - fallback_started) * 1000
+                if fallback_started else None
+            )
+            parts = [
+                status,
+                f"crawl_ms={crawl_ms:.0f}",
+                f"fast_ms={fast_ms:.0f}" if fast_ms is not None else "fast_ms=NA",
+                f"fallback_ms={fallback_ms:.0f}" if fallback_ms is not None else "fallback_ms=NA",
+                f"sources={len(results)}",
+                f"quorum={Config.CRAWL_MIN_QUORUM}",
+            ]
+            return " | ".join(parts)
+
+        def shutdown(executor):
             try:
                 executor.shutdown(wait=False, cancel_futures=True)
             except TypeError:
                 executor.shutdown(wait=False)
 
-        # FALLBACK PATH: only if the fast quorum could not be established.
-        fallback_executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=min(12, len(fallback_domains))
+        # FAST PATH: wait only until the hard deadline, never on executor
+        # shutdown. as_completed(timeout=...) prevents the UI callback from
+        # waiting indefinitely for a worker that is stuck in I/O/parsing.
+        fast_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=len(fast_domains)
         )
-        fallback_futures = {
-            fallback_executor.submit(Crawler._fetch_single_domain, d): d
-            for d in fallback_domains
+        fast_futures = {
+            fast_executor.submit(Crawler._fetch_single_domain, d): d
+            for d in fast_domains
         }
         try:
-            for fut in concurrent.futures.as_completed(fallback_futures):
-                try:
-                    ok, data, domain = fut.result()
-                    if ok and data:
-                        results.append((domain, data))
-                        consensus = Crawler._build_consensus(results)
-                        if consensus:
-                            elapsed_ms = (time.perf_counter() - started) * 1000
-                            fallback_executor.shutdown(wait=False, cancel_futures=True)
-                            return True, consensus, (
-                                f"STRICT 27-TAIL FALLBACK-QUORUM OK | sources={len(results)} "
-                                f"| quorum={Config.CRAWL_MIN_QUORUM} | days={len(consensus)} "
-                                f"| crawl_ms={elapsed_ms:.0f}"
-                            )
-                except Exception:
-                    continue
-        finally:
+            remaining = max(0.0, deadline - time.perf_counter())
             try:
-                fallback_executor.shutdown(wait=False, cancel_futures=True)
-            except TypeError:
-                fallback_executor.shutdown(wait=False)
+                iterator = concurrent.futures.as_completed(
+                    fast_futures, timeout=remaining
+                )
+                for fut in iterator:
+                    if time.perf_counter() >= deadline:
+                        break
+                    try:
+                        ok, data, domain = fut.result()
+                        if ok and data:
+                            results.append((domain, data))
+                            consensus = Crawler._build_consensus(results)
+                            if consensus:
+                                fast_quorum_ms = time.perf_counter()
+                                return True, consensus, stage_msg(
+                                    "STRICT 27-TAIL FAST-QUORUM OK"
+                                )
+                    except Exception:
+                        continue
+            except concurrent.futures.TimeoutError:
+                pass
+        finally:
+            shutdown(fast_executor)
 
-        elapsed_ms = (time.perf_counter() - started) * 1000
-        if not results:
-            return False, {}, (
-                f"Không tìm được nguồn hợp lệ có đúng 27 giải/ngày | crawl_ms={elapsed_ms:.0f}"
+        # FALLBACK PATH: bounded by the SAME absolute deadline. Once the
+        # deadline expires, no new source is allowed to extend the request.
+        fallback_started = time.perf_counter()
+        if fallback_started < deadline:
+            fallback_executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(12, len(fallback_domains))
             )
-        return False, {}, (
-            f"CRAWL_QUORUM_FAIL_CLOSED: không có ngày nào đạt quorum >= "
-            f"{Config.CRAWL_MIN_QUORUM} | sources={len(results)} | crawl_ms={elapsed_ms:.0f}"
-        )
-        return True, consensus, f"STRICT 27-TAIL QUORUM CRAWL OK | sources={source_count} | quorum={Config.CRAWL_MIN_QUORUM} | days={len(consensus)}"
+            fallback_futures = {
+                fallback_executor.submit(Crawler._fetch_single_domain, d): d
+                for d in fallback_domains
+            }
+            try:
+                remaining = max(0.0, deadline - time.perf_counter())
+                if remaining > 0:
+                    try:
+                        iterator = concurrent.futures.as_completed(
+                            fallback_futures, timeout=remaining
+                        )
+                        for fut in iterator:
+                            if time.perf_counter() >= deadline:
+                                break
+                            try:
+                                ok, data, domain = fut.result()
+                                if ok and data:
+                                    results.append((domain, data))
+                                    consensus = Crawler._build_consensus(results)
+                                    if consensus:
+                                        return True, consensus, stage_msg(
+                                            "STRICT 27-TAIL FALLBACK-QUORUM OK"
+                                        )
+                            except Exception:
+                                continue
+                    except concurrent.futures.TimeoutError:
+                        pass
+            finally:
+                shutdown(fallback_executor)
+
+        # FAIL CLOSED: never return partial crawler data and never let the
+        # crawler's background threads determine the browser response time.
+        return False, {}, stage_msg("CRAWL_HARD_DEADLINE_FAIL_CLOSED")UM} | days={len(consensus)}"
 
 # ==============================================================================
 # 📊 BLOCK 4: GOOGLE SHEETS & DATABASE MANAGER
