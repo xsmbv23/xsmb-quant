@@ -98,7 +98,7 @@ end = s.index('\n# =============================================================
 
 radar = r'''    @staticmethod
     def fetch_ketqua_radar():
-        """Fast live sync: exactly two trusted sources, strict 27-tail consensus."""
+        """Fast live sync: exactly two trusted sources, strict 27-tail consensus + date-boundary validation."""
         if not HAS_REQUESTS:
             return False, {}, "Thiếu requests"
 
