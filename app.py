@@ -644,7 +644,15 @@ class DatabaseManager:
             except Exception as e:
                 return f"🛑 LOCAL CACHE FAIL: {e}", None
         else:
-            return "🛑 LOCAL CACHE MISSING: không thể cập nhật an toàn mà không chờ Google Sheets.", None
+            # First-run / cache-missing recovery: use the existing strict DB
+            # source to seed the local cache, then continue with the same
+            # atomic local transaction. This preserves fail-closed semantics
+            # without discarding an otherwise valid quorum crawl.
+            seeded_db, seeded_msg = DatabaseManager.load_db()
+            if not seeded_db:
+                return f"🛑 LOCAL CACHE MISSING + DB SEED FAILED: {seeded_msg}", None
+            db = seeded_db
+            local_msg = f"SEEDED LOCAL CACHE: {len(db)} phiên | {seeded_msg}"
 
         added, updated = 0, 0
         now = Utils.get_vn_time()
