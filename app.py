@@ -493,6 +493,181 @@ class Crawler:
         print("[CALENDAR MERGED] confirmed_dates={} latest={} next={}".format(len(confirmed), latest.strftime("%d/%m/%Y") if latest else "-", target.strftime("%d/%m/%Y")), flush=True)
         return min(confirmed), latest, target
 
+
+class DatabaseManager:
+    @staticmethod
+    def _parse_row(date_raw, raw, calendar_state=None, source_set=None):
+        res = Utils.chuan_hoa_ngay(date_raw)
+        if not res: return None
+        dt_obj, std = res
+        tails, source_tokens = Forensic.parse_raw_prizes(raw)
+        return std, {
+            "date_obj": dt_obj,
+            "prizes_int": tails,
+            "raw_str": " ".join(f"{x:02d}" for x in tails),
+            "source_prizes": tuple(source_tokens),
+            "calendar_state": calendar_state or Config.LEGACY_CALENDAR_STATE,
+            "source_set": list(source_set or []),
+        }
+
+    @staticmethod
+    def load_db():
+        db = {}
+        ws, ws_msg = GoogleSheetsManager.get_worksheet()
+        if ws is not None:
+            try:
+                vals = ws.get_all_values()
+                for row in vals[1:]:
+                    if len(row) < 2: continue
+                    try: parsed = DatabaseManager._parse_row(row[0], row[1], row[2] if len(row) >= 3 else None)
+                    except ValueError as exc: raise RuntimeError(f"GOOGLE_STRICT_27_REJECT: row={row[:2]} | {exc}") from exc
+                    if parsed: db[parsed[0]] = parsed[1]
+                if db:
+                    DatabaseManager._save_local_excel_cache(db)
+                    return db, f"🟢 GOOGLE SHEETS STRICT-27-TAIL: {len(db)} phiên."
+            except Exception as e: ws_msg = f"Google Sheets lỗi: {e}"
+
+        if not os.path.exists(Config.DATA_FILE): return {}, f"🛑 DATA_FILE không tồn tại: {Config.DATA_FILE}"
+
+        try:
+            df = pd.read_excel(Config.DATA_FILE, dtype=str)
+            if len(df.columns) < 2: return {}, "🛑 DATA_SCHEMA_FAIL: cần Ngày + Kết Quả Loto"
+            for _, row in df.iterrows():
+                try: parsed = DatabaseManager._parse_row(row.iloc[0], row.iloc[1], row.iloc[2] if len(row) >= 3 else None)
+                except ValueError as exc: raise RuntimeError(f"LOCAL_STRICT_27_REJECT: row={row.iloc[0]} | {exc}") from exc
+                if parsed: db[parsed[0]] = parsed[1]
+            return db, f"🟢 LOCAL EXCEL STRICT-27-TAIL: {len(db)} phiên. [{ws_msg}]"
+        except Exception as e: return {}, f"🛑 LỖI ĐỌC DB: {e}"
+
+    @staticmethod
+    def _save_local_excel_cache(db):
+        rows = []
+        for info in sorted(db.values(), key=lambda x: x["date_obj"], reverse=True):
+            rows.append({"Ngày": info["date_obj"].strftime("%d/%m/%Y"), "Kết Quả Loto": info["raw_str"]})
+        if rows: DatabaseManager._atomic_excel_write(rows)
+
+    @staticmethod
+    def _atomic_excel_write(rows):
+        target = Path(Config.DATA_FILE)
+        tmp = target.with_name(target.name + f".tmp.{os.getpid()}.{uuid.uuid4().hex}.xlsx")
+        pd.DataFrame(rows).to_excel(tmp, index=False)
+        with open(tmp, "rb") as fh:
+            os.fsync(fh.fileno())
+        os.replace(tmp, target)
+
+    @staticmethod
+    def rewrite_clean_db(db):
+        if not db: raise ValueError("REFUSE_WRITE_EMPTY_DB")
+        rows = []
+        for info in sorted(db.values(), key=lambda x: x["date_obj"], reverse=True):
+            if len(info["prizes_int"]) != 27: raise ValueError("WRITE_ABORT: NON-27 ROW")
+            rows.append({"Ngày": info["date_obj"].strftime("%d/%m/%Y"), "Kết Quả Loto": " ".join(f"{x:02d}" for x in info["prizes_int"])})
+        if os.path.exists(Config.DATA_FILE):
+            timestamp = Utils.get_vn_time().strftime("%Y%m%d_%H%M%S")
+            shutil.copy2(Config.DATA_FILE, f"{Config.BACKUP_PREFIX}{timestamp}.bak")
+        DatabaseManager._atomic_excel_write(rows)
+        ws, _ = GoogleSheetsManager.get_worksheet()
+        if ws is not None:
+            matrix = [["Ngày", "Kết Quả Loto"]] + [[r["Ngày"], r["Kết Quả Loto"]] for r in rows]
+            try:
+                ws.clear()
+                try: ws.update(values=matrix, range_name="A1")
+                except TypeError: ws.update("A1", matrix)
+            except Exception as e: raise RuntimeError(f"GOOGLE_WRITE_FAIL: {e}")
+
+    @staticmethod
+    def save_manual_data(date_str, numbers_str):
+        res = Utils.chuan_hoa_ngay(date_str)
+        if not res: return "🛑 Ngày không hợp lệ."
+        dt_obj, std = res
+        try: tails, source_tokens = Forensic.parse_raw_prizes(numbers_str)
+        except ValueError as e: return f"🛑 STRICT-27-PRIZE FAIL: {e}"
+        db, _ = DatabaseManager.load_db()
+        db[std] = {"date_obj": dt_obj, "prizes_int": tails, "raw_str": " ".join(f"{x:02d}" for x in tails), "source_prizes": tuple(source_tokens)}
+        DatabaseManager.rewrite_clean_db(db)
+        QuantEngine.clear_cache()
+        return f"✅ Đã lưu STRICT-27-TAIL: {std}"
+
+    @staticmethod
+    def auto_heal_history():
+        ok, data, msg = Crawler.fetch_ketqua_radar()
+        if not ok: return f"🛑 CRAWLER FAIL-CLOSED: {msg}", None
+
+        # The crawl button must not block on Google Sheets. Google API calls
+        # have no reliable request deadline here and were able to hold the
+        # Gradio request for minutes. Use the local Excel cache as the
+        # synchronous source of truth for this transaction.
+        db = {}
+        local_msg = ""
+        if os.path.exists(Config.DATA_FILE):
+            try:
+                df = pd.read_excel(Config.DATA_FILE, dtype=str)
+                for _, row in df.iterrows():
+                    if len(row) < 2: continue
+                    parsed = DatabaseManager._parse_row(row.iloc[0], row.iloc[1])
+                    if parsed: db[parsed[0]] = parsed[1]
+                local_msg = f"LOCAL CACHE: {len(db)} phiên"
+            except Exception as e:
+                return f"🛑 LOCAL CACHE FAIL: {e}", None
+        else:
+            # First-run / cache-missing recovery: use the existing strict DB
+            # source to seed the local cache, then continue with the same
+            # atomic local transaction. This preserves fail-closed semantics
+            # without discarding an otherwise valid quorum crawl.
+            seeded_db, seeded_msg = DatabaseManager.load_db()
+            if not seeded_db:
+                return f"🛑 LOCAL CACHE MISSING + DB SEED FAILED: {seeded_msg}", None
+            db = seeded_db
+            local_msg = f"SEEDED LOCAL CACHE: {len(db)} phiên | {seeded_msg}"
+
+        added, updated = 0, 0
+        now = Utils.get_vn_time()
+        for std, tails in data.items():
+            res = Utils.chuan_hoa_ngay(std)
+            if not res: continue
+            dt, canonical = res
+            if dt.date() > now.date(): continue
+            if dt.date() == now.date() and now.hour < 19: continue
+            if len(tails) != 27: continue
+            rec = {"date_obj": dt, "prizes_int": tails, "raw_str": " ".join(f"{x:02d}" for x in tails)}
+            if canonical not in db: added += 1
+            elif db[canonical]["raw_str"] != rec["raw_str"]: updated += 1
+            db[canonical] = rec
+        if added or updated:
+            DatabaseManager._atomic_excel_write([
+                {"Ngày": info["date_obj"].strftime("%d/%m/%Y"), "Kết Quả Loto": info["raw_str"]}
+                for info in sorted(db.values(), key=lambda x: x["date_obj"], reverse=True)
+            ])
+            QuantEngine.clear_cache()
+
+            # Cloud persistence is best-effort and deliberately detached from
+            # the UI request. A slow/hung Google API must never make the crawl
+            # button wait indefinitely.
+            def _sync_google_snapshot(snapshot):
+                try:
+                    DatabaseManager.rewrite_clean_db(snapshot)
+                except Exception as exc:
+                    print(f"[GOOGLE ASYNC SYNC] {type(exc).__name__}: {exc}", flush=True)
+            threading.Thread(target=_sync_google_snapshot, args=(dict(db),), name="google-db-sync", daemon=True).start()
+
+        return f"✅ STRICT-27-TAIL AUTO-HEAL | added={added} updated={updated} | {local_msg} | {msg}", db
+
+    @staticmethod
+    def get_boundaries(db):
+        now = Utils.get_vn_time()
+        today = datetime(now.year, now.month, now.day)
+        valid = [x["date_obj"] for x in db.values() if x["date_obj"] <= today]
+        if not valid: return None, None, today
+        latest = max(valid)
+        if latest == today and now.hour < 19:
+            prior = [d for d in valid if d < today]
+            latest = max(prior) if prior else None
+        target = (latest + timedelta(days=1)) if latest else today
+        return min(valid), latest, target
+
+# ==============================================================================
+# 🧠 BLOCK 5: FORENSIC MULTI-SENSOR QUANT CORE
+# ==============================================================================
 # ==============================================================================
 # 🧠 BLOCK 5: FORENSIC MULTI-SENSOR QUANT CORE
 # ==============================================================================
