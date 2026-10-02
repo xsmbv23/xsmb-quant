@@ -75,7 +75,8 @@ def _parse_flat_prizes(block: str) -> tuple[str, ...] | None:
     # Ignore token boundaries completely: concatenate all digit runs in the prize
     # area, then slice the canonical 27 prizes by their fixed widths.
     area = re.split(r"(?m)^Đầu(?:\s*\|)?", block[match.start():], maxsplit=1)[0]
-    prize_area = re.sub(r"(?m)^(?:ĐB|G1|G2|G3|G4|G5|G6|G7)(?:\s*\|)?\s*", "", area)\n    digits = "".join(re.findall(r"\d+", prize_area))
+    prize_area = re.sub(r"(?m)^(?:ĐB|G1|G2|G3|G4|G5|G6|G7)(?:\s*\|)?\s*", "", area)
+    digits = "".join(re.findall(r"\d+", prize_area))
     widths = [5] * 10 + [4] * 10 + [3] * 3 + [2] * 4
     total_digits = sum(widths)
     if len(digits) < total_digits:
