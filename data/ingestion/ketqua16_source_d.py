@@ -133,23 +133,25 @@ def fetch_source_d(day: date, raw_root: str | Path = "runtime/raw", timeout: int
     global _PAGE_CACHE
     with _PAGE_CACHE_LOCK:
         cached = _PAGE_CACHE
-        if cached is None:
-            digest = hashlib.sha256()
-            chunks = []
-            with requests.get(
-                SOURCE_URL,
-                headers={"User-Agent": "XSMB-ForensicCrawler/2.1", "Accept": "text/html,application/xhtml+xml"},
-                timeout=timeout,
-                stream=True,
-            ) as response:
-                response.raise_for_status()
-                encoding = response.encoding or "utf-8"
-                for chunk in response.iter_content(chunk_size=64 * 1024):
-                    if chunk:
-                        digest.update(chunk)
-                        chunks.append(chunk)
-            content = b"".join(chunks)
-            cached = (content, encoding, digest.hexdigest())
+    if cached is None:
+        digest = hashlib.sha256()
+        chunks = []
+        with requests.get(
+            SOURCE_URL,
+            headers={"User-Agent": "XSMB-ForensicCrawler/2.1", "Accept": "text/html,application/xhtml+xml"},
+            timeout=timeout,
+            stream=True,
+        ) as response:
+            response.raise_for_status()
+            encoding = response.encoding or "utf-8"
+            for chunk in response.iter_content(chunk_size=64 * 1024):
+                if chunk:
+                    digest.update(chunk)
+                    chunks.append(chunk)
+        content = b"".join(chunks)
+        fetched = (content, encoding, digest.hexdigest())
+        with _PAGE_CACHE_LOCK:
+            cached = _PAGE_CACHE or fetched
             _PAGE_CACHE = cached
 
     content, encoding, html_sha = cached
