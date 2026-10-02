@@ -68,24 +68,53 @@ def extract_date_block(text: str, target: date) -> str:
 
 def parse_full27_block(block: str) -> tuple[str, ...]:
     lines = [_normalise(line) for line in block.splitlines() if _normalise(line)]
-    groups: dict[str,list[str]] = {}
-    for index,line in enumerate(lines):
-        label = next((c for c in LABELS if line == c or line.startswith(c+" ")),None)
-        if label is None: continue
-        width = 5 if label in ("ĐB","G1","G2","G3") else 4 if label in ("G4","G5") else 3 if label=="G6" else 2
-        values = _extract_group_values(line[len(label):],width,COUNTS[label])
-        cursor=index+1
-        while len(values)<COUNTS[label] and cursor<len(lines):
-            next_line=lines[cursor]
-            if any(next_line==c or next_line.startswith(c+" ") for c in LABELS): break
-            values.extend(_extract_group_values(next_line,width,COUNTS[label]-len(values)))
-            cursor+=1
-        groups[label]=values[:COUNTS[label]]
-    if set(groups)!=set(LABELS):
-        raise ValueError(f"FULL27_GROUP_MISSING:{','.join(sorted(set(LABELS)-set(groups)))}")
-    for label,expected in COUNTS.items():
-        if len(groups[label])!=expected: raise ValueError(f"FULL27_GROUP_COUNT:{label}:{len(groups[label])}!={expected}")
-    return validate_prize_groups({"DB":groups["ĐB"],"G1":groups["G1"],"G2":groups["G2"],"G3":groups["G3"],"G4":groups["G4"],"G5":groups["G5"],"G6":groups["G6"],"G7":groups["G7"]})
+    groups: dict[str, list[str]] = {}
+    for index, line in enumerate(lines):
+        label = next((c for c in LABELS if line == c or line.startswith(c + " ")), None)
+        if label is None:
+            continue
+        width = 5 if label in ("ĐB", "G1", "G2", "G3") else 4 if label in ("G4", "G5") else 3 if label == "G6" else 2
+        values = _extract_group_values(line[len(label):], width, COUNTS[label])
+        cursor = index + 1
+        while len(values) < COUNTS[label] and cursor < len(lines):
+            next_line = lines[cursor]
+            if any(next_line == c or next_line.startswith(c + " ") for c in LABELS):
+                break
+            values.extend(_extract_group_values(next_line, width, COUNTS[label] - len(values)))
+            cursor += 1
+        groups[label] = values[:COUNTS[label]]
+
+    if set(groups) == set(LABELS) and all(
+        len(groups[label]) == expected for label, expected in COUNTS.items()
+    ):
+        return validate_prize_groups({
+            "DB": groups["ĐB"], "G1": groups["G1"], "G2": groups["G2"], "G3": groups["G3"],
+            "G4": groups["G4"], "G5": groups["G5"], "G6": groups["G6"], "G7": groups["G7"],
+        })
+
+    # The site can change table markup while preserving visible prize order.
+    # In a date block the first 27 numeric tokens after the first prize label
+    # are the 27 prize values; the later "Đầu/Lô tô" numbers are ignored.
+    first_label = next((block.find(label) for label in LABELS if block.find(label) >= 0), -1)
+    if first_label >= 0:
+        prize_tokens = NUMBER_RE.findall(block[first_label:])
+        if len(prize_tokens) >= 27:
+            candidate = prize_tokens[:27]
+            return validate_prize_groups({
+                "DB": candidate[0:1], "G1": candidate[1:2], "G2": candidate[2:4],
+                "G3": candidate[4:10], "G4": candidate[10:14], "G5": candidate[14:20],
+                "G6": candidate[20:23], "G7": candidate[23:27],
+            })
+
+    if set(groups) != set(LABELS):
+        raise ValueError(f"FULL27_GROUP_MISSING:{','.join(sorted(set(LABELS) - set(groups)))}")
+    for label, expected in COUNTS.items():
+        if len(groups[label]) != expected:
+            raise ValueError(f"FULL27_GROUP_COUNT:{label}:{len(groups[label])}!={expected}")
+    return validate_prize_groups({
+        "DB": groups["ĐB"], "G1": groups["G1"], "G2": groups["G2"], "G3": groups["G3"],
+        "G4": groups["G4"], "G5": groups["G5"], "G6": groups["G6"], "G7": groups["G7"],
+    })
 
 def fetch_source_b(day: date, raw_root: str | Path = "runtime/raw", timeout: int = 20, parse_window_bytes: int = 32 * 1024 * 1024) -> SourceBRecord:
     raw_dir=Path(raw_root)/SOURCE_ID/day.isoformat()
