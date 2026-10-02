@@ -22,6 +22,12 @@ _PAGE_CACHE_LOCK = __import__("threading").Lock()
 _PAGE_CACHE = None
 
 
+def clear_page_cache():
+    global _PAGE_CACHE
+    with _PAGE_CACHE_LOCK:
+        _PAGE_CACHE = None
+
+
 def _extract_group_values(text: str, width: int, expected: int) -> list[str]:
     """Extract fixed-width prizes, tolerating digit-level HTML/text fragmentation."""
     tokens = re.findall(r"\d+", text)
