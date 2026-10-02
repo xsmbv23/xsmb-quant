@@ -12,7 +12,7 @@ import requests
 from data.ingestion.full27_validator import validate_prize_groups
 
 SOURCE_ID = "xsmb"
-SOURCE_URL = "https://www.xsmb.com.vn/so-ket-qua-xsmb-500-ngay"
+SOURCE_URL = "https://www.xsmb.com.vn/so-ket-qua-xsmb"
 DATE_RE = re.compile(r"XSMB\s+(?:Thứ|Chủ nhật)[^\n]*?(\d{2})/(\d{2})/(\d{4})", re.IGNORECASE)
 LABELS = ("ĐB", "G1", "G2", "G3", "G4", "G5", "G6", "G7")
 COUNTS = {"ĐB": 1, "G1": 1, "G2": 2, "G3": 6, "G4": 4, "G5": 6, "G6": 3, "G7": 4}
