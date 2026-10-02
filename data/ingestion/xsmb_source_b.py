@@ -66,6 +66,29 @@ def extract_date_block(text: str, target: date) -> str:
     next_match = re.search(r"\nXSMB\s+(?:Thứ|Chủ nhật)\b", remainder[1:], re.IGNORECASE)
     return remainder if not next_match else remainder[:next_match.start()+1]
 
+def _parse_flat_prizes(block: str) -> tuple[str, ...] | None:
+    match = re.search(r"(?m)^(?:ĐB|G1|G2|G3|G4|G5|G6|G7)(?:\s*\|)?(?:\s+|$)", block)
+    if not match:
+        return None
+    area = re.split(r"(?m)^Đầu(?:\s*\|)?", block[match.start():], maxsplit=1)[0]
+    tokens = NUMBER_RE.findall(area)
+    widths = [5] * 10 + [4] * 10 + [3] * 3 + [2] * 4
+    values = []
+    carry = ""
+    for token in tokens:
+        carry += token
+        while len(values) < 27 and len(carry) >= widths[len(values)]:
+            width = widths[len(values)]
+            values.append(carry[:width])
+            carry = carry[width:]
+    if len(values) != 27:
+        return None
+    return validate_prize_groups({
+        "DB": values[0:1], "G1": values[1:2], "G2": values[2:4],
+        "G3": values[4:10], "G4": values[10:14], "G5": values[14:20],
+        "G6": values[20:23], "G7": values[23:27],
+    })
+
 def parse_full27_block(block: str) -> tuple[str, ...]:
     lines = [_normalise(line) for line in block.splitlines() if _normalise(line)]
     groups: dict[str, list[str]] = {}
