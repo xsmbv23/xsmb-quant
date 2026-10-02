@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from data.ingestion.full27_validator import validate_prize_groups
 
 SOURCE_ID = "ketqua16"
-SOURCE_URL = "https://ketqua16.net/so-ket-qua-truyen-thong/200"
+SOURCE_URL = "https://ketqua16.net/so-ket-qua"
 LABELS = ("Đặc biệt", "Giải nhất", "Giải nhì", "Giải ba", "Giải tư", "Giải năm", "Giải sáu", "Giải bảy")
 COUNTS = {"Đặc biệt": 1, "Giải nhất": 1, "Giải nhì": 2, "Giải ba": 6, "Giải tư": 4, "Giải năm": 6, "Giải sáu": 3, "Giải bảy": 4}
 NUMBER_RE = re.compile(r"(?<!\d)\d{2,5}(?!\d)")
