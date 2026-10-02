@@ -70,25 +70,28 @@ def _parse_flat_prizes(block: str) -> tuple[str, ...] | None:
     match = re.search(r"(?m)^(?:ĐB|G1|G2|G3|G4|G5|G6|G7)(?:\s*\|)?(?:\s+|$)", block)
     if not match:
         return None
+
+    # BeautifulSoup/table markup can split one prize arbitrarily (e.g. 402 + 08).
+    # Ignore token boundaries completely: concatenate all digit runs in the prize
+    # area, then slice the canonical 27 prizes by their fixed widths.
     area = re.split(r"(?m)^Đầu(?:\s*\|)?", block[match.start():], maxsplit=1)[0]
-    tokens = NUMBER_RE.findall(area)
+    digits = "".join(re.findall(r"\d+", area))
     widths = [5] * 10 + [4] * 10 + [3] * 3 + [2] * 4
-    values = []
-    carry = ""
-    for token in tokens:
-        carry += token
-        while len(values) < 27 and len(carry) >= widths[len(values)]:
-            width = widths[len(values)]
-            values.append(carry[:width])
-            carry = carry[width:]
-    if len(values) != 27:
+    total_digits = sum(widths)
+    if len(digits) < total_digits:
         return None
+
+    values = []
+    cursor = 0
+    for width in widths:
+        values.append(digits[cursor:cursor + width])
+        cursor += width
+
     return validate_prize_groups({
         "DB": values[0:1], "G1": values[1:2], "G2": values[2:4],
         "G3": values[4:10], "G4": values[10:14], "G5": values[14:20],
         "G6": values[20:23], "G7": values[23:27],
     })
-
 def parse_full27_block(block: str) -> tuple[str, ...]:
     flat = _parse_flat_prizes(block)
     if flat is not None:
