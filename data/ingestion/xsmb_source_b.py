@@ -70,15 +70,16 @@ def parse_full27_block(block: str) -> tuple[str, ...]:
     lines = [_normalise(line) for line in block.splitlines() if _normalise(line)]
     groups: dict[str, list[str]] = {}
     for index, line in enumerate(lines):
-        label = next((c for c in LABELS if line == c or line.startswith(c + " ")), None)
+        label = next((c for c in LABELS if re.match(rf"^{re.escape(c)}(?:\s*\|)?(?:\s+|$)", line)), None)
         if label is None:
             continue
         width = 5 if label in ("ĐB", "G1", "G2", "G3") else 4 if label in ("G4", "G5") else 3 if label == "G6" else 2
-        values = _extract_group_values(line[len(label):], width, COUNTS[label])
+        remainder = re.sub(rf"^{re.escape(label)}(?:\s*\|)?\s*", "", line, count=1)
+        values = _extract_group_values(remainder, width, COUNTS[label])
         cursor = index + 1
         while len(values) < COUNTS[label] and cursor < len(lines):
             next_line = lines[cursor]
-            if any(next_line == c or next_line.startswith(c + " ") for c in LABELS):
+            if any(re.match(rf"^{re.escape(c)}(?:\s*\|)?(?:\s+|$)", next_line) for c in LABELS):
                 break
             values.extend(_extract_group_values(next_line, width, COUNTS[label] - len(values)))
             cursor += 1
@@ -95,7 +96,8 @@ def parse_full27_block(block: str) -> tuple[str, ...]:
     # The site can change table markup while preserving visible prize order.
     # In a date block the first 27 numeric tokens after the first prize label
     # are the 27 prize values; the later "Đầu/Lô tô" numbers are ignored.
-    first_label = next((block.find(label) for label in LABELS if block.find(label) >= 0), -1)
+    first_label_match = re.search(r"(?m)^(?:ĐB|G1|G2|G3|G4|G5|G6|G7)(?:\s*\|)?(?:\s+|$)", block)
+    first_label = first_label_match.start() if first_label_match else -1
     if first_label >= 0:
         prize_tokens = NUMBER_RE.findall(block[first_label:])
         if len(prize_tokens) >= 27:
