@@ -192,6 +192,12 @@ def crawl(days: Iterable[date], sources: Iterable[str] | None = None, workers: i
     if unknown:
         raise ValueError(f'SOURCE_NOT_REGISTERED:{unknown}')
 
+    # A source-page cache must never survive into the next crawl session.
+    from data.ingestion.ketqua16_source_d import clear_page_cache as clear_ketqua16_cache
+    from data.ingestion.xsmb_source_b import clear_page_cache as clear_xsmb_cache
+    clear_ketqua16_cache()
+    clear_xsmb_cache()
+
     tasks = [(source, day) for source in selected for day in days]
     records: list[SourceRecord] = []
     errors: list[dict[str, str]] = []
@@ -223,12 +229,15 @@ def crawl(days: Iterable[date], sources: Iterable[str] | None = None, workers: i
                     if record:
                         records.append(record)
                 except Exception as exc:
-                    errors.append({'source_id': source, 'date': day.isoformat(), 'error': f'{type(exc).__name__}: {exc}'})
+                    error = f'{type(exc).__name__}: {exc}'
+                    errors.append({'source_id': source, 'date': day.isoformat(), 'error': error})
+                    print(f'[FORENSIC CRAWLER ERROR] source={source} date={day.isoformat()} error={error}', flush=True)
 
         if pending:
             for future in pending:
                 source, day = futures[future]
                 errors.append({'source_id': source, 'date': day.isoformat(), 'error': 'CRAWL_WALLCLOCK_DEADLINE'})
+                print(f'[FORENSIC CRAWLER ERROR] source={source} date={day.isoformat()} error=CRAWL_WALLCLOCK_DEADLINE', flush=True)
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
 
