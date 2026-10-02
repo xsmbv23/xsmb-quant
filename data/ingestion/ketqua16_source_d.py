@@ -18,6 +18,9 @@ LABELS = ("Đặc biệt", "Giải nhất", "Giải nhì", "Giải ba", "Giải 
 COUNTS = {"Đặc biệt": 1, "Giải nhất": 1, "Giải nhì": 2, "Giải ba": 6, "Giải tư": 4, "Giải năm": 6, "Giải sáu": 3, "Giải bảy": 4}
 NUMBER_RE = re.compile(r"(?<!\d)\d{2,5}(?!\d)")
 
+_PAGE_CACHE_LOCK = __import__("threading").Lock()
+_PAGE_CACHE = None
+
 
 def _extract_group_values(text: str, width: int, expected: int) -> list[str]:
     """Extract fixed-width prizes, tolerating digit-level HTML/text fragmentation."""
@@ -120,32 +123,35 @@ def fetch_source_d(day: date, raw_root: str | Path = "runtime/raw", timeout: int
     raw_dir = Path(raw_root) / SOURCE_ID / day.isoformat()
     raw_dir.mkdir(parents=True, exist_ok=True)
     tmp_path = raw_dir / ".capture.html"
-    digest = hashlib.sha256()
-    parse_buf = bytearray()
-    byte_length = 0
 
-    with requests.get(
-        SOURCE_URL,
-        headers={"User-Agent": "XSMB-ForensicCrawler/2.1", "Accept": "text/html,application/xhtml+xml"},
-        timeout=timeout,
-        stream=True,
-    ) as response:
-        response.raise_for_status()
-        encoding = response.encoding or "utf-8"
-        with tmp_path.open("wb") as handle:
-            for chunk in response.iter_content(chunk_size=64 * 1024):
-                if not chunk:
-                    continue
-                digest.update(chunk)
-                byte_length += len(chunk)
-                handle.write(chunk)
-                if len(parse_buf) < parse_window_bytes:
-                    parse_buf.extend(chunk[: parse_window_bytes - len(parse_buf)])
+    global _PAGE_CACHE
+    with _PAGE_CACHE_LOCK:
+        cached = _PAGE_CACHE
+        if cached is None:
+            digest = hashlib.sha256()
+            chunks = []
+            with requests.get(
+                SOURCE_URL,
+                headers={"User-Agent": "XSMB-ForensicCrawler/2.1", "Accept": "text/html,application/xhtml+xml"},
+                timeout=timeout,
+                stream=True,
+            ) as response:
+                response.raise_for_status()
+                encoding = response.encoding or "utf-8"
+                for chunk in response.iter_content(chunk_size=64 * 1024):
+                    if chunk:
+                        digest.update(chunk)
+                        chunks.append(chunk)
+            content = b"".join(chunks)
+            cached = (content, encoding, digest.hexdigest())
+            _PAGE_CACHE = cached
 
-    html_sha = digest.hexdigest()
+    content, encoding, html_sha = cached
+    byte_length = len(content)
+    tmp_path.write_bytes(content)
     raw_path = raw_dir / f"{html_sha}.html"
     tmp_path.replace(raw_path)
-    text = bytes(parse_buf).decode(encoding, errors="replace")
+    text = content.decode(encoding, errors="replace")
     visible = BeautifulSoup(text, "html.parser").get_text("\n", strip=True)
     block = extract_date_block(visible, day)
     full = parse_full27_block(block)
