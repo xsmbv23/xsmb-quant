@@ -90,6 +90,9 @@ def _parse_flat_prizes(block: str) -> tuple[str, ...] | None:
     })
 
 def parse_full27_block(block: str) -> tuple[str, ...]:
+    flat = _parse_flat_prizes(block)
+    if flat is not None:
+        return flat
     lines = [_normalise(line) for line in block.splitlines() if _normalise(line)]
     groups: dict[str, list[str]] = {}
     for index, line in enumerate(lines):
