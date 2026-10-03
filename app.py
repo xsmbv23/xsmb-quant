@@ -446,7 +446,7 @@ class Crawler:
             db = seeded_db
             local_msg = f"SEEDED LOCAL CACHE: {len(db)} phiên | {seeded_msg}"
 
-        added, updated = 0, 0
+        added, updated, metadata_updated = 0, 0, 0
         now = Utils.get_vn_time()
         for std, payload in data.items():
             tails = payload['tails'] if isinstance(payload, dict) else payload
@@ -458,10 +458,16 @@ class Crawler:
             if len(tails) != 27: continue
             source_set = payload.get("source_set", []) if isinstance(payload, dict) else []
             rec = {"date_obj": dt, "prizes_int": tails, "raw_str": " ".join(f"{x:02d}" for x in tails), "calendar_state": Config.DRAW_CONFIRMED, "source_set": list(source_set)}
-            if canonical not in db: added += 1
-            elif db[canonical]["raw_str"] != rec["raw_str"]: updated += 1
+            if canonical not in db:
+                added += 1
+            else:
+                if db[canonical]["raw_str"] != rec["raw_str"]:
+                    updated += 1
+                if db[canonical].get("calendar_state") != rec["calendar_state"] or set(db[canonical].get("source_set", [])) != set(rec["source_set"]):
+                    metadata_updated += 1
             db[canonical] = rec
-        if added or updated:
+        print(f"[AUTO-HEAL CANONICAL] dates={','.join(sorted(data))} added={added} updated={updated} metadata_updated={metadata_updated}", flush=True)
+        if added or updated or metadata_updated:
             DatabaseManager._atomic_excel_write([
                 {"Ngày": info["date_obj"].strftime("%d/%m/%Y"), "Kết Quả Loto": info["raw_str"], Config.CALENDAR_STATE_HEADER: info.get("calendar_state", Config.LEGACY_CALENDAR_STATE), "Source Set": ",".join(sorted(set(info.get("source_set", []))))}
                 for info in sorted(db.values(), key=lambda x: x["date_obj"], reverse=True)
@@ -478,7 +484,7 @@ class Crawler:
                     print(f"[GOOGLE ASYNC SYNC] {type(exc).__name__}: {exc}", flush=True)
             threading.Thread(target=_sync_google_snapshot, args=(dict(db),), name="google-db-sync", daemon=True).start()
 
-        return f"✅ STRICT-27-TAIL AUTO-HEAL | added={added} updated={updated} | {local_msg} | {msg}", db
+        return f"✅ STRICT-27-TAIL AUTO-HEAL | added={added} updated={updated} metadata_updated={metadata_updated} | {local_msg} | {msg}", db
     @staticmethod
     def get_boundaries(db):
         now = Utils.get_vn_time()
