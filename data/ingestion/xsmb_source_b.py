@@ -180,19 +180,15 @@ def fetch_source_b(day: date, raw_root: str | Path = "runtime/raw", timeout: int
         try:
             digest = hashlib.sha256()
             chunks = []
-            with requests.get(
+            response = requests.get(
                 SOURCE_URL,
                 headers={"User-Agent":"XSMB-ForensicCrawler/2.1","Accept":"text/html,application/xhtml+xml"},
                 timeout=timeout,
-                stream=True,
-            ) as response:
-                response.raise_for_status()
-                encoding = response.encoding or "utf-8"
-                for chunk in response.iter_content(chunk_size=64*1024):
-                    if chunk:
-                        digest.update(chunk)
-                        chunks.append(chunk)
-            content = b"".join(chunks)
+            )
+            response.raise_for_status()
+            encoding = response.encoding or "utf-8"
+            content = response.content
+            digest.update(content)
             fetched = (content, encoding, digest.hexdigest())
             with _PAGE_CACHE_LOCK:
                 cached = _PAGE_CACHE or fetched
