@@ -8,3 +8,4 @@ gspread
 google-auth
 flask
 gunicorn
+psycopg[binary]
