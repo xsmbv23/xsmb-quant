@@ -21,11 +21,16 @@ NUMBER_RE = re.compile(r"(?<!\d)\d{2,5}(?!\d)")
 
 _PAGE_CACHE_LOCK = __import__("threading").Lock()
 _PAGE_CACHE = None
+_PAGE_FETCHING = False
+_PAGE_FETCH_DONE = __import__("threading").Event()
+_PAGE_FETCH_DONE.set()
 
 def clear_page_cache():
-    global _PAGE_CACHE
+    global _PAGE_CACHE, _PAGE_FETCHING
     with _PAGE_CACHE_LOCK:
         _PAGE_CACHE = None
+        _PAGE_FETCHING = False
+        _PAGE_FETCH_DONE.clear()
 
 def _extract_group_values(text: str, width: int, expected: int) -> list[str]:
     tokens = re.findall(r"\d+", text)
@@ -152,29 +157,50 @@ def fetch_source_b(day: date, raw_root: str | Path = "runtime/raw", timeout: int
     raw_dir=Path(raw_root)/SOURCE_ID/day.isoformat()
     raw_dir.mkdir(parents=True,exist_ok=True)
     tmp_path=raw_dir/".capture.html"
-    global _PAGE_CACHE
+    global _PAGE_CACHE, _PAGE_FETCHING
     with _PAGE_CACHE_LOCK:
         cached = _PAGE_CACHE
-    if cached is None:
-        digest = hashlib.sha256()
-        chunks = []
-        with requests.get(
-            SOURCE_URL,
-            headers={"User-Agent":"XSMB-ForensicCrawler/2.1","Accept":"text/html,application/xhtml+xml"},
-            timeout=timeout,
-            stream=True,
-        ) as response:
-            response.raise_for_status()
-            encoding = response.encoding or "utf-8"
-            for chunk in response.iter_content(chunk_size=64*1024):
-                if chunk:
-                    digest.update(chunk)
-                    chunks.append(chunk)
-        content = b"".join(chunks)
-        fetched = (content, encoding, digest.hexdigest())
+        owner = False
+        if cached is None and not _PAGE_FETCHING:
+            _PAGE_FETCHING = True
+            _PAGE_FETCH_DONE.clear()
+            owner = True
+
+    if cached is None and not owner:
+        # Another worker is already fetching the single shared source page.
+        # Wait for that fetch instead of issuing a duplicate slow request.
+        if not _PAGE_FETCH_DONE.wait(timeout=max(2, int(timeout) + 2)):
+            raise TimeoutError("SOURCE_PAGE_FETCH_WAIT_DEADLINE")
         with _PAGE_CACHE_LOCK:
-            cached = _PAGE_CACHE or fetched
-            _PAGE_CACHE = cached
+            cached = _PAGE_CACHE
+        if cached is None:
+            raise RuntimeError("SOURCE_PAGE_FETCH_FAILED")
+
+    if cached is None and owner:
+        try:
+            digest = hashlib.sha256()
+            chunks = []
+            with requests.get(
+                SOURCE_URL,
+                headers={"User-Agent":"XSMB-ForensicCrawler/2.1","Accept":"text/html,application/xhtml+xml"},
+                timeout=timeout,
+                stream=True,
+            ) as response:
+                response.raise_for_status()
+                encoding = response.encoding or "utf-8"
+                for chunk in response.iter_content(chunk_size=64*1024):
+                    if chunk:
+                        digest.update(chunk)
+                        chunks.append(chunk)
+            content = b"".join(chunks)
+            fetched = (content, encoding, digest.hexdigest())
+            with _PAGE_CACHE_LOCK:
+                cached = _PAGE_CACHE or fetched
+                _PAGE_CACHE = cached
+        finally:
+            with _PAGE_CACHE_LOCK:
+                _PAGE_FETCHING = False
+                _PAGE_FETCH_DONE.set()
     content,encoding,html_sha=cached
     byte_length=len(content); tmp_path.write_bytes(content)
     raw_path=raw_dir/f"{html_sha}.html"; tmp_path.replace(raw_path)
