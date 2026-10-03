@@ -22,6 +22,7 @@ from bisect import bisect_left
 import traceback
 import gradio as gr
 from bs4 import BeautifulSoup
+from data.ingestion.crawl_database import CrawlDatabase
 
 try:
     import requests
@@ -401,6 +402,10 @@ class Crawler:
             days = [today - timedelta(days=i) for i in range(8)]
             records, errors = crawl(days, sources=("ketqua16", "xsmb"), workers=4, timeout=8)
             consensus, conflicts = reconcile(records, quorum=2)
+            try:
+                CrawlDatabase.persist_crawl(records, errors, consensus, conflicts)
+            except Exception as db_exc:
+                print(f"[CRAWL DATABASE] PERSIST_FAIL {type(db_exc).__name__}:{db_exc}", flush=True)
             data = {}
             for row in consensus:
                 tails = [int(v[-2:]) for v in row["full_27"]]
@@ -419,32 +424,57 @@ class Crawler:
         ok, data, msg = Crawler.fetch_ketqua_radar()
         if not ok: return f"🛑 CRAWLER FAIL-CLOSED: {msg}", None
 
-        # The crawl button must not block on Google Sheets. Google API calls
-        # have no reliable request deadline here and were able to hold the
-        # Gradio request for minutes. Use the local Excel cache as the
-        # synchronous source of truth for this transaction.
+        # Postgres is the durable crawl database and the UI source of truth.
+        # Excel remains a compatibility/export cache only.
         db = {}
         local_msg = ""
-        if os.path.exists(Config.DATA_FILE):
+        if CrawlDatabase.enabled():
             try:
-                df = pd.read_excel(Config.DATA_FILE, dtype=str)
-                for _, row in df.iterrows():
-                    if len(row) < 2: continue
-                    parsed = DatabaseManager._parse_row(row.iloc[0], row.iloc[1], row.iloc[2] if len(row) >= 3 else None, row.iloc[3] if len(row) >= 4 else None)
-                    if parsed: db[parsed[0]] = parsed[1]
-                local_msg = f"LOCAL CACHE: {len(db)} phiên"
-            except Exception as e:
-                return f"🛑 LOCAL CACHE FAIL: {e}", None
-        else:
-            # First-run / cache-missing recovery: use the existing strict DB
-            # source to seed the local cache, then continue with the same
-            # atomic local transaction. This preserves fail-closed semantics
-            # without discarding an otherwise valid quorum crawl.
-            seeded_db, seeded_msg = DatabaseManager.load_db()
-            if not seeded_db:
-                return f"🛑 LOCAL CACHE MISSING + DB SEED FAILED: {seeded_msg}", None
-            db = seeded_db
-            local_msg = f"SEEDED LOCAL CACHE: {len(db)} phiên | {seeded_msg}"
+                db = CrawlDatabase.load_canonical()
+                if db:
+                    local_msg = f"CRAWL DATABASE: {len(db)} phiên"
+                else:
+                    # One-time migration of the existing Excel history.
+                    legacy_db = {}
+                    if os.path.exists(Config.DATA_FILE):
+                        df = pd.read_excel(Config.DATA_FILE, dtype=str)
+                        for _, row in df.iterrows():
+                            if len(row) < 2:
+                                continue
+                            parsed = DatabaseManager._parse_row(
+                                row.iloc[0], row.iloc[1],
+                                row.iloc[2] if len(row) >= 3 else None,
+                                row.iloc[3] if len(row) >= 4 else None,
+                            )
+                            if parsed:
+                                legacy_db[parsed[0]] = parsed[1]
+                    migrated = CrawlDatabase.seed_from_db_rows(list(legacy_db.values()))
+                    db = CrawlDatabase.load_canonical()
+                    local_msg = f"CRAWL DATABASE: {len(db)} phiên | migrated={migrated}"
+            except Exception as db_exc:
+                print(f"[CRAWL DATABASE] LOAD_FAIL {type(db_exc).__name__}:{db_exc}", flush=True)
+
+        if not db:
+            # Compatibility fallback only when the separate crawl database is
+            # unavailable. This path is not authoritative when Postgres works.
+            if os.path.exists(Config.DATA_FILE):
+                try:
+                    df = pd.read_excel(Config.DATA_FILE, dtype=str)
+                    for _, row in df.iterrows():
+                        if len(row) < 2:
+                            continue
+                        parsed = DatabaseManager._parse_row(
+                            row.iloc[0], row.iloc[1],
+                            row.iloc[2] if len(row) >= 3 else None,
+                            row.iloc[3] if len(row) >= 4 else None,
+                        )
+                        if parsed:
+                            db[parsed[0]] = parsed[1]
+                    local_msg = f"LOCAL CACHE: {len(db)} phiên"
+                except Exception as e:
+                    return f"🛑 LOCAL CACHE FAIL: {e}", None
+            else:
+                return "🛑 CRAWL DATABASE EMPTY + LOCAL CACHE MISSING", None
 
         added, updated, metadata_updated = 0, 0, 0
         now = Utils.get_vn_time()
@@ -548,6 +578,14 @@ class DatabaseManager:
 
     @staticmethod
     def load_db():
+        # Durable crawl database is authoritative for the application.
+        if CrawlDatabase.enabled():
+            try:
+                db = CrawlDatabase.load_canonical()
+                if db:
+                    return db, f"🟢 CRAWL DATABASE: {len(db)} phiên"
+            except Exception as exc:
+                print(f"[CRAWL DATABASE] READ_FAIL {type(exc).__name__}:{exc}", flush=True)
         db = {}
         ws, ws_msg = GoogleSheetsManager.get_worksheet()
         if ws is not None:
