@@ -3,215 +3,192 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime
-from typing import Iterable
+from pathlib import PurePosixPath
 
 try:
-    import psycopg
-    from psycopg.rows import dict_row
+    import dropbox
+    from dropbox.files import WriteMode
 except Exception:
-    psycopg = None
-    dict_row = None
+    dropbox = None
+    WriteMode = None
 
-DATABASE_URL_ENV = "CRAWL_DATABASE_URL"
+ROOT_ENV = "DROPBOX_ROOT"
+TOKEN_ENV = "DROPBOX_ACCESS_TOKEN"
+REFRESH_ENV = "DROPBOX_REFRESH_TOKEN"
+APP_KEY_ENV = "DROPBOX_APP_KEY"
+APP_SECRET_ENV = "DROPBOX_APP_SECRET"
+DEFAULT_ROOT = "/Data goc/XSMB_QUANT"
 
 
 class CrawlDatabase:
-    """Durable store for raw two-source crawl evidence and canonical results."""
+    """Dropbox-backed durable evidence store."""
 
     @classmethod
     def enabled(cls) -> bool:
-        return bool(os.getenv(DATABASE_URL_ENV)) and psycopg is not None
+        if dropbox is None:
+            return False
+        if os.getenv(TOKEN_ENV):
+            return True
+        return bool(os.getenv(REFRESH_ENV) and os.getenv(APP_KEY_ENV) and os.getenv(APP_SECRET_ENV))
 
     @classmethod
-    def connect(cls):
+    def _root(cls) -> str:
+        return (os.getenv(ROOT_ENV) or DEFAULT_ROOT).rstrip("/")
+
+    @classmethod
+    def _client(cls):
         if not cls.enabled():
-            raise RuntimeError("CRAWL_DATABASE_NOT_CONFIGURED")
-        return psycopg.connect(os.environ[DATABASE_URL_ENV], connect_timeout=5)
+            raise RuntimeError("DROPBOX_NOT_CONFIGURED")
+        token = os.getenv(TOKEN_ENV)
+        if token:
+            return dropbox.Dropbox(token)
+        return dropbox.Dropbox(
+            oauth2_refresh_token=os.environ[REFRESH_ENV],
+            app_key=os.environ[APP_KEY_ENV],
+            app_secret=os.environ[APP_SECRET_ENV],
+        )
+
+    @classmethod
+    def _mkdir(cls, dbx, path: str) -> None:
+        parts = [p for p in PurePosixPath(path).parts if p not in ("/", "")]
+        current = ""
+        for part in parts:
+            current += "/" + part
+            try:
+                dbx.files_create_folder_v2(current, autorename=False)
+            except Exception as exc:
+                if "conflict" not in str(exc).lower():
+                    raise
+
+    @classmethod
+    def _put_json(cls, dbx, path: str, payload) -> None:
+        cls._mkdir(dbx, str(PurePosixPath(path).parent))
+        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")
+        dbx.files_upload(body, path, mode=WriteMode.overwrite, mute=True)
+
+    @classmethod
+    def _get_json(cls, dbx, path: str):
+        try:
+            _, response = dbx.files_download(path)
+        except Exception:
+            return None
+        return json.loads(response.content.decode("utf-8"))
 
     @classmethod
     def ensure_schema(cls) -> bool:
         if not cls.enabled():
             return False
-        ddl = """
-        CREATE TABLE IF NOT EXISTS crawl_runs (
-            id BIGSERIAL PRIMARY KEY,
-            started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            finished_at TIMESTAMPTZ,
-            status TEXT NOT NULL,
-            records_count INTEGER NOT NULL DEFAULT 0,
-            errors_count INTEGER NOT NULL DEFAULT 0,
-            conflicts_count INTEGER NOT NULL DEFAULT 0
-        );
-        CREATE TABLE IF NOT EXISTS source_records (
-            id BIGSERIAL PRIMARY KEY,
-            run_id BIGINT REFERENCES crawl_runs(id) ON DELETE SET NULL,
-            draw_date DATE NOT NULL,
-            source_id TEXT NOT NULL,
-            full_prizes JSONB NOT NULL,
-            tails27 JSONB NOT NULL,
-            source_url TEXT NOT NULL,
-            source_html_sha256 TEXT NOT NULL,
-            table_fingerprint TEXT NOT NULL,
-            raw_artifact_path TEXT,
-            fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            UNIQUE(draw_date, source_id, table_fingerprint)
-        );
-        CREATE INDEX IF NOT EXISTS idx_source_records_date ON source_records(draw_date);
-        CREATE INDEX IF NOT EXISTS idx_source_records_source_date ON source_records(source_id, draw_date);
-
-        CREATE TABLE IF NOT EXISTS crawl_errors (
-            id BIGSERIAL PRIMARY KEY,
-            run_id BIGINT REFERENCES crawl_runs(id) ON DELETE SET NULL,
-            draw_date DATE,
-            source_id TEXT,
-            error TEXT NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        );
-
-        CREATE TABLE IF NOT EXISTS canonical_results (
-            draw_date DATE PRIMARY KEY,
-            full_prizes JSONB NOT NULL,
-            tails27 JSONB NOT NULL,
-            source_set JSONB NOT NULL,
-            calendar_state TEXT NOT NULL DEFAULT 'DRAW_CONFIRMED',
-            first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        );
-        CREATE INDEX IF NOT EXISTS idx_canonical_results_date ON canonical_results(draw_date);
-        """
-        with cls.connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(ddl)
-            conn.commit()
+        dbx = cls._client()
+        cls._mkdir(dbx, cls._root())
+        for child in ("CRAWL_RAW", "CANONICAL", "MANIFEST"):
+            cls._mkdir(dbx, f"{cls._root()}/{child}")
         return True
 
     @classmethod
-    def persist_crawl(cls, records: Iterable, errors: list[dict], consensus: list[dict], conflicts: dict) -> bool:
+    def persist_crawl(cls, records, errors: list[dict], consensus: list[dict], conflicts: dict) -> bool:
         if not cls.enabled():
             return False
-        cls.ensure_schema()
         records = list(records)
-        with cls.connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO crawl_runs(status, records_count, errors_count, conflicts_count) "
-                    "VALUES (%s,%s,%s,%s) RETURNING id",
-                    ("RUNNING", len(records), len(errors), len(conflicts)),
-                )
-                run_id = cur.fetchone()[0]
-                for rec in records:
-                    cur.execute(
-                        """
-                        INSERT INTO source_records(
-                            run_id, draw_date, source_id, full_prizes, tails27,
-                            source_url, source_html_sha256, table_fingerprint, raw_artifact_path
-                        )
-                        VALUES (%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s,%s,%s)
-                        ON CONFLICT (draw_date, source_id, table_fingerprint) DO UPDATE SET
-                            run_id=EXCLUDED.run_id,
-                            source_url=EXCLUDED.source_url,
-                            source_html_sha256=EXCLUDED.source_html_sha256,
-                            raw_artifact_path=EXCLUDED.raw_artifact_path,
-                            fetched_at=now()
-                        """,
-                        (
-                            run_id, rec.draw_date, rec.source_id,
-                            json.dumps(list(rec.full_prizes)),
-                            json.dumps(list(rec.tails27)),
-                            rec.source_url, rec.source_html_sha256,
-                            rec.table_fingerprint, rec.raw_artifact_path,
-                        ),
-                    )
-                for err in errors:
-                    cur.execute(
-                        "INSERT INTO crawl_errors(run_id, draw_date, source_id, error) VALUES (%s,%s,%s,%s)",
-                        (run_id, err.get("date"), err.get("source_id"), err.get("error", "UNKNOWN")),
-                    )
-                for row in consensus:
-                    cur.execute(
-                        """
-                        INSERT INTO canonical_results(
-                            draw_date, full_prizes, tails27, source_set,
-                            calendar_state, last_seen_at, updated_at
-                        )
-                        VALUES (%s,%s::jsonb,%s::jsonb,%s::jsonb,'DRAW_CONFIRMED',now(),now())
-                        ON CONFLICT (draw_date) DO UPDATE SET
-                            full_prizes=EXCLUDED.full_prizes,
-                            tails27=EXCLUDED.tails27,
-                            source_set=EXCLUDED.source_set,
-                            calendar_state='DRAW_CONFIRMED',
-                            last_seen_at=now(),
-                            updated_at=now()
-                        """,
-                        (
-                            row["date"],
-                            json.dumps(list(row["full_27"])),
-                            json.dumps([int(v[-2:]) for v in row["full_27"]]),
-                            json.dumps(list(row["sources"])),
-                        ),
-                    )
-                cur.execute(
-                    "UPDATE crawl_runs SET status=%s, finished_at=now() WHERE id=%s",
-                    ("COMPLETE", run_id),
-                )
-            conn.commit()
+        cls.ensure_schema()
+        dbx = cls._client()
+        run_id = datetime.utcnow().strftime("%Y%m%dT%H%M%S.%fZ")
+        root = cls._root()
+        for rec in records:
+            draw_date = str(rec.draw_date)
+            source = str(rec.source_id)
+            fingerprint = str(rec.table_fingerprint or "unknown")
+            path = f"{root}/CRAWL_RAW/{draw_date}/{source}/{fingerprint}.json"
+            cls._put_json(dbx, path, {
+                "run_id": run_id,
+                "draw_date": draw_date,
+                "source_id": source,
+                "full_prizes": list(rec.full_prizes),
+                "tails27": list(rec.tails27),
+                "source_url": rec.source_url,
+                "source_html_sha256": rec.source_html_sha256,
+                "table_fingerprint": fingerprint,
+                "raw_artifact_path": rec.raw_artifact_path,
+                "fetched_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            })
+        if errors:
+            cls._put_json(dbx, f"{root}/CRAWL_RAW/{run_id}/errors.json", errors)
+
+        canonical = cls._get_json(dbx, f"{root}/CANONICAL/canonical.json")
+        if not isinstance(canonical, dict):
+            canonical = {}
+        for row in consensus:
+            canonical[row["date"]] = {
+                "date": row["date"],
+                "full_prizes": list(row["full_27"]),
+                "tails27": [int(v[-2:]) for v in row["full_27"]],
+                "source_set": sorted(row["sources"]),
+                "calendar_state": "DRAW_CONFIRMED",
+                "updated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            }
+        cls._put_json(dbx, f"{root}/CANONICAL/canonical.json", canonical)
+        cls._put_json(dbx, f"{root}/MANIFEST/latest.json", {
+            "run_id": run_id,
+            "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "records_count": len(records),
+            "errors_count": len(errors),
+            "conflicts_count": len(conflicts),
+            "canonical_dates": len(canonical),
+        })
         return True
 
     @classmethod
     def load_canonical(cls) -> dict:
         if not cls.enabled():
             return {}
-        cls.ensure_schema()
+        dbx = cls._client()
+        payload = cls._get_json(dbx, f"{cls._root()}/CANONICAL/canonical.json")
+        if not isinstance(payload, dict):
+            return {}
         db = {}
-        with cls.connect() as conn:
-            with conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(
-                    "SELECT draw_date, tails27, source_set, calendar_state "
-                    "FROM canonical_results ORDER BY draw_date"
-                )
-                for row in cur.fetchall():
-                    dt = row["draw_date"]
-                    key = dt.strftime("%d/%m/%Y")
-                    tails = [int(x) for x in row["tails27"]]
-                    db[key] = {
-                        "date_obj": datetime(dt.year, dt.month, dt.day),
-                        "prizes_int": tails,
-                        "raw_str": " ".join(f"{x:02d}" for x in tails),
-                        "calendar_state": row["calendar_state"],
-                        "source_set": list(row["source_set"] or []),
-                    }
+        for date_str, row in payload.items():
+            try:
+                dt = datetime.strptime(date_str, "%Y-%m-%d")
+            except Exception:
+                continue
+            tails = [int(x) for x in row.get("tails27", [])]
+            if len(tails) != 27:
+                continue
+            db[dt.strftime("%d/%m/%Y")] = {
+                "date_obj": dt,
+                "prizes_int": tails,
+                "raw_str": " ".join(f"{x:02d}" for x in tails),
+                "calendar_state": row.get("calendar_state", "DRAW_CONFIRMED"),
+                "source_set": list(row.get("source_set", [])),
+            }
         return db
 
     @classmethod
     def seed_from_db_rows(cls, rows: list[dict]) -> int:
-        """One-time migration of the existing 27-tail Excel history."""
         if not cls.enabled() or not rows:
             return 0
         cls.ensure_schema()
+        dbx = cls._client()
+        path = f"{cls._root()}/CANONICAL/canonical.json"
+        canonical = cls._get_json(dbx, path)
+        if not isinstance(canonical, dict):
+            canonical = {}
         inserted = 0
-        with cls.connect() as conn:
-            with conn.cursor() as cur:
-                for row in rows:
-                    dt = row["date_obj"]
-                    tails = [int(x) for x in row["prizes_int"]]
-                    if len(tails) != 27:
-                        continue
-                    full = [f"{x:02d}" for x in tails]
-                    cur.execute(
-                        """
-                        INSERT INTO canonical_results(
-                            draw_date, full_prizes, tails27, source_set, calendar_state
-                        )
-                        VALUES (%s,%s::jsonb,%s::jsonb,%s::jsonb,%s)
-                        ON CONFLICT (draw_date) DO NOTHING
-                        """,
-                        (
-                            dt.date(), json.dumps(full), json.dumps(tails),
-                            json.dumps(row.get("source_set") or ["legacy_excel"]),
-                            row.get("calendar_state") or "DRAW_CONFIRMED",
-                        ),
-                    )
-                    inserted += cur.rowcount
-            conn.commit()
+        for row in rows:
+            dt = row["date_obj"]
+            tails = [int(x) for x in row["prizes_int"]]
+            if len(tails) != 27:
+                continue
+            key = dt.strftime("%Y-%m-%d")
+            if key in canonical:
+                continue
+            canonical[key] = {
+                "date": key,
+                "full_prizes": [f"{x:02d}" for x in tails],
+                "tails27": tails,
+                "source_set": row.get("source_set") or ["legacy_excel"],
+                "calendar_state": row.get("calendar_state") or "DRAW_CONFIRMED",
+                "updated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            }
+            inserted += 1
+        cls._put_json(dbx, path, canonical)
         return inserted
