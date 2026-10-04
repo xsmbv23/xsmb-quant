@@ -22,7 +22,6 @@ from bisect import bisect_left
 import traceback
 import gradio as gr
 from bs4 import BeautifulSoup
-from data.ingestion.crawl_database import CrawlDatabase
 
 try:
     import requests
@@ -207,328 +206,43 @@ class Forensic:
 # 🕸️ BLOCK 3: STRICT DOM-BOUND CRAWLER
 # ==============================================================================
 class Crawler:
-    DOMAINS = [
-        "ketqua16.net", "ketqua.net", "ketqua.vn", "ketquaxoso.net"
-    ] + [f"ketqua{i}.net" for i in range(1, 51)]
-
     @staticmethod
-    def _extract_27_from_table(table):
-        """Strictly extracts 27 prizes from a single DOM <table> element."""
-        expected = [1, 1, 2, 6, 4, 6, 3, 4]
-        def cell_tokens(cell):
-            vals = []
-            for text in cell.stripped_strings:
-                vals.extend(re.findall(r"(?<!\d)\d{2,5}(?!\d)", text))
-            return vals
-
-        rows = []
-        for tr in table.find_all("tr"):
-            cells = tr.find_all(["th", "td"])
-            if not cells: continue
-            label = " ".join(cells[0].stripped_strings).strip()
-            normalized = re.sub(r"\s+", " ", label).strip().lower()
-            if normalized in {"đb", "g.đb", "g.db", "db", "đặc biệt", "g đặc biệt", "giải đặc biệt"}:
-                idx = 0
-            else:
-                # Current source markup uses Vietnamese prize names
-                # ("giải nhất" ... "giải bảy"), not G1/G2... labels.
-                prize_names = {
-                    "giải nhất": 1,
-                    "giải nhì": 2,
-                    "giải ba": 3,
-                    "giải tư": 4,
-                    "giải năm": 5,
-                    "giải sáu": 6,
-                    "giải bảy": 7,
-                }
-                if normalized in prize_names:
-                    idx = prize_names[normalized]
-                else:
-                    m = re.search(r"(?:g|giải)\s*[.:]?\s*([1-7])\b", normalized)
-                    if not m: continue
-                    idx = int(m.group(1))
-            vals = []
-            for cell in cells[1:]:
-                vals.extend(cell_tokens(cell))
-            if not vals:
-                all_tokens = cell_tokens(cells[0])
-                vals = [x for x in all_tokens if x != label]
-            if len(vals) == expected[idx]:
-                rows.append((idx, vals))
-
-        by_idx = {}
-        for idx, vals in rows:
-            if idx in by_idx and by_idx[idx] != vals: return None
-            by_idx[idx] = vals
-        if len(by_idx) == 8 and all(len(by_idx[i]) == expected[i] for i in range(8)):
-            ordered = [v for i in range(8) for v in by_idx[i]]
-            return Forensic.canonical_tails(ordered)
-        return None
-
-    @staticmethod
-    def _build_consensus(results):
-        """Build strict cross-source consensus without inventing or averaging data."""
-        quorum = int(Config.CRAWL_MIN_QUORUM)
-        if len(results) < quorum:
-            return {}
-        votes = {}
-        for domain, data in results:
-            if not isinstance(data, dict):
-                continue
-            for date_key, tails in data.items():
-                try:
-                    canonical = tuple(int(x) for x in Forensic.canonical_tails(tails))
-                except Exception:
-                    continue
-                votes.setdefault(date_key, {}).setdefault(canonical, []).append(domain)
-
-        consensus = {}
-        for date_key, variants in votes.items():
-            eligible = [
-                (tails, domains)
-                for tails, domains in variants.items()
-                if len(set(domains)) >= quorum
-            ]
-            if len(eligible) == 1:
-                tails, _domains = eligible[0]
-                consensus[date_key] = list(tails)
-            elif len(eligible) > 1:
-                continue
-        return consensus
-
-    @staticmethod
-    def _fetch_single_domain(domain):
-        if not HAS_REQUESTS:
-            print(f"[CRAWL] domain={domain} status=requests_missing", flush=True)
-            return False, {}, "requests_missing"
-
-        urls = [
-            f"https://{domain}/xsmb-ngay-{Utils.get_vn_time().strftime('%d-%m-%Y')}.html",
-            f"https://{domain}/so-ket-qua",
-            f"https://{domain}/so-ket-qua-truyen-thong/300",
-            f"https://{domain}/"
-        ]
-        headers = {"User-Agent": "Mozilla/5.0", "Accept": "text/html,application/xhtml+xml"}
-        date_pattern = re.compile(r'\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b')
-
-        def fetch_and_parse(url):
-            parsed = {}
-            started_url = time.perf_counter()
-            diag = {
-                "domain": domain,
-                "url": url,
-                "http_status": None,
-                "content_bytes": 0,
-                "parsed_dates": 0,
-                "valid_27_tail_dates": 0,
-                "failure_reason": None,
-            }
-            try:
-                r = requests.get(url, headers=headers, timeout=Config.CRAWL_FAST_TIMEOUT)
-                diag["http_status"] = r.status_code
-                diag["content_bytes"] = len(r.content or b"")
-                if r.status_code != 200:
-                    diag["failure_reason"] = f"HTTP_{r.status_code}"
-                    return parsed
-                soup = BeautifulSoup(r.text, "html.parser")
-                for table in soup.find_all("table"):
-                    date_node = table.find_previous(string=date_pattern)
-                    if not date_node:
-                        continue
-                    matches = date_pattern.findall(str(date_node))
-                    if len(matches) != 1:
-                        continue
-                    res = Utils.chuan_hoa_ngay(matches[0])
-                    if not res:
-                        continue
-                    dt_obj, std = res
-                    if dt_obj.date() > Utils.get_vn_time().date():
-                        continue
-                    diag["parsed_dates"] += 1
-                    tails = Crawler._extract_27_from_table(table)
-                    if tails is not None:
-                        parsed[std] = tails
-                        diag["valid_27_tail_dates"] += 1
-                if not parsed and diag["parsed_dates"] == 0:
-                    diag["failure_reason"] = "NO_PARSEABLE_DATE_TABLE"
-                elif not parsed:
-                    diag["failure_reason"] = "NO_VALID_27_TAIL"
-                return parsed
-            except requests.RequestException as exc:
-                diag["failure_reason"] = f"{type(exc).__name__}:{exc}"
-                return {}
-            except Exception as exc:
-                diag["failure_reason"] = f"{type(exc).__name__}:{exc}"
-                return {}
-            finally:
-                diag["elapsed_ms"] = round((time.perf_counter() - started_url) * 1000)
-                print(
-                    "[CRAWL SOURCE] "
-                    f"domain={diag['domain']} url={diag['url']} "
-                    f"status={diag['http_status'] if diag['http_status'] is not None else 'NA'} "
-                    f"elapsed_ms={diag['elapsed_ms']} bytes={diag['content_bytes']} "
-                    f"dates={diag['parsed_dates']} valid_27={diag['valid_27_tail_dates']} "
-                    f"reason={diag['failure_reason'] or 'OK'}",
-                    flush=True,
-                )
-
-        # Race all candidate URLs for this source. Do not use a context manager:
-        # ThreadPoolExecutor.__exit__ waits for every running request.
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=len(urls))
-        futures = [executor.submit(fetch_and_parse, url) for url in urls]
-        try:
-            for fut in concurrent.futures.as_completed(futures):
-                try:
-                    parsed = fut.result()
-                    if parsed:
-                        executor.shutdown(wait=False, cancel_futures=True)
-                        print(f"[CRAWL DOMAIN] domain={domain} result=VALID", flush=True)
-                        return True, parsed, domain
-                except Exception as exc:
-                    print(f"[CRAWL DOMAIN] domain={domain} worker_error={type(exc).__name__}:{exc}", flush=True)
-            print(f"[CRAWL DOMAIN] domain={domain} result=NO_VALID_DATA", flush=True)
-            return False, {}, domain
-        finally:
-            try:
-                executor.shutdown(wait=False, cancel_futures=True)
-            except TypeError:
-                executor.shutdown(wait=False)    @staticmethod
     def fetch_ketqua_radar():
-        """Authoritative forensic crawl: ketqua16 + xsmb, exact FULL_27 quorum."""
-        if not HAS_REQUESTS: return False, {}, "Thiếu requests"
         try:
-            from data.ingestion.forensic_crawler_v2 import crawl, reconcile
-            today = Utils.get_vn_time().date()
-            days = [today - timedelta(days=i) for i in range(8)]
-            records, errors = crawl(days, sources=("ketqua16", "xsmb"), workers=4, timeout=8)
-            consensus, conflicts = reconcile(records, quorum=2)
-            try:
-                CrawlDatabase.persist_crawl(records, errors, consensus, conflicts)
-            except Exception as db_exc:
-                print(f"[CRAWL DATABASE] PERSIST_FAIL {type(db_exc).__name__}:{db_exc}", flush=True)
-            data = {}
-            for row in consensus:
-                tails = [int(v[-2:]) for v in row["full_27"]]
-                key = datetime.strptime(row["date"], "%Y-%m-%d").strftime("%d/%m/%Y")
-                data[key] = {"tails": tails, "source_set": row["sources"]}
-            msg = f"STRICT-27-TAIL 2-SOURCE OK | records={len(records)} | dates={len(data)} | conflicts={len(conflicts)} | errors={len(errors)}"
-            print(f"[FORENSIC CRAWLER] {msg}", flush=True)
+            from data.ingestion.new_crawler import crawl
+            raw, diag = crawl(days=3)
+            data = {
+                date_key: {
+                    "tails": row["tails27"],
+                    "source_set": row["sources"],
+                }
+                for date_key, row in raw.items()
+            }
+            msg = (
+                f"NEW-CRAWLER | records={diag['records']} | dates={diag['dates']} "
+                f"| sources={','.join(diag['sources']) or '-'} | quorum={diag['quorum']} "
+                f"| crawl_ms={diag['elapsed_ms']}"
+            )
+            print(f"[NEW CRAWLER] {msg}", flush=True)
             return bool(data), data, msg
         except Exception as exc:
-            print(f"[FORENSIC CRAWLER] FAIL {type(exc).__name__}:{exc}", flush=True)
-            return False, {}, f"FORENSIC_CRAWLER_FAIL:{type(exc).__name__}:{exc}"
+            msg = f"NEW_CRAWLER_FAIL:{type(exc).__name__}:{exc}"
+            print(f"[NEW CRAWLER] {msg}", flush=True)
+            return False, {}, msg
 
-
-    @staticmethod
-    def auto_heal_history():
-        ok, data, msg = Crawler.fetch_ketqua_radar()
-        if not ok: return f"🛑 CRAWLER FAIL-CLOSED: {msg}", None
-
-        # Postgres is the durable crawl database and the UI source of truth.
-        # Excel remains a compatibility/export cache only.
-        db = {}
-        local_msg = ""
-        if CrawlDatabase.enabled():
-            try:
-                db = CrawlDatabase.load_canonical()
-                if db:
-                    local_msg = f"CRAWL DATABASE: {len(db)} phiên"
-                else:
-                    # One-time migration of the existing Excel history.
-                    legacy_db = {}
-                    if os.path.exists(Config.DATA_FILE):
-                        df = pd.read_excel(Config.DATA_FILE, dtype=str)
-                        for _, row in df.iterrows():
-                            if len(row) < 2:
-                                continue
-                            parsed = DatabaseManager._parse_row(
-                                row.iloc[0], row.iloc[1],
-                                row.iloc[2] if len(row) >= 3 else None,
-                                row.iloc[3] if len(row) >= 4 else None,
-                            )
-                            if parsed:
-                                legacy_db[parsed[0]] = parsed[1]
-                    migrated = CrawlDatabase.seed_from_db_rows(list(legacy_db.values()))
-                    db = CrawlDatabase.load_canonical()
-                    local_msg = f"CRAWL DATABASE: {len(db)} phiên | migrated={migrated}"
-            except Exception as db_exc:
-                print(f"[CRAWL DATABASE] LOAD_FAIL {type(db_exc).__name__}:{db_exc}", flush=True)
-
-        if not db:
-            # Compatibility fallback only when the separate crawl database is
-            # unavailable. This path is not authoritative when Postgres works.
-            if os.path.exists(Config.DATA_FILE):
-                try:
-                    df = pd.read_excel(Config.DATA_FILE, dtype=str)
-                    for _, row in df.iterrows():
-                        if len(row) < 2:
-                            continue
-                        parsed = DatabaseManager._parse_row(
-                            row.iloc[0], row.iloc[1],
-                            row.iloc[2] if len(row) >= 3 else None,
-                            row.iloc[3] if len(row) >= 4 else None,
-                        )
-                        if parsed:
-                            db[parsed[0]] = parsed[1]
-                    local_msg = f"LOCAL CACHE: {len(db)} phiên"
-                except Exception as e:
-                    return f"🛑 LOCAL CACHE FAIL: {e}", None
-            else:
-                return "🛑 CRAWL DATABASE EMPTY + LOCAL CACHE MISSING", None
-
-        added, updated, metadata_updated = 0, 0, 0
-        now = Utils.get_vn_time()
-        for std, payload in data.items():
-            tails = payload['tails'] if isinstance(payload, dict) else payload
-            res = Utils.chuan_hoa_ngay(std)
-            if not res: continue
-            dt, canonical = res
-            if dt.date() > now.date(): continue
-            if dt.date() == now.date() and not Utils.draw_cutoff_reached(): continue
-            if len(tails) != 27: continue
-            source_set = payload.get("source_set", []) if isinstance(payload, dict) else []
-            rec = {"date_obj": dt, "prizes_int": tails, "raw_str": " ".join(f"{x:02d}" for x in tails), "calendar_state": Config.DRAW_CONFIRMED, "source_set": list(source_set)}
-            if canonical not in db:
-                added += 1
-            else:
-                if db[canonical]["raw_str"] != rec["raw_str"]:
-                    updated += 1
-                if db[canonical].get("calendar_state") != rec["calendar_state"] or set(db[canonical].get("source_set", [])) != set(rec["source_set"]):
-                    metadata_updated += 1
-            db[canonical] = rec
-        print(f"[AUTO-HEAL CANONICAL] dates={','.join(sorted(data))} added={added} updated={updated} metadata_updated={metadata_updated}", flush=True)
-        if added or updated or metadata_updated:
-            DatabaseManager._atomic_excel_write([
-                {"Ngày": info["date_obj"].strftime("%d/%m/%Y"), "Kết Quả Loto": info["raw_str"], Config.CALENDAR_STATE_HEADER: info.get("calendar_state", Config.LEGACY_CALENDAR_STATE), "Source Set": ",".join(sorted(set(info.get("source_set", []))))}
-                for info in sorted(db.values(), key=lambda x: x["date_obj"], reverse=True)
-            ])
-            QuantEngine.clear_cache()
-
-            # Cloud persistence is best-effort and deliberately detached from
-            # the UI request. A slow/hung Google API must never make the crawl
-            # button wait indefinitely.
-            def _sync_google_snapshot(snapshot):
-                try:
-                    DatabaseManager.rewrite_clean_db(snapshot)
-                except Exception as exc:
-                    print(f"[GOOGLE ASYNC SYNC] {type(exc).__name__}: {exc}", flush=True)
-            threading.Thread(target=_sync_google_snapshot, args=(dict(db),), name="google-db-sync", daemon=True).start()
-
-        return f"✅ STRICT-27-TAIL AUTO-HEAL | added={added} updated={updated} metadata_updated={metadata_updated} | {local_msg} | {msg}", db
     @staticmethod
     def get_boundaries(db):
         now = Utils.get_vn_time()
         today = datetime(now.year, now.month, now.day)
-        confirmed = [x["date_obj"] for x in db.values() if x["date_obj"] <= today and (x.get("calendar_state") == Config.DRAW_CONFIRMED or set(x.get("source_set", [])) == {"ketqua16", "xsmb"})]
-        if not confirmed: return None, None, today
-        latest = max(confirmed)
+        valid = [x["date_obj"] for x in db.values() if x["date_obj"] <= today]
+        if not valid:
+            return None, None, today
+        latest = max(valid)
         if latest == today and not Utils.draw_cutoff_reached():
-            prior = [d for d in confirmed if d < today]
+            prior = [d for d in valid if d < today]
             latest = max(prior) if prior else None
         target = (latest + timedelta(days=1)) if latest else today
-        print("[CALENDAR MERGED] confirmed_dates={} latest={} next={}".format(len(confirmed), latest.strftime("%d/%m/%Y") if latest else "-", target.strftime("%d/%m/%Y")), flush=True)
-        return min(confirmed), latest, target
-
+        return min(valid), latest, target
 
 class GoogleSheetsManager:
     @staticmethod
@@ -578,14 +292,6 @@ class DatabaseManager:
 
     @staticmethod
     def load_db():
-        # Durable crawl database is authoritative for the application.
-        if CrawlDatabase.enabled():
-            try:
-                db = CrawlDatabase.load_canonical()
-                if db:
-                    return db, f"🟢 CRAWL DATABASE: {len(db)} phiên"
-            except Exception as exc:
-                print(f"[CRAWL DATABASE] READ_FAIL {type(exc).__name__}:{exc}", flush=True)
         db = {}
         ws, ws_msg = GoogleSheetsManager.get_worksheet()
         if ws is not None:
