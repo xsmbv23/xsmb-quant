@@ -201,7 +201,7 @@ class Forensic:
         return Forensic.dataset_hash(subset)
 
 # ==============================================================================
-# 🕸️ BLOCK 3: STRICT DOM-BOUND CRAWLER
+# 🕸️ BLOCK 3: NEW TWO-SOURCE CRAWLER
 # ==============================================================================
 class Crawler:
     @staticmethod
@@ -1137,7 +1137,7 @@ class QuantEngine:
                 "mm_formula":"WR21 tier: >=0.50=>1.00x; >=0.35=>0.50x; else 0.20x; 4-loss circuit=>0.00x",
                 "allocation_tiers":[1.30,1.15,0.85],
                 "audit_context_version":"A1",
-                "crawler_quorum":Config.CRAWL_MIN_QUORUM
+                "crawler_quorum":Config.CRAWL_QUORUM
             },
             "hmm":frozen_hmm.to_dict(),"thompson":th.to_dict(),"rl":rl.to_dict(),
         }
@@ -2034,7 +2034,7 @@ class ManifestStore:
             raise RuntimeError("ALLOCATION_TIER_CONTRACT_MISMATCH")
         if contract.get("audit_context_version") != "A1":
             raise RuntimeError("AUDIT_CONTEXT_CONTRACT_MISMATCH")
-        if int(contract.get("crawler_quorum", 0)) != Config.CRAWL_MIN_QUORUM:
+        if int(contract.get("crawler_quorum", 0)) != Config.CRAWL_QUORUM:
             raise RuntimeError("CRAWLER_QUORUM_CONTRACT_MISMATCH")
         if not state.get("edge_confirmed", False):
             raise RuntimeError("FROZEN_PURE_OOS_EDGE_NOT_CONFIRMED")
@@ -2372,7 +2372,7 @@ class QuantEngine:
                 "mm_formula":"WR21 tier: >=0.50=>1.00x; >=0.35=>0.50x; else 0.20x; 4-loss circuit=>0.00x",
                 "allocation_tiers":[1.30,1.15,0.85],
                 "audit_context_version":"A1",
-                "crawler_quorum":Config.CRAWL_MIN_QUORUM
+                "crawler_quorum":Config.CRAWL_QUORUM
             },
             "hmm":frozen_hmm.to_dict(),"thompson":th.to_dict(),"rl":rl.to_dict(),
         }
