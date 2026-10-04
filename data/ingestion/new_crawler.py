@@ -165,15 +165,17 @@ def _consensus(rows: list[Result]) -> dict[str, dict]:
 def crawl(days: int = 3) -> tuple[dict[str, dict], dict]:
     """Fresh two-source crawler. No legacy crawler/database code is used."""
     started = time.monotonic()
-    cutoff = date.today()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-        futures = {pool.submit(_fetch_source, source, urls): source for source, urls in SOURCES.items()}
-        rows: list[Result] = []
-        for future in concurrent.futures.as_completed(futures, timeout=MAX_RUN_SECONDS):
-            try:
-                rows.extend(future.result())
-            except Exception as exc:
-                print(f"[NEW-CRAWLER] worker={futures[future]} error={type(exc).__name__}:{exc}", flush=True)
+    cutoff = __import__('datetime').datetime.now(ZoneInfo('Asia/Ho_Chi_Minh')).date()
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+    futures = {pool.submit(_fetch_source, source, urls): source for source, urls in SOURCES.items()}
+    rows: list[Result] = []
+    done, _pending = concurrent.futures.wait(futures, timeout=MAX_RUN_SECONDS)
+    for future in done:
+        try:
+            rows.extend(future.result())
+        except Exception as exc:
+            print(f"[NEW-CRAWLER] worker={futures[future]} error={type(exc).__name__}:{exc}", flush=True)
+    pool.shutdown(wait=False, cancel_futures=True)
     cutoff_date = cutoff - timedelta(days=max(1, int(days)) - 1)
     rows = [r for r in rows if cutoff_date <= date.fromisoformat(r.draw_date) <= cutoff]
     data = _consensus(rows)
