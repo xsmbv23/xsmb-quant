@@ -40,7 +40,7 @@ except ImportError:
 # 📦 BLOCK 1: CẤU HÌNH HỆ THỐNG
 # ==============================================================================
 class Config:
-    VERSION = "V5.8 FIX FORENSIC CORE V4.2 — SINGLE FROZEN TRUTH / INTEGRITY + O(N) AUDIT" 
+    VERSION = "V5.8 CLEAN DATA CORE — NEW TWO-SOURCE CRAWLER" 
     DATA_FILE = "Ket_Qua_Loto27.xlsx"
     BACKUP_PREFIX = "Ket_Qua_Loto27_Backup_" 
     COST_PER_POINT = 21700
@@ -76,10 +76,8 @@ class Config:
     ANCHOR_FILE = '.v58_anchor.sys'
     REQUIRE_OOS_AUDIT = True
     MAX_AUDIT_DAYS = 5000
-    CRAWL_MIN_QUORUM = 2
-    CRAWL_FAST_TIMEOUT = 2
-    CRAWL_HARD_DEADLINE = 12
-    CRAWL_FAST_DOMAINS = ["ketqua16.net", "xsmb.com.vn"]
+    CRAWL_QUORUM = 2
+    CRAWL_DAYS = 3
     ANCHOR_MAGIC = "V58_FORENSIC_ANCHOR_V1"
     CALENDAR_STATE_HEADER = "Calendar State"
     DRAW_CONFIRMED = "DRAW_CONFIRMED"
@@ -801,7 +799,7 @@ class ManifestStore:
             raise RuntimeError("ALLOCATION_TIER_CONTRACT_MISMATCH")
         if contract.get("audit_context_version") != "A1":
             raise RuntimeError("AUDIT_CONTEXT_CONTRACT_MISMATCH")
-        if int(contract.get("crawler_quorum", 0)) != Config.CRAWL_MIN_QUORUM:
+        if int(contract.get("crawler_quorum", 0)) != Config.CRAWL_QUORUM:
             raise RuntimeError("CRAWLER_QUORUM_CONTRACT_MISMATCH")
         if not state.get("edge_confirmed", False):
             raise RuntimeError("FROZEN_PURE_OOS_EDGE_NOT_CONFIRMED")
@@ -1155,7 +1153,7 @@ class Auditor:
 
     @staticmethod
     def phan_he_1_sync(auto_crawl=False):
-        crawl_msg = "ℹ️ Chế độ Offline. Bấm nút cập nhật để kích hoạt Radar."
+        crawl_msg = "ℹ️ Chế độ Offline. Bấm nút cập nhật để chạy Bộ Cào mới."
         db = None
         if auto_crawl:
             crawl_msg, db = DatabaseManager.auto_heal_history()
@@ -1170,7 +1168,7 @@ class Auditor:
             "=================================================================================",
             f"• Phiên bản hệ thống : {Config.VERSION}",
             f"• Trạng thái Dữ liệu : {msg}",
-            f"• Báo cáo Crawler    : {crawl_msg}",
+            f"• Báo cáo Bộ Cào    : {crawl_msg}",
             "---------------------------------------------------------------------------------",
             f"• Dữ liệu cập nhật đến ngày : 📅 [{latest_str}]",
             f"• Sẵn sàng tính toán cho kỳ : 🚀 [{next_predict_dt.strftime('%d/%m/%Y')}]",
@@ -1466,7 +1464,7 @@ class Auditor:
                 f"🟠 Giải Năm  :  {prizes[14]:02d} - {prizes[15]:02d} - {prizes[16]:02d} - {prizes[17]:02d} - {prizes[18]:02d} - {prizes[19]:02d}",
                 f"🟡 Giải Sáu  :  {prizes[20]:02d} - {prizes[21]:02d} - {prizes[22]:02d}",
                 f"⚪ Giải Bảy  :  {prizes[23]:02d} - {prizes[24]:02d} - {prizes[25]:02d} - {prizes[26]:02d}",
-                "-------------------------------------------------------", "⚠️ Lưu ý: Bảng hiển thị Loto 2 số (Dữ liệu do Crawler phục vụ thuật toán Quant).", "======================================================="
+                "-------------------------------------------------------", "⚠️ Lưu ý: Bảng hiển thị Loto 2 số (Dữ liệu do Bộ cào phục vụ thuật toán Quant).", "======================================================="
             ]
             return "\n".join(lines)
         except Exception: return f"🛑 LỖI TRUY VẾT:\n{traceback.format_exc()}"
@@ -1558,7 +1556,7 @@ def create_ui():
         with gr.Column(visible=True) as col_1:
             with gr.Row():
                 btn_1_sync = gr.Button("⚡ KIỂM TOÁN LẠI DB HIỆN TẠI", variant="secondary")
-                btn_1_crawl = gr.Button("🌐 CẬP NHẬT KẾT QUẢ MỚI (QUÉT RADAR CRAWLER ĐA LUỒNG)", variant="primary")
+                btn_1_crawl = gr.Button("🌐 CẬP NHẬT KẾT QUẢ MỚI (BỘ CÀO 2 NGUỒN)", variant="primary")
             gr.Markdown("---")
             gr.Markdown("✍️ **NHẬP KẾT QUẢ BẰNG TAY (DÀNH CHO NGÀY WEB CRAWLER BỊ KHÓA IP)**")
             with gr.Row():
