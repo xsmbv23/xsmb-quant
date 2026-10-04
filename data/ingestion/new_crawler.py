@@ -99,11 +99,15 @@ def _parse_html(source: str, url: str, body: bytes) -> list[Result]:
     html_sha = hashlib.sha256(body).hexdigest()
     out: list[Result] = []
     for table in soup.find_all("table"):
+        date_node = table.find_previous(string=DATE_RE)
         table_text = " ".join(table.stripped_strings)
-        dates = DATE_RE.findall(table_text)
-        if not dates:
+        if date_node:
+            draw_date = _normal_date(str(date_node))
+        else:
+            dates = DATE_RE.findall(table_text)
+            draw_date = _normal_date("/".join(dates[0])) if dates else None
+        if not draw_date:
             continue
-        draw_date = _normal_date("/".join(dates[0]))
         if not draw_date:
             continue
         parsed = _table_result(table)
